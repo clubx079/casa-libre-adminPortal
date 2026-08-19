@@ -56,6 +56,10 @@ const EVENT_LABELS = {
   property_share_opened: 'Opened share',
   contact_seller_clicked: 'Contacted a seller',
   whatsapp_contact_clicked: 'Opened WhatsApp',
+  contact_whatsapp_click: 'Tapped WhatsApp',
+  contact_call_click: 'Tapped call',
+  contact_copy_click: 'Copied number',
+  report_unresponsive: 'Reported unresponsive listing',
   phone_revealed: 'Revealed phone',
   property_saved: 'Saved a property',
   property_unsaved: 'Unsaved a property',
@@ -68,6 +72,7 @@ const EVENT_LABELS = {
 const PRODUCT_EVENTS = new Set([
   'property_viewed', 'property_saved', 'property_unsaved', 'search_applied', 'filter_applied',
   'contact_seller_clicked', 'whatsapp_contact_clicked', 'phone_revealed', 'listing_created',
+  'contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'report_unresponsive',
   'publish_started', 'user_logged_in', 'user_signed_up', 'sort_changed', 'map_pin_clicked',
   'photo_gallery_opened', 'property_share_opened', 'saved_viewed', 'oauth_login_clicked',
 ]);

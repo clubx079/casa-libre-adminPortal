@@ -4,13 +4,23 @@ import { makeT, locale } from '@/lib/i18n';
 
 export const dynamic = 'force-dynamic';
 
+const T = {
+  textPrimary: '#111111',
+  textSecondary: '#6B6862',
+  textMuted: '#9C978C',
+  bgWhite: '#FFFFFF',
+  bgSurface: '#FAF7F1',
+  borderLight: '#E7E1D6',
+};
+const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
+
 const STATUS = {
-  success: 'bg-ink text-paper',
-  partial: 'bg-hatch1 text-ink',
-  failed: 'bg-ink text-paper line-through',
-  running: 'bg-transparent text-ink border border-ink/40',
-  paused: 'bg-transparent text-ink border border-ink/40',
-  stopped: 'bg-hatch1 text-ink/70',
+  success: { background: T.textPrimary, color: T.bgWhite },
+  partial: { background: T.bgSurface, color: T.textPrimary },
+  failed: { background: T.textPrimary, color: T.bgWhite, textDecoration: 'line-through' },
+  running: { background: 'transparent', color: T.textPrimary, border: `1px solid ${T.borderLight}` },
+  paused: { background: 'transparent', color: T.textPrimary, border: `1px solid ${T.borderLight}` },
+  stopped: { background: T.bgSurface, color: T.textSecondary },
 };
 
 export default async function RunsPage() {
@@ -28,60 +38,63 @@ export default async function RunsPage() {
   }
 
   return (
-    <div className="p-6 md:p-10">
-      <header className="mb-8">
-        <div className="font-mono text-xs uppercase tracking-label text-ink/50 mb-2">{t('runs.kicker')}</div>
-        <h1 className="text-[clamp(30px,5vw,44px)] tracking-display font-bold m-0">
-          {t('runs.title1')} <em className="font-serif italic font-normal">{t('runs.title2')}</em>
-        </h1>
-      </header>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{t('runs.title1')} {t('runs.title2')}</h1>
+        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{t('runs.subtitle')}</p>
+      </div>
 
       {error ? (
-        <div className="bg-hatch1 border border-ink/20 rounded-card px-5 py-4 text-sm font-mono">{error}</div>
+        <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: '#FBEDE9', color: '#8A2B16' }}>
+          <span className="font-mono">{error}</span>
+        </div>
       ) : (
-        <div className="bg-card border border-ink/15 rounded-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse min-w-[720px]">
-              <thead>
-                <tr className="text-left font-mono text-[10px] uppercase tracking-label text-ink/50 border-b border-ink/10">
-                  <th className="px-4 py-3">{t('runs.tTemplate')}</th>
-                  <th className="px-4 py-3">{t('runs.tSource')}</th>
-                  <th className="px-4 py-3">{t('runs.tStatus')}</th>
-                  <th className="px-4 py-3 text-right">{t('runs.tFound')}</th>
-                  <th className="px-4 py-3 text-right">{t('runs.tNew')}</th>
-                  <th className="px-4 py-3 text-right">{t('runs.tUpdated')}</th>
-                  <th className="px-4 py-3 text-right">{t('runs.tImages')}</th>
-                  <th className="px-4 py-3">{t('runs.tWhen')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((r) => (
-                  <tr key={r.id} className="border-b border-ink/[.06]">
-                    <td className="px-4 py-3 font-medium">{r.scrape_sources?.name || '—'}</td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-ink/60">{r.trigger}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-pill ${STATUS[r.status] || ''}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">{r.total_found}</td>
-                    <td className="px-4 py-3 text-right font-mono">{r.inserted_count}</td>
-                    <td className="px-4 py-3 text-right font-mono">{r.updated_count}</td>
-                    <td className="px-4 py-3 text-right font-mono">{r.images_uploaded}</td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-ink/55">
-                      {r.started_at ? new Date(r.started_at).toLocaleString(locale(lang)) : ''}
-                    </td>
-                  </tr>
-                ))}
-                {!runs.length && (
+        <div className="bg-white overflow-hidden" style={CARD}>
+          <div style={{ maxHeight: 520, overflowY: 'auto' }} className="cl-scroll">
+            <div className="overflow-x-auto cl-scroll">
+              <table className="w-full min-w-[720px]">
+                <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}`, position: 'sticky', top: 0, zIndex: 1 }}>
                   <tr>
-                    <td colSpan={8} className="px-4 py-16 text-center text-ink/50">
-                      {t('runs.empty')}
-                    </td>
+                    {[t('runs.tTemplate'), t('runs.tSource'), t('runs.tStatus')].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{h}</th>
+                    ))}
+                    {[t('runs.tFound'), t('runs.tNew'), t('runs.tUpdated'), t('runs.tImages')].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{h}</th>
+                    ))}
+                    <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('runs.tWhen')}</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {runs.map((r) => (
+                    <tr key={r.id} className="border-b transition-colors" style={{ borderColor: T.borderLight }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
+                      <td className="px-4 py-3 text-[13px] font-medium" style={{ color: T.textPrimary }}>{r.scrape_sources?.name || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-[12px]" style={{ color: T.textMuted }}>{r.trigger}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={STATUS[r.status] || {}}>
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs" style={{ color: T.textPrimary }}>{r.total_found}</td>
+                      <td className="px-4 py-3 text-right text-xs" style={{ color: T.textPrimary }}>{r.inserted_count}</td>
+                      <td className="px-4 py-3 text-right text-xs" style={{ color: T.textPrimary }}>{r.updated_count}</td>
+                      <td className="px-4 py-3 text-right text-xs" style={{ color: T.textPrimary }}>{r.images_uploaded}</td>
+                      <td className="px-4 py-3 text-[12px]" style={{ color: T.textMuted }}>
+                        {r.started_at ? new Date(r.started_at).toLocaleString(locale(lang)) : ''}
+                      </td>
+                    </tr>
+                  ))}
+                  {!runs.length && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-16 text-center text-sm" style={{ color: T.textMuted }}>
+                        {t('runs.empty')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

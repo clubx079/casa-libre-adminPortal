@@ -5,6 +5,12 @@ import ScrapeBoard from '@/components/ScrapeBoard';
 
 export const dynamic = 'force-dynamic';
 
+const T = {
+  textPrimary: '#111111',
+  textSecondary: '#6B6862',
+  borderLight: '#E7E1D6',
+};
+
 export default async function ScrapePage() {
   const lang = getLang();
   const t = makeT(lang);
@@ -20,19 +26,16 @@ export default async function ScrapePage() {
   }
 
   return (
-    <div className="p-6 md:p-10">
-      <header className="mb-8">
-        <div className="font-mono text-xs uppercase tracking-label text-ink/50 mb-2">{t('scrape.kicker')}</div>
-        <h1 className="text-[clamp(30px,5vw,44px)] tracking-display font-bold m-0">
-          {t('scrape.title1')} <em className="font-serif italic font-normal">{t('scrape.title2')}</em>
-        </h1>
-        <p className="text-ink/55 mt-2 max-w-2xl">{t('scrape.intro')}</p>
-      </header>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{t('scrape.title1')} {t('scrape.title2')}</h1>
+        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{t('scrape.intro')}</p>
+      </div>
 
       {error ? (
-        <div className="bg-hatch1 border border-ink/20 rounded-card px-5 py-4 text-sm">
+        <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: '#FBEDE9', color: '#8A2B16' }}>
           {t('scrape.loadErr')} <span className="font-mono">{error}</span>
-          <div className="text-ink/50 mt-1">{t('scrape.migHint')}</div>
+          <div className="mt-1" style={{ color: T.textSecondary }}>{t('scrape.migHint')}</div>
         </div>
       ) : (
         <ScrapeBoard sources={sources} lang={lang} />

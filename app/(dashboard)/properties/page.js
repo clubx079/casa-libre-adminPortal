@@ -7,6 +7,11 @@ import PropertiesView from '@/components/PropertiesView';
 
 export const dynamic = 'force-dynamic';
 
+const T = {
+  textPrimary: '#111111',
+  textSecondary: '#6B6862',
+};
+
 const PAGE_SIZE = 24;
 
 export default async function PropertiesPage({ searchParams }) {
@@ -62,16 +67,14 @@ export default async function PropertiesPage({ searchParams }) {
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
   return (
-    <div className="p-6 md:p-10">
-      <header className="mb-6">
-        <div className="font-mono text-xs uppercase tracking-label text-ink/50 mb-2">{t('prop.kicker')}</div>
-        <h1 className="text-[clamp(30px,5vw,44px)] tracking-display font-bold m-0">
-          {t('prop.title1')} <em className="font-serif italic font-normal">{t('prop.title2')}</em>
-        </h1>
-      </header>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{t('prop.title1')} {t('prop.title2')}</h1>
+        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{t('prop.subtitle')}</p>
+      </div>
 
       {error ? (
-        <div className="bg-hatch1 border border-ink/20 rounded-card px-5 py-4 text-sm font-mono">{error}</div>
+        <div className="text-xs px-4 py-3 rounded-[14px] font-mono" style={{ background: '#FBEDE9', color: '#8A2B16' }}>{error}</div>
       ) : (
         <PropertiesView
           rows={rows}

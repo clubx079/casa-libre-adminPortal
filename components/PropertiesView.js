@@ -204,25 +204,24 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
       ) : (
         /* ---- TABLE VIEW (default) ---- */
         <div className="bg-white overflow-hidden" style={CARD}>
-          <div style={{ maxHeight: LIST_MAX_HEIGHT, overflowY: 'auto' }} className="cl-scroll">
-            <div className="overflow-x-auto cl-scroll">
-              <table className="w-full min-w-[1140px]">
-                <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}`, position: 'sticky', top: 0, zIndex: 1 }}>
-                  <tr>
-                    <th className="px-3 py-2.5 w-16"></th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thTitle')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thType')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thSource')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thCity')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thUsd')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thLocal')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thSpecs')}</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thStatus')}</th>
-                    <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{t('prop.thActions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
+          <div className="cl-scroll" style={{ maxHeight: LIST_MAX_HEIGHT, overflow: 'auto' }}>
+            <table className="w-full min-w-[1140px]">
+              <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
+                <tr>
+                  <th className="px-3 py-2.5 w-16" style={{ background: T.bgSurface }}></th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thTitle')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thType')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSource')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thCity')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thUsd')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thLocal')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSpecs')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thStatus')}</th>
+                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thActions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
                     const inactive = r.admin_status !== 'active';
                     return (
                       <tr key={r.id} className={`border-b transition-colors ${inactive ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight }}
@@ -259,9 +258,8 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                       </tr>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -3,15 +3,26 @@ import Link from 'next/link';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { makeT, locale, pickLabel } from '@/lib/i18n';
 
+const T = {
+  textPrimary: '#111111',
+  textBody: '#3A3A37',
+  textSecondary: '#6B6862',
+  textMuted: '#9C978C',
+  bgWhite: '#FFFFFF',
+  bgSurface: '#FAF7F1',
+  borderLight: '#E7E1D6',
+};
+const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
+
+const fieldStyle = { padding: '8px 14px', fontSize: '13px', border: `1px solid ${T.borderLight}`, borderRadius: '10px', background: T.bgWhite, color: T.textBody };
+
 function Field({ def, value, onChange, lang, t, disabled }) {
-  const common =
-    'px-3.5 py-2.5 border-[1.5px] border-ink/30 rounded-input bg-paper font-sans font-medium text-[14px] outline-none focus:border-ink w-full disabled:opacity-60';
   const label = pickLabel(def, lang);
   if (def.type === 'select') {
     return (
-      <label className="flex flex-col gap-1 text-[12px] font-semibold">
+      <label className="flex flex-col gap-1 text-[12px] font-semibold" style={{ color: T.textSecondary }}>
         {label}
-        <select className={common} value={value ?? ''} disabled={disabled} onChange={(e) => onChange(def.key, e.target.value)}>
+        <select className="w-full outline-none disabled:opacity-60" style={fieldStyle} value={value ?? ''} disabled={disabled} onChange={(e) => onChange(def.key, e.target.value)}>
           <option value="">{t('card.any')}</option>
           {def.options?.map((o) => (
             <option key={o.value} value={o.value}>{pickLabel(o, lang)}</option>
@@ -21,11 +32,12 @@ function Field({ def, value, onChange, lang, t, disabled }) {
     );
   }
   return (
-    <label className="flex flex-col gap-1 text-[12px] font-semibold">
+    <label className="flex flex-col gap-1 text-[12px] font-semibold" style={{ color: T.textSecondary }}>
       {label}
       <input
         type={def.type === 'number' ? 'number' : 'text'}
-        className={common}
+        className="w-full outline-none disabled:opacity-60"
+        style={fieldStyle}
         value={value ?? ''}
         disabled={disabled}
         placeholder={def.placeholder || ''}
@@ -206,10 +218,13 @@ export default function ScrapeDetail({ source, lang }) {
     : t('detail.done');
 
   return (
-    <div>
+    <div className="space-y-5">
       {/* header */}
-      <div className="flex items-start gap-4 mb-6">
-        <div className={`w-16 h-16 rounded-input grid place-items-center shrink-0 font-mono text-[11px] text-ink/45 overflow-hidden ${source.logo_url ? 'bg-card border border-ink/10 p-2' : 'cl-hatch'}`}>
+      <div className="flex items-start gap-4">
+        <div
+          className="w-14 h-14 shrink-0 flex items-center justify-center overflow-hidden text-[11px] font-semibold"
+          style={{ borderRadius: '12px', background: T.bgSurface, color: T.textMuted }}
+        >
           {source.logo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={source.logo_url} alt={source.name} className="w-full h-full object-contain" />
@@ -219,20 +234,23 @@ export default function ScrapeDetail({ source, lang }) {
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-[clamp(24px,3.5vw,34px)] tracking-head font-bold m-0">{source.name}</h1>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-pill ${source.is_active ? 'bg-ink text-paper' : 'bg-hatch1 text-ink/60'}`}>
+            <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{source.name}</h1>
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={source.is_active ? { background: T.textPrimary, color: T.bgWhite } : { background: T.bgSurface, color: T.textSecondary }}
+            >
               {source.is_active ? t('card.active') : t('card.inactive')}
             </span>
           </div>
-          <p className="text-[14px] text-ink/55 mt-1 m-0 max-w-xl">{source.description}</p>
+          <p className="text-[13px] mt-0.5 max-w-xl" style={{ color: T.textSecondary }}>{source.description}</p>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 items-start">
+      <div className="grid lg:grid-cols-2 gap-5 items-start">
         {/* LEFT — config */}
-        <div className="bg-card border border-ink/15 rounded-card">
-          <div className="p-6">
-            <div className="font-mono text-[10px] uppercase tracking-label text-ink/50 mb-3">{t('card.filters')}</div>
+        <div className="bg-white overflow-hidden" style={CARD}>
+          <div className="p-5">
+            <h2 className="text-sm font-bold mb-3" style={{ color: T.textPrimary }}>{t('card.filters')}</h2>
             <div className="grid grid-cols-2 gap-3">
               {(source.filter_schema || []).map((def) => (
                 <Field key={def.key} def={def} value={filters[def.key]} onChange={setF} lang={lang} t={t} disabled={active} />
@@ -243,22 +261,35 @@ export default function ScrapeDetail({ source, lang }) {
             {!active ? (
               <button
                 onClick={startScrape}
-                className="mt-5 w-full px-6 py-3.5 bg-ink text-paper font-semibold rounded-pill shadow-hard-soft flex items-center justify-center gap-2"
+                className="mt-5 w-full px-6 py-3 text-[13px] font-semibold rounded-full flex items-center justify-center gap-2"
+                style={{ background: T.textPrimary, color: T.bgWhite }}
               >
                 {t('card.scrapeNow')}
               </button>
             ) : (
               <div className="mt-5 flex gap-3">
                 {running ? (
-                  <button onClick={() => control('pause')} disabled={busy} className="flex-1 px-6 py-3.5 border-2 border-ink font-semibold rounded-pill disabled:opacity-60 flex items-center justify-center gap-2">
-                    <span className="cl-spin w-3.5 h-3.5 border-2 border-ink/30 border-t-ink rounded-full" /> {t('ctl.pause')}
+                  <button
+                    onClick={() => control('pause')} disabled={busy}
+                    className="flex-1 px-6 py-3 text-[13px] font-semibold rounded-full disabled:opacity-60 flex items-center justify-center gap-2"
+                    style={{ border: `1px solid ${T.borderLight}`, color: T.textPrimary }}
+                  >
+                    <span className="cl-spin w-3.5 h-3.5 rounded-full" style={{ border: `2px solid ${T.borderLight}`, borderTopColor: T.textPrimary }} /> {t('ctl.pause')}
                   </button>
                 ) : (
-                  <button onClick={() => control('resume')} disabled={busy} className="flex-1 px-6 py-3.5 bg-ink text-paper font-semibold rounded-pill shadow-hard-soft disabled:opacity-60">
+                  <button
+                    onClick={() => control('resume')} disabled={busy}
+                    className="flex-1 px-6 py-3 text-[13px] font-semibold rounded-full disabled:opacity-60"
+                    style={{ background: T.textPrimary, color: T.bgWhite }}
+                  >
                     {t('ctl.resume')}
                   </button>
                 )}
-                <button onClick={() => control('stop')} disabled={busy} className="flex-1 px-6 py-3.5 border-2 border-ink font-semibold rounded-pill disabled:opacity-60">
+                <button
+                  onClick={() => control('stop')} disabled={busy}
+                  className="flex-1 px-6 py-3 text-[13px] font-semibold rounded-full disabled:opacity-60"
+                  style={{ border: `1px solid ${T.borderLight}`, color: T.textPrimary }}
+                >
                   {t('ctl.stop')}
                 </button>
               </div>
@@ -266,41 +297,47 @@ export default function ScrapeDetail({ source, lang }) {
           </div>
 
           {/* cron */}
-          <div className="p-6 border-t border-ink/10 bg-paper/50">
+          <div className="p-5 border-t" style={{ borderColor: T.borderLight, background: T.bgSurface }}>
             <div className="flex items-center justify-between mb-3">
-              <div className="font-mono text-[10px] uppercase tracking-label text-ink/50">{t('card.cronTitle')}</div>
+              <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('card.cronTitle')}</h2>
               <button
                 onClick={() => setCronEnabled((e) => !e)}
-                className={`px-3 py-1 rounded-pill text-[11px] font-semibold border-[1.5px] border-ink ${cronEnabled ? 'bg-ink text-paper' : 'bg-transparent text-ink'}`}
+                className="px-3 py-1 rounded-full text-[11px] font-semibold"
+                style={cronEnabled ? { background: T.textPrimary, color: T.bgWhite } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary, background: 'transparent' }}
               >
                 {cronEnabled ? 'ON' : 'OFF'}
               </button>
             </div>
             <div className="flex gap-2 items-end">
-              <label className="flex flex-col gap-1 text-[12px] font-semibold flex-1">
+              <label className="flex flex-col gap-1 text-[12px] font-semibold flex-1" style={{ color: T.textSecondary }}>
                 {t('card.cronExpr')}
                 <input
                   value={cronSchedule}
                   onChange={(e) => setCronSchedule(e.target.value)}
                   placeholder="0 3 * * *"
-                  className="px-3.5 py-2.5 border-[1.5px] border-ink/30 rounded-input bg-paper font-mono text-[13px] outline-none focus:border-ink"
+                  className="outline-none font-mono text-[13px]"
+                  style={{ padding: '8px 14px', border: `1px solid ${T.borderLight}`, borderRadius: '10px', background: T.bgWhite, color: T.textBody }}
                 />
               </label>
-              <button onClick={saveCron} disabled={savingCron} className="px-5 py-2.5 border-2 border-ink font-semibold rounded-pill text-[13px] disabled:opacity-60">
+              <button
+                onClick={saveCron} disabled={savingCron}
+                className="px-5 py-2 text-[13px] font-semibold rounded-full disabled:opacity-60"
+                style={{ border: `1px solid ${T.borderLight}`, color: T.textPrimary }}
+              >
                 {savingCron ? t('card.saving') : t('card.save')}
               </button>
             </div>
-            {cronMsg && <div className="font-mono text-[10px] text-ink/50 mt-2">{cronMsg}</div>}
-            <div className="font-mono text-[10px] text-ink/40 mt-2 leading-relaxed">{t('card.cronHelp')}</div>
+            {cronMsg && <div className="text-[11px] mt-2" style={{ color: T.textSecondary }}>{cronMsg}</div>}
+            <div className="text-[11px] mt-2 leading-relaxed" style={{ color: T.textMuted }}>{t('card.cronHelp')}</div>
           </div>
         </div>
 
         {/* RIGHT — live progress */}
-        <div className="bg-ink text-paper rounded-card p-6 lg:sticky lg:top-6">
+        <div className="bg-white p-5 lg:sticky lg:top-6" style={CARD}>
           <div className="flex items-center justify-between mb-4">
-            <div className="font-mono text-[10px] uppercase tracking-label text-paper/50">{t('detail.progressTitle')}</div>
-            <span className="font-mono text-[10px] text-paper/60 flex items-center gap-1.5">
-              {active && <span className={`w-1.5 h-1.5 rounded-full ${running ? 'bg-paper' : 'bg-paper/50'}`} />}
+            <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('detail.progressTitle')}</h2>
+            <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: T.textSecondary }}>
+              {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: running ? T.textPrimary : T.borderLight }} />}
               {statusLabel}
             </span>
           </div>
@@ -313,48 +350,55 @@ export default function ScrapeDetail({ source, lang }) {
               [t('card.unchanged'), progress.skipped],
             ].map(([l, v]) => (
               <div key={l}>
-                <div className="text-[24px] font-bold tracking-head">{v}</div>
-                <div className="font-mono text-[9px] text-paper/50">{l}</div>
+                <div className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{v}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{l}</div>
               </div>
             ))}
           </div>
 
           {/* plain-language summary when finished */}
           {['success', 'partial', 'stopped'].includes(status) && (
-            <div className="mb-4 bg-paper text-ink rounded-input px-4 py-3">
-              <div className="text-[13px] font-semibold">
+            <div className="mb-4 px-4 py-3" style={{ background: T.bgSurface, borderRadius: '10px' }}>
+              <div className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>
                 ✓ {progress.inserted} {t('card.new')} · {progress.updated} {t('card.updated')} · {progress.skipped} {t('card.unchanged')} — {t('detail.savedToDb')}
               </div>
               <div className="flex items-center justify-between mt-1.5">
-                <span className="font-mono text-[10px] text-ink/50">{progress.images} {t('card.imagesUploaded')}</span>
-                <Link href="/properties" className="text-[12px] font-semibold underline">{t('detail.viewProps')}</Link>
+                <span className="text-[11px]" style={{ color: T.textMuted }}>{progress.images} {t('card.imagesUploaded')}</span>
+                <Link href="/properties" className="text-[12px] font-semibold underline" style={{ color: T.textPrimary }}>{t('detail.viewProps')}</Link>
               </div>
             </div>
           )}
 
-          <div className="h-2 rounded-pill bg-paper/15 overflow-hidden mb-1">
-            <div className="h-full bg-paper transition-all duration-300" style={{ width: `${pct}%` }} />
+          <div className="h-2 rounded-full overflow-hidden mb-1" style={{ background: T.bgSurface }}>
+            <div className="h-full transition-all duration-300" style={{ width: `${pct}%`, background: T.textPrimary }} />
           </div>
-          <div className="flex justify-between font-mono text-[10px] text-paper/50 mb-4">
+          <div className="flex justify-between text-[10px] mb-4" style={{ color: T.textMuted }}>
             <span>{progress.images} {t('card.imagesUploaded')}</span>
             <span>{progress.target ? `${progress.found}/${progress.target}` : ''} {pct ? `· ${pct}%` : ''}</span>
           </div>
 
-          <div ref={logRef} className="h-[340px] overflow-y-auto rounded-input bg-black/30 border border-paper/10 p-3 font-mono text-[11px] leading-relaxed">
+          <div
+            ref={logRef}
+            className="cl-scroll h-[340px] overflow-y-auto p-3 font-mono text-[11px] leading-relaxed"
+            style={{ borderRadius: '10px', background: T.bgSurface, border: `1px solid ${T.borderLight}` }}
+          >
             {recent.length === 0 ? (
-              <div className="text-paper/40">{t('detail.logIdle')}</div>
+              <div style={{ color: T.textMuted }}>{t('detail.logIdle')}</div>
             ) : (
               recent.map((e, i) => (
                 <div
                   key={i}
-                  className={
-                    e.action === 'insert' ? 'text-paper'
-                    : e.action === 'update' ? 'text-paper/80'
-                    : e.action === 'error' ? 'text-paper font-semibold'
-                    : e.kind === 'page' ? 'text-paper/60 mt-1'
-                    : e.kind === 'done' ? 'text-paper font-semibold mt-1'
-                    : 'text-paper/45'
-                  }
+                  style={{
+                    color:
+                      e.action === 'insert' ? T.textPrimary
+                      : e.action === 'update' ? T.textBody
+                      : e.action === 'error' ? T.textPrimary
+                      : e.kind === 'page' ? T.textSecondary
+                      : e.kind === 'done' ? T.textPrimary
+                      : T.textMuted,
+                    fontWeight: e.action === 'error' || e.kind === 'done' ? 600 : 400,
+                    marginTop: e.kind === 'page' || e.kind === 'done' ? '4px' : 0,
+                  }}
                 >
                   {fmt(e)}
                 </div>
@@ -362,7 +406,11 @@ export default function ScrapeDetail({ source, lang }) {
             )}
           </div>
 
-          {note && <div className="mt-3 font-mono text-[11px] text-paper/70 bg-paper/10 rounded-input px-3 py-2">{note}</div>}
+          {note && (
+            <div className="mt-3 text-[11px] px-3 py-2" style={{ color: T.textSecondary, background: T.bgSurface, borderRadius: '10px' }}>
+              {note}
+            </div>
+          )}
         </div>
       </div>
     </div>

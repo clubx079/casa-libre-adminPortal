@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server';
 // real in the server layout / API routes (Node runtime); here we only gate on
 // presence so unauthenticated traffic never reaches a protected page.
 const COOKIE = 'cl_admin_session';
-const PUBLIC = ['/login', '/api/auth/login'];
+// /api/media = public image proxy (no session); /api/cron = Bearer CRON_SECRET auth.
+const PUBLIC = ['/login', '/api/auth/login', '/api/media', '/api/cron'];
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;

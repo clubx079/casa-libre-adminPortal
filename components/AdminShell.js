@@ -3,11 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import LangSwitcher from '@/components/LangSwitcher';
 
 const NAV = [
   ['/', 'Overview', 'dash'],
   ['/users', 'Users', 'users'],
   ['/analytics', 'Analytics', 'chart'],
+  ['/scrape', 'Scrapers', 'scrape'],
+  ['/properties', 'Properties', 'home'],
+  ['/runs', 'Runs', 'runs'],
 ];
 
 function Icon({ name }) {
@@ -33,6 +37,30 @@ function Icon({ name }) {
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     );
+  if (name === 'scrape')
+    return (
+      <svg {...p}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18" />
+      </svg>
+    );
+  if (name === 'home')
+    return (
+      <svg {...p}>
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+        <path d="M9.5 21v-6h5v6" />
+      </svg>
+    );
+  if (name === 'runs')
+    return (
+      <svg {...p}>
+        <path d="M3 12a9 9 0 1 0 3-6.7" />
+        <path d="M3 3v4h4" />
+        <path d="M12 8v4l3 2" />
+      </svg>
+    );
   // chart
   return (
     <svg {...p}>
@@ -44,7 +72,7 @@ function Icon({ name }) {
   );
 }
 
-export default function AdminShell({ admin, children }) {
+export default function AdminShell({ admin, lang = 'es', children }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const router = useRouter();
@@ -146,7 +174,8 @@ export default function AdminShell({ admin, children }) {
             casa-libre<em className="font-serif not-italic italic font-normal">.py</em>
           </span>
           <div className="hidden lg:block flex-1" />
-          <span className="text-[11px] font-mono tracking-label uppercase text-ink/40">Admin Portal</span>
+          <LangSwitcher lang={lang} />
+          <span className="hidden sm:inline text-[11px] font-mono tracking-label uppercase text-ink/40">Admin Portal</span>
         </div>
         <main className="max-w-[1100px] mx-auto px-5 md:px-8 py-8">{children}</main>
       </div>

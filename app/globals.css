@@ -19,3 +19,11 @@ a { color: inherit; text-decoration: none; }
 /* thin scrollbars inside scroll areas */
 .cl-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .cl-scroll::-webkit-scrollbar-thumb { background: rgba(17,17,17,.15); border-radius: 999px; }
+
+/* Signature Casa Libre patterns used by the scraper/properties pages */
+@keyframes cl-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.cl-marquee { display: inline-flex; animation: cl-marquee 45s linear infinite; }
+.cl-lift { transition: transform 0.15s, box-shadow 0.15s; }
+.cl-lift:hover { transform: translateY(-4px); }
+@keyframes cl-spin { to { transform: rotate(360deg); } }
+.cl-spin { animation: cl-spin 0.7s linear infinite; }

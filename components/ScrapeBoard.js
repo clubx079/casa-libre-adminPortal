@@ -20,10 +20,8 @@ export default function ScrapeBoard({ sources, lang }) {
         <Link
           key={s.key}
           href={`/scrape/${s.key}`}
-          className="bg-white p-5 flex flex-col transition-colors"
+          className="bg-white p-5 flex flex-col transition-colors hover:bg-[#FAF7F1]"
           style={CARD}
-          onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}
         >
           <div className="flex items-start gap-3">
             <div

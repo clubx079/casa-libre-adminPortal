@@ -65,9 +65,7 @@ export default async function RunsPage() {
               </thead>
               <tbody>
                 {runs.map((r) => (
-                  <tr key={r.id} className="border-b transition-colors" style={{ borderColor: T.borderLight }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
+                  <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
                     <td className="px-4 py-3 text-[13px] font-medium" style={{ color: T.textPrimary }}>{r.scrape_sources?.name || '—'}</td>
                     <td className="px-4 py-3 font-mono text-[12px]" style={{ color: T.textMuted }}>{r.trigger}</td>
                     <td className="px-4 py-3">

@@ -113,7 +113,7 @@ export default function AdminShell({ admin, lang = 'es', children }) {
       >
         <div className="flex items-center justify-between px-5 h-[68px] border-b border-ink/10 shrink-0">
           <Link href="/" className="text-[20px] font-bold tracking-head">
-            casa-libre<em className="font-serif not-italic italic font-normal">.py</em>
+            casa-libre<em className="font-serif italic font-normal">.py</em>
           </Link>
           <button
             onClick={() => setOpen(false)}
@@ -181,7 +181,7 @@ export default function AdminShell({ admin, lang = 'es', children }) {
             </svg>
           </button>
           <span className="lg:hidden text-[18px] font-bold tracking-head">
-            casa-libre<em className="font-serif not-italic italic font-normal">.py</em>
+            casa-libre<em className="font-serif italic font-normal">.py</em>
           </span>
           <div className="hidden lg:block flex-1" />
           <LangSwitcher lang={lang} />

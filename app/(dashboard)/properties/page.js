@@ -1,4 +1,4 @@
-import { selectWithCount, select } from '@/lib/db';
+import { select } from '@/lib/db';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import { getUsdToPyg } from '@/lib/fx';
@@ -37,11 +37,10 @@ export default async function PropertiesPage({ searchParams }) {
   const parts = [
     'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,scrape_sources(name)',
     'order=created_at.desc',
-    `limit=${PAGE_SIZE}`,
-    `offset=${offset}`,
+    // "live" is admin-active AND complete (a code check), so we can't filter it at
+    // the DB — fetch the full matching set and filter/paginate in code below.
+    'limit=5000',
   ];
-  if (status === 'active') parts.push('admin_status=eq.active');
-  if (status === 'inactive') parts.push('admin_status=eq.inactive');
   if (sourceId) parts.push(`source_id=eq.${sourceId}`);
 
   // class + text search. 'buildings' (default) hides land; 'land' shows only land;
@@ -55,20 +54,28 @@ export default async function PropertiesPage({ searchParams }) {
     parts.push(`or=(address.ilike.${qEnc},city.ilike.${qEnc})`);
   }
 
-  let rows = [];
-  let count = 0;
+  let all = [];
   let error = null;
   try {
-    ({ rows, count } = await selectWithCount('properties', parts.join('&')));
+    all = await select('properties', parts.join('&'));
   } catch (e) {
     error = e.message;
   }
 
   const rate = await getUsdToPyg(); // guaraníes per 1 USD (live, cached)
-  // Flag rows that fail the buyer completeness gate — they are "active" in
-  // admin_status but hidden from the site, so the UI shows them as inactive.
-  rows = rows.map((r) => ({ ...r, _incomplete: !validateListing(r, rate).ok }));
+  // A property is LIVE on the buyer portal only when it is admin-active AND passes
+  // the completeness gate. Compute it once so the Active/Inactive filter and the
+  // status badge both reflect exactly what buyers see.
+  const annotated = all.map((r) => {
+    const complete = validateListing(r, rate).ok;
+    return { ...r, _incomplete: !complete, _live: r.admin_status === 'active' && complete };
+  });
+  const matched = status === 'active' ? annotated.filter((r) => r._live)
+    : status === 'inactive' ? annotated.filter((r) => !r._live)
+    : annotated;
+  const count = matched.length;
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+  const rows = matched.slice(offset, offset + PAGE_SIZE);
 
   return (
     <div className="space-y-5">

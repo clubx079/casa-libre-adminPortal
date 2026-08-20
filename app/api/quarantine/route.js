@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { select } from '@/lib/db';
+import { getUsdToPyg } from '@/lib/fx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,9 @@ export async function GET(req) {
         counts[st] = c.length;
       } catch { counts[st] = null; }
     }
-    return NextResponse.json({ rows, counts });
+    // live ₲/USD rate (open.er-api.com) so the client can show USD-main pricing
+    const rate = await getUsdToPyg().catch(() => Number(process.env.PYG_PER_USD) || 7300);
+    return NextResponse.json({ rows, counts, rate });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }

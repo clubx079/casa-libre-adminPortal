@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ShieldAlert, ExternalLink } from 'lucide-react';
 import { reasonLabel } from '@/lib/ingestLabels';
+import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
 
 const T = {
   textPrimary: '#111111',
@@ -25,18 +26,18 @@ const fmtDate = (v) => {
   catch { return '—'; }
 };
 const shortId = (v) => (v ? String(v).slice(0, 8) : '—');
-const money = (p) => {
-  if (p == null) return '—';
-  const c = String(p.currency || '').toUpperCase();
-  const n = Number(p.price);
-  if (!Number.isFinite(n)) return '—';
-  return (c === 'PYG' ? 'Gs. ' : 'US$ ') + n.toLocaleString('es-PY');
+// Standardized: USD main, local ₲ sub, converted via the live rate (open.er-api.com).
+const money = (p, rate) => {
+  if (p == null || !Number.isFinite(Number(p.price))) return { usd: '—', pyg: '' };
+  const d = dualPrice(p.price, p.currency, rate || 7300);
+  return { usd: fmtUsd(d.usd), pyg: fmtPyg(d.pyg) };
 };
 
 export default function QuarantinePage() {
   const [tab, setTab] = useState('pending');
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
+  const [rate, setRate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -52,7 +53,7 @@ export default function QuarantinePage() {
     try {
       const res = await fetch(`/api/quarantine?status=${status}`, { cache: 'no-store' });
       const json = await res.json();
-      if (res.ok) { setRows(json.rows || []); setCounts(json.counts || {}); }
+      if (res.ok) { setRows(json.rows || []); setCounts(json.counts || {}); if (json.rate) setRate(json.rate); }
       else setError(true);
     } catch { setError(true); }
     finally { setLoading(false); }
@@ -167,7 +168,10 @@ export default function QuarantinePage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{p.zone_canonical || p.city || p.neighborhood || '—'}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textBody }}>{money(p)}</td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      <div className="font-semibold" style={{ color: T.textPrimary }}>{money(p, rate).usd}</div>
+                      {money(p, rate).pyg && <div className="text-[11px]" style={{ color: T.textMuted }}>{money(p, rate).pyg}</div>}
+                    </td>
                     <td className="px-4 py-3 text-xs max-w-[320px]">
                       <div className="flex flex-wrap gap-1">
                         {(r.reasons || []).map((code) => (

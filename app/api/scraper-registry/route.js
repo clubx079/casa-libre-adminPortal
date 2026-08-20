@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { select, insert } from '@/lib/db';
+import { sendScraperAddedEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,7 @@ export async function POST(req) {
 
   try {
     const [row] = await insert('scraper_registry', [{ name, url, description, status: 'pending' }], { returning: 'representation' });
+    sendScraperAddedEmail({ name: row.name, url: row.url, description: row.description }).catch(() => {});
     return NextResponse.json({ ok: true, row });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });

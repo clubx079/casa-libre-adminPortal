@@ -162,15 +162,19 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 pr-1">
             {rows.map((r) => {
               const inactive = r.admin_status !== 'active';
+              const incomplete = !!r._incomplete;
+              const notLive = inactive || incomplete;
+              const incompleteHint = lang === 'es' ? 'Datos incompletos — oculto en el sitio' : 'Incomplete data — hidden from the site';
               return (
-                <div key={r.id} className={`bg-white overflow-hidden flex flex-col ${inactive ? 'opacity-70' : ''}`} style={CARD}>
+                <div key={r.id} className={`bg-white overflow-hidden flex flex-col ${notLive ? 'opacity-70' : ''}`} style={CARD}>
                   <div className="h-40 relative" style={{ background: T.bgSurface }}>
                     {r.feature_image_url && (/* eslint-disable-next-line @next/next/no-img-element */ <img src={r.feature_image_url} alt="" className="w-full h-full object-cover" />)}
                     <span
+                      title={incomplete ? incompleteHint : undefined}
                       className="absolute top-2 left-2 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                      style={inactive ? { background: T.bgWhite, color: T.textSecondary } : { background: T.textPrimary, color: T.bgWhite }}
+                      style={incomplete ? { background: '#F5EAD5', color: '#8A5A12' } : inactive ? { background: T.bgWhite, color: T.textSecondary } : { background: T.textPrimary, color: T.bgWhite }}
                     >
-                      {inactive ? t('prop.statusInactive') : t('prop.statusActive')}
+                      {notLive ? t('prop.statusInactive') : t('prop.statusActive')}
                     </span>
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
@@ -223,8 +227,11 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
               <tbody>
                 {rows.map((r) => {
                     const inactive = r.admin_status !== 'active';
+                    const incomplete = !!r._incomplete;
+                    const notLive = inactive || incomplete;
+                    const incompleteHint = lang === 'es' ? 'Datos incompletos — oculto en el sitio' : 'Incomplete data — hidden from the site';
                     return (
-                      <tr key={r.id} className={`border-b transition-colors ${inactive ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight }}
+                      <tr key={r.id} className={`border-b transition-colors ${notLive ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
                         <td className="px-3 py-2">
@@ -244,9 +251,15 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                         <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtPyg(money(r).pyg, loc)}{rentSfx(r)}</td>
                         <td className="px-3 py-2 text-[11px] whitespace-nowrap" style={{ color: T.textMuted }}>{specs(r) || '—'}</td>
                         <td className="px-3 py-2">
-                          <button onClick={() => toggleActive(r)} disabled={busyId === r.id} className="text-[11px] font-semibold px-2.5 py-1 rounded-full disabled:opacity-50" style={inactive ? { border: `1px solid ${T.borderLight}`, color: T.textBody, background: 'transparent' } : { background: T.textPrimary, color: T.bgWhite }}>
-                            {inactive ? t('prop.statusInactive') : t('prop.statusActive')}
-                          </button>
+                          {incomplete ? (
+                            <span title={incompleteHint} className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: '#F5EAD5', color: '#8A5A12' }}>
+                              {t('prop.statusInactive')}
+                            </span>
+                          ) : (
+                            <button onClick={() => toggleActive(r)} disabled={busyId === r.id} className="text-[11px] font-semibold px-2.5 py-1 rounded-full disabled:opacity-50" style={inactive ? { border: `1px solid ${T.borderLight}`, color: T.textBody, background: 'transparent' } : { background: T.textPrimary, color: T.bgWhite }}>
+                              {inactive ? t('prop.statusInactive') : t('prop.statusActive')}
+                            </button>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex gap-1.5 justify-end">

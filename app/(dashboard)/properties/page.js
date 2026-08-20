@@ -3,6 +3,7 @@ import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import { getUsdToPyg } from '@/lib/fx';
 import { buildingsParts, landOrGroup } from '@/lib/land';
+import { validateListing } from '@/lib/ingest';
 import PropertiesView from '@/components/PropertiesView';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,7 @@ export default async function PropertiesPage({ searchParams }) {
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
 
   const parts = [
-    'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,admin_status,status,feature_image_url,external_id,external_url,scrape_sources(name)',
+    'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,scrape_sources(name)',
     'order=created_at.desc',
     `limit=${PAGE_SIZE}`,
     `offset=${offset}`,
@@ -64,6 +65,9 @@ export default async function PropertiesPage({ searchParams }) {
   }
 
   const rate = await getUsdToPyg(); // guaraníes per 1 USD (live, cached)
+  // Flag rows that fail the buyer completeness gate — they are "active" in
+  // admin_status but hidden from the site, so the UI shows them as inactive.
+  rows = rows.map((r) => ({ ...r, _incomplete: !validateListing(r, rate).ok }));
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
   return (

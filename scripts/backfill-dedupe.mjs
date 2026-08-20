@@ -84,7 +84,7 @@ function normalizeZone(row) {
 }
 function dedupeKey(row, zoneCanonical) {
   const zone = strip(zoneCanonical || row.city || row.neighborhood);
-  const type = isLandType(row.property_type) ? 'land' : strip(row.property_type).slice(0, 12);
+  const type = isLandType(row.property_type) ? 'land' : 'bldg';
   const area = Number(row.covered_area) || Number(row.floor_area) || Number(row.land_area) || null;
   const price = Number(row.price) || null;
   const beds = row.bedrooms != null ? Number(row.bedrooms) : null;
@@ -112,7 +112,7 @@ async function main() {
       const { zone_canonical } = normalizeZone(r);
       const dk = dedupeKey(r, zone_canonical);
       const patch = {};
-      if (dk && r.dedupe_key == null) patch.dedupe_key = dk;
+      if (dk) patch.dedupe_key = dk; // overwrite: key format is type-agnostic now
       if (zone_canonical && r.zone_canonical == null) patch.zone_canonical = zone_canonical;
       if (!Object.keys(patch).length) continue;
       if (patch.dedupe_key) keyed++;

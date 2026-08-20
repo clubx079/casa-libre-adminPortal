@@ -29,6 +29,7 @@ export async function POST(req) {
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null;
   if (!name || !url) return NextResponse.json({ error: 'Nombre y URL son requeridos' }, { status: 400 });
+  if (!/^https?:\/\//i.test(url)) return NextResponse.json({ error: 'La URL debe empezar con http:// o https://' }, { status: 400 });
 
   try {
     const [row] = await insert('scraper_registry', [{ name, url, description, status: 'pending' }], { returning: 'representation' });

@@ -173,7 +173,7 @@ export default function ScraperStatusPage() {
                   <td className="px-4 py-3 text-[13px] font-medium" style={{ color: T.textPrimary }}>{r.name}</td>
                   <td className="px-4 py-3 text-xs max-w-[220px]">
                     <a
-                      href={r.url}
+                      href={/^https?:\/\//i.test(r.url || '') ? r.url : undefined}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="truncate block underline"

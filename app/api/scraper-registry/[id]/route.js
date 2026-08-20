@@ -24,6 +24,9 @@ export async function PATCH(req, { params }) {
   const patch = {};
   for (const k of EDITABLE) if (k in body) patch[k] = body[k] === '' ? null : body[k];
   if (!Object.keys(patch).length) return NextResponse.json({ error: 'Nada para actualizar' }, { status: 400 });
+  if (patch.url != null && !/^https?:\/\//i.test(String(patch.url))) {
+    return NextResponse.json({ error: 'La URL debe empezar con http:// o https://' }, { status: 400 });
+  }
   patch.updated_at = new Date().toISOString();
 
   try {

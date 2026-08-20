@@ -13,7 +13,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();
 
-  const cols = 'id,email,full_name,phone,verified,active,auth_provider,created_at,last_login_at';
+  const cols = 'id,email,full_name,phone,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
   let query = `select=${cols}&order=created_at.desc&limit=500`;
   if (q) {
     // case-insensitive match on email or name

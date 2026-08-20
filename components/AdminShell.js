@@ -11,6 +11,7 @@ const NAV = [
   ['/analytics', 'Analytics', 'chart'],
   ['/scrape', 'Scrapers', 'scrape'],
   ['/scraper-status', 'Scraper Status', 'scrape'],
+  ['/quarantine', 'Quarantine', 'shield'],
   ['/reports', 'Reports', 'runs'],
   ['/properties', 'Properties', 'home'],
   ['/runs', 'Runs', 'runs'],
@@ -61,6 +62,13 @@ function Icon({ name }) {
         <path d="M3 12a9 9 0 1 0 3-6.7" />
         <path d="M3 3v4h4" />
         <path d="M12 8v4l3 2" />
+      </svg>
+    );
+  if (name === 'shield')
+    return (
+      <svg {...p}>
+        <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" />
+        <path d="M9 12l2 2 4-4" />
       </svg>
     );
   // chart

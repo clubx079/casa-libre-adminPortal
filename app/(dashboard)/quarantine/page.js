@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ShieldAlert, ExternalLink } from 'lucide-react';
-import { REASON_LABELS } from '@/lib/ingestLabels';
+import { reasonLabel } from '@/lib/ingestLabels';
 
 const T = {
   textPrimary: '#111111',
@@ -40,6 +40,12 @@ export default function QuarantinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  // Language for reason labels — read from the admin's cl_lang cookie (client-side).
+  const [lang, setLang] = useState('es');
+  useEffect(() => {
+    const m = typeof document !== 'undefined' && document.cookie.match(/(?:^|;\s*)cl_lang=(\w+)/);
+    if (m && m[1] === 'en') setLang('en');
+  }, []);
 
   async function fetchRows(status) {
     setLoading(true); setError(false);
@@ -168,7 +174,7 @@ export default function QuarantinePage() {
                           <span key={code} className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full"
                             style={code === 'duplicate' ? { background: T.bgSurface, color: T.textSecondary } : { background: T.dangerSurface, color: T.danger }}
                             title={code}>
-                            {REASON_LABELS[code] || code}
+                            {reasonLabel(code, lang)}
                           </span>
                         ))}
                       </div>

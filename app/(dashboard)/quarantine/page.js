@@ -37,11 +37,15 @@ export default function QuarantinePage() {
   const [tab, setTab] = useState('pending');
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
+  const [reasonCounts, setReasonCounts] = useState({});
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [rate, setRate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [reason, setReason] = useState(null); // active reason filter (null = all)
+  const PAGE_SIZE = 50;
   // Language for reason labels — read from the admin's cl_lang cookie (client-side).
   const [lang, setLang] = useState('es');
   useEffect(() => {
@@ -49,18 +53,29 @@ export default function QuarantinePage() {
     if (m && m[1] === 'en') setLang('en');
   }, []);
 
-  async function fetchRows(status) {
+  async function fetchRows(status, reasonCode, pg) {
     setLoading(true); setError(false);
     try {
-      const res = await fetch(`/api/quarantine?status=${status}`, { cache: 'no-store' });
+      const params = new URLSearchParams({ status, page: String(pg), pageSize: String(PAGE_SIZE) });
+      if (reasonCode) params.set('reason', reasonCode);
+      const res = await fetch(`/api/quarantine?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
-      if (res.ok) { setRows(json.rows || []); setCounts(json.counts || {}); if (json.rate) setRate(json.rate); }
-      else setError(true);
+      if (res.ok) {
+        setRows(json.rows || []);
+        setCounts(json.counts || {});
+        setReasonCounts(json.reasonCounts || {});
+        setTotal(json.total || 0);
+        if (json.rate) setRate(json.rate);
+      } else setError(true);
     } catch { setError(true); }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { fetchRows(tab); setReason(null); }, [tab]);
+  // One effect drives every fetch — tab, reason, or page change all refetch.
+  useEffect(() => { fetchRows(tab, reason, page); }, [tab, reason, page]);
+
+  const selectTab = (k) => { setTab(k); setReason(null); setPage(1); };
+  const selectReason = (code) => { setReason((cur) => (cur === code ? null : code)); setPage(1); };
 
   async function act(row, action) {
     setBusyId(row.id);
@@ -72,23 +87,22 @@ export default function QuarantinePage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      // Row leaves the current (pending) view; drop it and adjust counts.
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
-      setCounts((c) => ({
-        ...c,
-        [tab]: Math.max(0, (c[tab] || 1) - 1),
-        [action === 'release' ? 'released' : 'discarded']: (c[action === 'release' ? 'released' : 'discarded'] || 0) + 1,
-      }));
+      // Row leaves this view; refetch so totals, reason counts and pagination
+      // stay exact. Step back a page if we just emptied the last one.
+      const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
+      if (nextPage !== page) setPage(nextPage);
+      else fetchRows(tab, reason, page);
     } catch {
       // leave the row; a manual refresh reflects the true state
     } finally { setBusyId(null); }
   }
 
-  // Reason filter — chips derived from the reasons present in the current rows.
-  const reasonCounts = {};
-  for (const r of rows) for (const c of (r.reasons || [])) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
+  // Reason chips come from the server (exact counts across the whole status),
+  // sorted most-common first. Rows are already server-filtered + paginated.
   const reasonList = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
-  const visibleRows = reason ? rows.filter((r) => (r.reasons || []).includes(reason)) : rows;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <div className="space-y-5">
@@ -108,7 +122,7 @@ export default function QuarantinePage() {
           return (
             <button
               key={k}
-              onClick={() => setTab(k)}
+              onClick={() => selectTab(k)}
               className="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-1.5 rounded-full border transition-colors"
               style={on
                 ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
@@ -131,7 +145,7 @@ export default function QuarantinePage() {
         <div className="flex items-center flex-wrap gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={{ color: T.textMuted }}>Reason</span>
           <button
-            onClick={() => setReason(null)}
+            onClick={() => selectReason(null)}
             className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
             style={reason === null
               ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
@@ -140,7 +154,7 @@ export default function QuarantinePage() {
             All
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
               style={reason === null ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
-              {rows.length}
+              {counts[tab] ?? '—'}
             </span>
           </button>
           {reasonList.map(([code, n]) => {
@@ -148,7 +162,7 @@ export default function QuarantinePage() {
             return (
               <button
                 key={code}
-                onClick={() => setReason(on ? null : code)}
+                onClick={() => selectReason(code)}
                 title={code}
                 className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
                 style={on
@@ -191,7 +205,7 @@ export default function QuarantinePage() {
                 ))
               ) : error ? (
                 <tr><td colSpan={6} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load the quarantine queue. Check the DB connection.</td></tr>
-              ) : visibleRows.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
@@ -201,7 +215,7 @@ export default function QuarantinePage() {
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>Records the ingest pipeline holds back will appear here.</p>
                   </td>
                 </tr>
-              ) : visibleRows.map((r) => {
+              ) : rows.map((r) => {
                 const p = r.payload || {};
                 return (
                   <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
@@ -261,6 +275,38 @@ export default function QuarantinePage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {!loading && !error && total > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <p className="text-[12px]" style={{ color: T.textSecondary }}>
+            Showing <span className="font-semibold" style={{ color: T.textPrimary }}>{rangeStart}–{rangeEnd}</span> of{' '}
+            <span className="font-semibold" style={{ color: T.textPrimary }}>{total.toLocaleString()}</span>
+            {reason ? <> · <span style={{ color: T.textMuted }}>{reasonLabel(reason, lang)}</span></> : null}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(1)} disabled={page <= 1}
+              className="text-[12px] font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+              style={{ background: '#fff', color: T.textBody, borderColor: T.borderLight }}>« First</button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+              className="text-[12px] font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+              style={{ background: '#fff', color: T.textBody, borderColor: T.borderLight }}>‹ Prev</button>
+            <span className="text-[12px] font-mono px-3 py-1.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>
+              Page {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+              className="text-[12px] font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+              style={{ background: '#fff', color: T.textBody, borderColor: T.borderLight }}>Next ›</button>
+            <button
+              onClick={() => setPage(totalPages)} disabled={page >= totalPages}
+              className="text-[12px] font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+              style={{ background: '#fff', color: T.textBody, borderColor: T.borderLight }}>Last »</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

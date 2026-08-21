@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ShieldAlert, ExternalLink } from 'lucide-react';
+import { ShieldAlert, ExternalLink, ChevronDown } from 'lucide-react';
 import { reasonLabel } from '@/lib/ingestLabels';
 import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
 
@@ -75,7 +75,7 @@ export default function QuarantinePage() {
   useEffect(() => { fetchRows(tab, reason, page); }, [tab, reason, page]);
 
   const selectTab = (k) => { setTab(k); setReason(null); setPage(1); };
-  const selectReason = (code) => { setReason((cur) => (cur === code ? null : code)); setPage(1); };
+  const selectReason = (code) => { setReason(code || null); setPage(1); };
 
   async function act(row, action) {
     setBusyId(row.id);
@@ -140,43 +140,32 @@ export default function QuarantinePage() {
         })}
       </div>
 
-      {/* Reason filters */}
+      {/* Reason filter (dropdown) */}
       {reasonList.length > 0 && (
-        <div className="flex items-center flex-wrap gap-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={{ color: T.textMuted }}>Reason</span>
-          <button
-            onClick={() => selectReason(null)}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
-            style={reason === null
-              ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
-              : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
-          >
-            All
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-              style={reason === null ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
-              {counts[tab] ?? '—'}
-            </span>
-          </button>
-          {reasonList.map(([code, n]) => {
-            const on = reason === code;
-            return (
-              <button
-                key={code}
-                onClick={() => selectReason(code)}
-                title={code}
-                className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
-                style={on
-                  ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
-                  : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
-              >
-                {reasonLabel(code, lang)}
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-                  style={on ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
-                  {n}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textMuted }}>Reason</span>
+          <div className="relative inline-block">
+            <select
+              value={reason || ''}
+              onChange={(e) => selectReason(e.target.value)}
+              className="appearance-none text-[13px] font-medium pl-3.5 pr-9 py-1.5 rounded-full border outline-none cursor-pointer"
+              style={reason
+                ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
+                : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
+            >
+              <option value="">All reasons ({counts[tab] ?? 0})</option>
+              {reasonList.map(([code, n]) => (
+                <option key={code} value={code}>{reasonLabel(code, lang)} ({n})</option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: reason ? '#fff' : T.textMuted }} />
+          </div>
+          {reason && (
+            <button onClick={() => selectReason('')} className="text-[12px] font-medium underline" style={{ color: T.textSecondary }}>
+              Clear
+            </button>
+          )}
         </div>
       )}
 

@@ -41,6 +41,7 @@ export default function QuarantinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [reason, setReason] = useState(null); // active reason filter (null = all)
   // Language for reason labels — read from the admin's cl_lang cookie (client-side).
   const [lang, setLang] = useState('es');
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function QuarantinePage() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { fetchRows(tab); }, [tab]);
+  useEffect(() => { fetchRows(tab); setReason(null); }, [tab]);
 
   async function act(row, action) {
     setBusyId(row.id);
@@ -82,6 +83,12 @@ export default function QuarantinePage() {
       // leave the row; a manual refresh reflects the true state
     } finally { setBusyId(null); }
   }
+
+  // Reason filter — chips derived from the reasons present in the current rows.
+  const reasonCounts = {};
+  for (const r of rows) for (const c of (r.reasons || [])) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
+  const reasonList = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
+  const visibleRows = reason ? rows.filter((r) => (r.reasons || []).includes(reason)) : rows;
 
   return (
     <div className="space-y-5">
@@ -119,6 +126,46 @@ export default function QuarantinePage() {
         })}
       </div>
 
+      {/* Reason filters */}
+      {reasonList.length > 0 && (
+        <div className="flex items-center flex-wrap gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={{ color: T.textMuted }}>Reason</span>
+          <button
+            onClick={() => setReason(null)}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
+            style={reason === null
+              ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
+              : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
+          >
+            All
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
+              style={reason === null ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
+              {rows.length}
+            </span>
+          </button>
+          {reasonList.map(([code, n]) => {
+            const on = reason === code;
+            return (
+              <button
+                key={code}
+                onClick={() => setReason(on ? null : code)}
+                title={code}
+                className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1 rounded-full border transition-colors"
+                style={on
+                  ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
+                  : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
+              >
+                {reasonLabel(code, lang)}
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
+                  style={on ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
+                  {n}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="bg-white overflow-hidden" style={CARD}>
         <div className="cl-scroll" style={{ maxHeight: 600, overflow: 'auto' }}>
           <table className="w-full min-w-[1080px]">
@@ -144,15 +191,17 @@ export default function QuarantinePage() {
                 ))
               ) : error ? (
                 <tr><td colSpan={6} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load the quarantine queue. Check the DB connection.</td></tr>
-              ) : rows.length === 0 ? (
+              ) : visibleRows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
-                    <p className="text-sm font-medium" style={{ color: T.textSecondary }}>Nothing {tab}</p>
+                    <p className="text-sm font-medium" style={{ color: T.textSecondary }}>
+                      {reason ? `No ${tab} records for “${reasonLabel(reason, lang)}”` : `Nothing ${tab}`}
+                    </p>
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>Records the ingest pipeline holds back will appear here.</p>
                   </td>
                 </tr>
-              ) : rows.map((r) => {
+              ) : visibleRows.map((r) => {
                 const p = r.payload || {};
                 return (
                   <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>

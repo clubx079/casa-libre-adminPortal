@@ -187,7 +187,7 @@ export default function AdminShell({ admin, lang = 'es', children }) {
           <LangSwitcher lang={lang} />
           <span className="hidden sm:inline text-[11px] font-mono tracking-label uppercase text-ink/40">Admin Portal</span>
         </div>
-        <main className="max-w-[1100px] mx-auto px-5 md:px-8 py-8">{children}</main>
+        <main className="w-full px-5 md:px-8 py-8">{children}</main>
       </div>
     </div>
   );

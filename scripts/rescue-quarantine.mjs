@@ -155,7 +155,7 @@ async function main() {
   const rows = (await (await rest(q)).json()).filter((r) => r.scrape_sources); // only known sources
   console.log(`loaded ${rows.length} pending quarantine rows`);
 
-  const stat = { rescued: 0, still_bad: 0, dup: 0, errs: 0 };
+  const stat = { rescued: 0, already_live: 0, still_bad: 0, dup: 0, errs: 0 };
   const stillReasons = {};
   await pool(rows, 5, async (row) => {
     try {
@@ -181,6 +181,15 @@ async function main() {
       const v = validateListing(p, rate);
       if (!v.ok) { stat.still_bad++; for (const r of v.reasons) stillReasons[r] = (stillReasons[r] || 0) + 1; return; }
 
+      // Already in properties (a later scrape inserted it; this quarantine row is
+      // stale from before the fix)? The live row is current — just clear the
+      // stale quarantine entry, never overwrite it with this older payload.
+      const already = await (await rest(`properties?select=id&source_id=eq.${row.source_id}&external_id=eq.${encodeURIComponent(row.external_id)}&limit=1`)).json();
+      if (already.length) {
+        if (!DRY) await rest(`ingest_quarantine?id=eq.${row.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+        stat.already_live++; return;
+      }
+
       // dedup: don't promote a collision with an already-active listing
       if (p.dedupe_key) {
         const dups = await (await rest(`properties?select=id,external_id&dedupe_key=eq.${encodeURIComponent(p.dedupe_key)}&admin_status=eq.active&is_delisted=eq.false&limit=1`)).json();
@@ -189,15 +198,15 @@ async function main() {
 
       if (!DRY) {
         const ts = new Date().toISOString();
-        await rest('properties', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=merge-duplicates' }, body: JSON.stringify([{ ...p, source_hash: null, first_scraped_at: ts, last_scraped_at: ts, last_seen_at: ts, is_delisted: false }]) });
+        await rest('properties', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify([{ ...p, source_hash: null, first_scraped_at: ts, last_scraped_at: ts, last_seen_at: ts, is_delisted: false }]) });
         await rest(`ingest_quarantine?id=eq.${row.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
       }
       stat.rescued++;
-      if (stat.rescued % 25 === 0) console.log(`  rescued ${stat.rescued} · still_bad ${stat.still_bad} · dup ${stat.dup} · errs ${stat.errs}`);
+      if (stat.rescued % 25 === 0) console.log(`  rescued ${stat.rescued} · already_live ${stat.already_live} · still_bad ${stat.still_bad} · dup ${stat.dup} · errs ${stat.errs}`);
     } catch { stat.errs++; }
   });
 
-  console.log(`\n== DONE ${DRY ? '(dry-run) ' : ''}rescued ${stat.rescued} · still_bad ${stat.still_bad} · dup ${stat.dup} · errs ${stat.errs} ==`);
+  console.log(`\n== DONE ${DRY ? '(dry-run) ' : ''}rescued ${stat.rescued} · already_live ${stat.already_live} · still_bad ${stat.still_bad} · dup ${stat.dup} · errs ${stat.errs} ==`);
   console.log('remaining reasons on still-bad:', stillReasons);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

@@ -13,6 +13,7 @@ const NAV = [
   ['/scraper-status', 'Scraper Status', 'scrape'],
   ['/quarantine', 'Quarantine', 'shield'],
   ['/reports', 'Reports', 'runs'],
+  ['/contacts', 'Contacts', 'chart'],
   ['/partners', 'Partners', 'users'],
   ['/properties', 'Properties', 'home'],
   ['/runs', 'Runs', 'runs'],

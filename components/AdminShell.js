@@ -14,6 +14,7 @@ const NAV = [
   ['/quarantine', 'Quarantine', 'shield'],
   ['/reports', 'Reports', 'runs'],
   ['/contacts', 'Contacts', 'chart'],
+  ['/feedbacks', 'Feedback', 'shield'],
   ['/partners', 'Partners', 'users'],
   ['/properties', 'Properties', 'home'],
   ['/runs', 'Runs', 'runs'],

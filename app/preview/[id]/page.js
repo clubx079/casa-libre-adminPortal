@@ -41,7 +41,11 @@ export default async function PreviewPage({ params }) {
     p.floor_area != null && [`${p.floor_area} m²`, t('preview.area')],
     p.parking_spaces != null && [p.parking_spaces, t('preview.parking')],
   ].filter(Boolean);
-  const features = Array.isArray(p.features) ? p.features.filter((x) => typeof x === 'string') : [];
+  // Features may be strings OR objects ({ FeatureName, ... } from RE/MAX) — map
+  // to label strings so object-shaped features show (and never render as a child).
+  const features = Array.isArray(p.features)
+    ? p.features.map((x) => (typeof x === 'string' ? x : (x && (x.FeatureName || x.name || x.label)) || '')).map((s) => String(s).trim()).filter(Boolean)
+    : [];
 
   return (
     <div className="min-h-screen bg-paper text-ink">

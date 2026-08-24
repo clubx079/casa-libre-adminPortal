@@ -53,7 +53,7 @@ async function detect(buf, w, h) {
 
 async function lama(imageUrl, box) {
   try {
-    const res = await fetch(`${LAMA}/clean`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_url: imageUrl, mask: 'bbox', boxes: [box] }), signal: AbortSignal.timeout(150000) });
+    const res = await fetch(`${LAMA}/clean`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_url: imageUrl, mask: 'bbox', boxes: [box] }), signal: AbortSignal.timeout(240000) });
     if (!res.ok) return null;
     const { clean_url } = await res.json().catch(() => ({})); if (!clean_url) return null;
     const img = await fetch(clean_url, { signal: AbortSignal.timeout(60000) }); if (!img.ok) return null;
@@ -74,6 +74,17 @@ for (let off = 0; ; off += 1000) {
 }
 console.log(`[lama] non-remax clean-* images to re-clean ${rows.length}`);
 if (!APPLY) { console.log('[lama] DRY RUN — pass --apply. Sample:', rows.slice(0, 3).map((x) => x.source_url)); process.exit(0); }
+
+// Prioritise images on ACTIVE, non-delisted listings so the user-visible ones
+// clean up first (LaMa is slow; the long tail can finish afterwards).
+const active = new Set();
+for (let off = 0; ; off += 1000) {
+  const r = await fetch(`${DB}/rest/v1/properties?admin_status=eq.active&is_delisted=eq.false&select=id&limit=1000&offset=${off}`, { headers: H });
+  const b = await r.json(); if (!Array.isArray(b) || !b.length) break; b.forEach((x) => active.add(x.id)); if (b.length < 1000) break;
+}
+rows.sort((a, b) => (active.has(b.property_id) ? 1 : 0) - (active.has(a.property_id) ? 1 : 0));
+const activeCount = rows.filter((x) => active.has(x.property_id)).length;
+console.log(`[lama] active listings ${active.size} · active images (done first) ${activeCount} · inactive tail ${rows.length - activeCount}`);
 
 const workRows = LIMIT ? rows.slice(0, LIMIT) : rows;
 let done = 0, recleaned = 0, noregion = 0, lamafail = 0, errs = 0;
@@ -105,6 +116,6 @@ async function one(im) {
   } catch { errs++; }
   done++; if (done % 50 === 0) console.log(`[lama] ${done}/${workRows.length} · recleaned ${recleaned} · no-region ${noregion} · lama-fail ${lamafail} · errs ${errs}`);
 }
-const N = 3; let idx = 0;   // LaMa is a single model instance — keep concurrency low
+const N = 2; let idx = 0;   // CPU LaMa: a single call is ~112s and contention pushes concurrent calls past timeout — keep it at 2
 await Promise.all(Array.from({ length: N }, async () => { while (idx < workRows.length) await one(workRows[idx++]); }));
 console.log(`[lama] DONE — processed ${done} · recleaned ${recleaned} · no-region ${noregion} · lama-fail ${lamafail} · errors ${errs}`);

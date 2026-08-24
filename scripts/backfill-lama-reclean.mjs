@@ -14,7 +14,7 @@
 //   node scripts/backfill-lama-reclean.mjs --apply --limit 15
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
 import sharp from 'sharp';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 for (const line of fs.readFileSync(path.join(ROOT, '..', '.env.local'), 'utf8').split('\n')) {
   const t = line.trim(); if (!t || t.startsWith('#')) continue; const i = t.indexOf('='); if (i < 0) continue;
@@ -30,6 +30,7 @@ const s3 = new S3Client({ endpoint: process.env.B2_S3_ENDPOINT, region: process.
 const BUCKET = process.env.B2_BUCKET;
 const V = 'https://vision.googleapis.com/v1/images:annotate';
 const MAX_EDGE = 1280;
+const mediaUrl = (k) => `/api/media/${k.split('/').map(encodeURIComponent).join('/')}`;
 const toBox = (v) => { const xs = v.map((p) => p.x || 0), ys = v.map((p) => p.y || 0); return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) }; };
 
 // Vision LOGO+TEXT → padded pixel region on the WxH working image, or null.
@@ -88,7 +89,18 @@ async function one(im) {
     const cleaned = await lama(im.source_url, box);
     if (!cleaned) { lamafail++; return; }                   // LaMa failed → leave existing (no worse)
     const webp = await sharp(cleaned).rotate().resize(MAX_EDGE, MAX_EDGE, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 90 }).toBuffer();
-    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: im.storage_key, Body: webp, ContentType: 'image/webp' }));  // overwrite in place
+    // Write to a NEW key (clean- → lama-) so the URL changes and caches bust.
+    // The images ship with `Cache-Control: immutable, max-age=7d`, so overwriting
+    // the same URL in place would keep serving the old box for a week.
+    const dir = im.storage_key.includes('/') ? im.storage_key.split('/').slice(0, -1).join('/') : '';
+    const fname = im.storage_key.split('/').pop().replace(/^clean-/, 'lama-');
+    const newKey = dir ? `${dir}/${fname}` : fname;
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: newKey, Body: webp, ContentType: 'image/webp' }));
+    const url = mediaUrl(newKey);
+    const pr = await fetch(`${DB}/rest/v1/property_images?id=eq.${im.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ storage_key: newKey, storage_url: url, content_type: 'image/webp', bytes: String(webp.length) }) });
+    if (!pr.ok) { errs++; return; }
+    if (im.is_feature) await fetch(`${DB}/rest/v1/properties?id=eq.${im.property_id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify({ feature_image_url: url }) });
+    if (newKey !== im.storage_key) await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: im.storage_key })).catch(() => {});
     recleaned++;
   } catch { errs++; }
   done++; if (done % 50 === 0) console.log(`[lama] ${done}/${workRows.length} · recleaned ${recleaned} · no-region ${noregion} · lama-fail ${lamafail} · errs ${errs}`);

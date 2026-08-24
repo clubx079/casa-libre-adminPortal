@@ -12,6 +12,10 @@ export async function GET() {
     const rows = await select('feedback', 'select=*&order=created_at.desc&limit=1000');
     return NextResponse.json({ rows });
   } catch (e) {
-    return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
+    const msg = String(e?.message || e);
+    // Table not registered yet (migration/schema-cache pending) → render empty
+    // instead of a 500 that breaks the page.
+    if (/does not exist|PGRST205|schema cache|not find the table/i.test(msg)) return NextResponse.json({ rows: [], pending: true });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

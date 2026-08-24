@@ -12,6 +12,15 @@ for (const line of fs.readFileSync(path.join(ROOT,'..','.env.local'),'utf8').spl
   let v=t.slice(i+1).trim(); if((v.startsWith('"')&&v.endsWith('"'))||(v.startsWith("'")&&v.endsWith("'")))v=v.slice(1,-1);
   if(!(t.slice(0,i).trim() in process.env)) process.env[t.slice(0,i).trim()]=v;
 }
+// ⚠️ DEPRECATED — this script uses the OLD Sharp "stretch a strip over the box"
+// fill, which is exactly what produced the grey-box artifacts. It is superseded by
+// backfill-remax-clean.mjs (RE/MAX → clean /Large/ CDN variant) and
+// backfill-lama-reclean.mjs (everyone else → real LaMa inpaint). Do NOT run this;
+// it will reintroduce boxes. Left only for reference.
+if (process.env.FORCE_LEGACY_BOX !== '1') {
+  console.error('[wm] DEPRECATED — produces grey boxes. Use backfill-remax-clean.mjs + backfill-lama-reclean.mjs. Set FORCE_LEGACY_BOX=1 to override.');
+  process.exit(1);
+}
 const DB=process.env.AIROBASE_URL, KEY=process.env.AIROBASE_SECRET_KEY, VK=process.env.GOOGLE_VISION_API_KEY;
 const H={apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json'};
 const s3=new S3Client({endpoint:process.env.B2_S3_ENDPOINT,region:process.env.B2_REGION,credentials:{accessKeyId:process.env.B2_KEY_ID,secretAccessKey:process.env.B2_APP_KEY},forcePathStyle:true});

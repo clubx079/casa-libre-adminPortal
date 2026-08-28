@@ -4,6 +4,7 @@ import { select } from '@/lib/db';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import ScrapeDetail from '@/components/ScrapeDetail';
+import InfocasasPanel from '@/components/InfocasasPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,9 @@ export default async function SourceDetailPage({ params }) {
       <Link href="/scrape" className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: T.textSecondary }}>
         ← {t('detail.back')}
       </Link>
-      <ScrapeDetail source={source} lang={lang} />
+      {source.key === 'infocasas'
+        ? <InfocasasPanel source={source} lang={lang} />
+        : <ScrapeDetail source={source} lang={lang} />}
     </div>
   );
 }

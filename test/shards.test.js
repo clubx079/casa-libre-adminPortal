@@ -17,52 +17,65 @@ describe('nextDueShard', () => {
     update.mockReset();
   });
 
-  it('returns the top backfill shard, querying phase=backfill ordered by priority then last_run_at nulls-first', async () => {
+  it('returns a NEVER-RUN backfill shard from the explicit is.null query first (nullsfirst is unreliable)', async () => {
     const row = { id: 's1', phase: 'backfill', cursor: 0, priority: 10 };
     select.mockResolvedValueOnce([row]);
 
     const result = await nextDueShard('src-1');
 
     expect(result).toEqual(row);
-    expect(select).toHaveBeenCalledTimes(1); // no fallback query needed
+    expect(select).toHaveBeenCalledTimes(1); // fresh query hit — no fallback needed
     const [table, query] = select.mock.calls[0];
     expect(table).toBe('scrape_shards');
     expect(query).toContain('source_id=eq.src-1');
     expect(query).toContain('enabled=eq.true');
     expect(query).toContain('phase=eq.backfill');
+    expect(query).toContain('last_run_at=is.null'); // explicit never-run selection
     expect(query).toContain('priority.asc');
-    expect(query).toContain('last_run_at.asc.nullsfirst');
     expect(query).toContain('limit=1');
+    expect(query).not.toContain('nullsfirst'); // must NOT rely on the broken modifier
   });
 
-  it('falls back to the oldest-last_run_at (nulls first) incremental shard once no backfill shards remain', async () => {
-    select.mockResolvedValueOnce([]); // backfill query: none due
+  it('falls back to the oldest-run backfill shard when no never-run backfill shard exists', async () => {
+    select.mockResolvedValueOnce([]); // backfill is.null: none
+    const oldest = { id: 's1b', phase: 'backfill', last_run_at: '2026-01-01T00:00:00Z' };
+    select.mockResolvedValueOnce([oldest]); // backfill oldest
+
+    const result = await nextDueShard('src-1');
+
+    expect(result).toEqual(oldest);
+    expect(select).toHaveBeenCalledTimes(2);
+    const [, q1] = select.mock.calls[0];
+    expect(q1).toContain('last_run_at=is.null');
+    const [, q2] = select.mock.calls[1];
+    expect(q2).toContain('phase=eq.backfill');
+    expect(q2).toContain('priority.asc,last_run_at.asc');
+    expect(q2).not.toContain('is.null');
+    expect(q2).not.toContain('nullsfirst');
+  });
+
+  it('moves to incremental (never-run first) only once no backfill shards remain', async () => {
+    select.mockResolvedValueOnce([]); // backfill is.null: none
+    select.mockResolvedValueOnce([]); // backfill oldest: none
     const incRow = { id: 's2', phase: 'incremental', last_run_at: null };
-    select.mockResolvedValueOnce([incRow]);
+    select.mockResolvedValueOnce([incRow]); // incremental is.null
 
     const result = await nextDueShard('src-1');
 
     expect(result).toEqual(incRow);
-    expect(select).toHaveBeenCalledTimes(2);
-    const [table1, query1] = select.mock.calls[0];
-    expect(table1).toBe('scrape_shards');
-    expect(query1).toContain('phase=eq.backfill');
-    const [table2, query2] = select.mock.calls[1];
-    expect(table2).toBe('scrape_shards');
-    expect(query2).toContain('source_id=eq.src-1');
-    expect(query2).toContain('enabled=eq.true');
-    expect(query2).toContain('phase=eq.incremental');
-    expect(query2).toContain('last_run_at.asc.nullsfirst');
-    expect(query2).toContain('limit=1');
+    expect(select).toHaveBeenCalledTimes(3);
+    const [, q3] = select.mock.calls[2];
+    expect(q3).toContain('phase=eq.incremental');
+    expect(q3).toContain('last_run_at=is.null');
   });
 
   it('returns null when no shards are due in either phase', async () => {
-    select.mockResolvedValueOnce([]);
-    select.mockResolvedValueOnce([]);
+    select.mockResolvedValue([]); // every query: none
 
     const result = await nextDueShard('src-1');
 
     expect(result).toBeNull();
+    expect(select).toHaveBeenCalledTimes(4); // backfill is.null, backfill oldest, inc is.null, inc oldest
   });
 });
 

@@ -27,9 +27,13 @@ async function handle(req) {
   const filters = {
     params: shard.params,
     skip: isIncremental ? 0 : shard.cursor, // incremental always starts at newest
-    order: 0, // newest-first (confirmed in Task 5)
+    // order:3 is the confirmed newest-first (id-descending) value (Task 9 live
+    // probe); order:0 (used for backfill) is relevance, not recency — fine
+    // for backfill since it sweeps the whole slice regardless of order.
+    order: isIncremental ? 3 : 0,
     limit: isIncremental ? 60 : 250, // small incremental sweep; bounded backfill slice
     class: 'all',
+    ...(isIncremental ? { stopWhenKnown: true } : {}),
   };
   const { runId } = await startRun({ sourceKey: 'infocasas', filters, trigger: 'cron' });
   const summary = await runJob({ runId });

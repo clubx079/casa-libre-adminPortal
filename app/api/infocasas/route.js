@@ -68,7 +68,7 @@ export async function POST(req) {
     const filters = {
       params: shard.params,
       skip: isIncremental ? 0 : shard.cursor,
-      order: isIncremental ? 3 : 0,
+      order: 3, // newest-first for both phases (order:0 is price-desc → garbage-first)
       limit: bodyLimit,
       class: 'all',
       ...(isIncremental ? { stopWhenKnown: true } : {}),

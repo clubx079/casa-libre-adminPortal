@@ -42,10 +42,12 @@ async function handle(req) {
   const filters = {
     params: shard.params,
     skip: isIncremental ? 0 : shard.cursor, // incremental always starts at newest
-    // order:3 is the confirmed newest-first (id-descending) value (Task 9 live
-    // probe); order:0 (used for backfill) is relevance, not recency — fine
-    // for backfill since it sweeps the whole slice regardless of order.
-    order: isIncremental ? 3 : 0,
+    // order:3 = newest-first (id-descending), verified deterministic + stable
+    // across page boundaries (Task 9). Used for BOTH phases: order:0 turned out
+    // to be price-descending, which front-loads backfill with the most-expensive
+    // (mostly garbage, >$50M) listings; order:3 processes normal recent listings
+    // first and still paginates the whole slice via the cursor.
+    order: 3,
     limit,
     class: 'all',
     ...(isIncremental ? { stopWhenKnown: true } : {}),

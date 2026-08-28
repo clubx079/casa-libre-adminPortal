@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import * as client from '../lib/infocasasClient.js';
 import infocasas from '../lib/adapters/infocasas.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/infocasas/search-page.json', import.meta.url), 'utf8'));
@@ -30,5 +31,17 @@ describe('infocasas.mapListing', () => {
 
   it('external_id is the InfoCasas id', () => {
     expect(m.external_id).toBe(String(raw.id));
+  });
+});
+
+describe('infocasas.fetchPage', () => {
+  it('returns a window and enriches phones', async () => {
+    const spySearch = vi.spyOn(client, 'searchListing').mockResolvedValue({ items: fixture.data.searchListing.data, count: 3 });
+    const spyPhone = vi.spyOn(client, 'fetchPhone').mockResolvedValue({ phone: '+595981000000', name: 'Test' });
+    const { items } = await infocasas.fetchPage({ shard: { operation_type_id: 1, estate_id: 21 } }, {}, 0, 3);
+    expect(items.length).toBe(3);
+    expect(items[0].contact_phone).toBe('+595981000000');
+    spySearch.mockRestore();
+    spyPhone.mockRestore();
   });
 });

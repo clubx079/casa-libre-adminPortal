@@ -44,6 +44,7 @@ export default function QuarantinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [actErr, setActErr] = useState('');
   const [reason, setReason] = useState(null); // active reason filter (null = all)
   const PAGE_SIZE = 50;
   // Language for reason labels — read from the admin's cl_lang cookie (client-side).
@@ -78,7 +79,7 @@ export default function QuarantinePage() {
   const selectReason = (code) => { setReason(code || null); setPage(1); };
 
   async function act(row, action) {
-    setBusyId(row.id);
+    setBusyId(row.id); setActErr('');
     try {
       const res = await fetch(`/api/quarantine/${row.id}`, {
         method: 'PATCH',
@@ -92,8 +93,9 @@ export default function QuarantinePage() {
       const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
       if (nextPage !== page) setPage(nextPage);
       else fetchRows(tab, reason, page);
-    } catch {
-      // leave the row; a manual refresh reflects the true state
+    } catch (e) {
+      // Surface the failure instead of silently leaving the row in place.
+      setActErr(`${action === 'release' ? 'Release' : 'Discard'} failed: ${e.message || 'unknown error'}`);
     } finally { setBusyId(null); }
   }
 
@@ -114,6 +116,13 @@ export default function QuarantinePage() {
           </p>
         </div>
       </div>
+
+      {actErr ? (
+        <div className="text-xs px-4 py-2.5 rounded-[12px] flex items-center justify-between" style={{ background: T.dangerSurface, color: T.danger }}>
+          <span>{actErr}</span>
+          <button onClick={() => setActErr('')} className="font-semibold ml-3">✕</button>
+        </div>
+      ) : null}
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1.5">

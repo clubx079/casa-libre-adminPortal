@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 const STATUSES = ['pending', 'released', 'discarded'];
 // Reason codes the ingest pipeline emits (lib/ingest.validateListing + dedupe).
 const REASON_CODES = [
-  'no_price', 'no_contact', 'price_below_floor', 'sale_price_as_rent', 'duplicate',
-  'area_out_of_range', 'beds_over_cap', 'baths_over_cap', 'no_location', 'parking_over_cap',
+  'no_price', 'no_contact', 'price_below_floor', 'price_above_ceiling', 'sale_price_as_rent',
+  'duplicate', 'area_out_of_range', 'beds_over_cap', 'baths_over_cap', 'no_location', 'parking_over_cap',
 ];
 const DEFAULT_PAGE_SIZE = 50;
 

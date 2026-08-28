@@ -34,7 +34,10 @@ async function handle(req) {
   if (!shard) return NextResponse.json({ ok: true, done: 'no_due_shards' });
 
   const isIncremental = shard.phase === 'incremental';
-  const baseLimit = isIncremental ? 60 : 250; // small incremental sweep; bounded backfill slice
+  // Backfill batch size is configurable (source.config.tick_limit) so each tick
+  // fits the platform timeout — default 40, sized for the image-screen-skipped
+  // InfoCasas throughput (~10-15s/listing). Incremental sweeps stay small.
+  const baseLimit = isIncremental ? 60 : (Number(source.config?.tick_limit) || 40);
   const limit = bodyLimit != null ? Math.min(bodyLimit, baseLimit) : baseLimit;
   const filters = {
     params: shard.params,

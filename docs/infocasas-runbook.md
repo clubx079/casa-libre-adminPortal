@@ -27,9 +27,17 @@ delisting, pausing/stopping, expected throughput, and how to verify progress.
 ## 2. Backfill
 
 Schedule an **AiroBase Cron** job to `POST /api/cron/infocasas` every
-**3–5 minutes**, with header `Authorization: Bearer <CRON_SECRET>` (the same
+**~7 minutes**, with header `Authorization: Bearer <CRON_SECRET>` (the same
 `CRON_SECRET` env var the route checks — set it in AiroBase's cron secrets,
 not just the app's env).
+
+Why ~7 minutes: a tick can run up to `maxDuration = 300s` (5 min), and a
+heartbeat gap during a shard's detail-phone-fetch pool can make a live run
+look stale (`STALE_MS = 30s`). Scheduling the interval safely above
+`maxDuration` guarantees a new tick never overlaps/reaps a still-running one.
+(The cron's `getActiveRun` guard plus idempotent upserts make an occasional
+overlap self-healing anyway, but a >`maxDuration` interval avoids it
+entirely.)
 
 Each tick:
 - Skips if a run is already in flight for the source (`getActiveRun`).
@@ -66,7 +74,7 @@ incremental work only:
   unchanged listings is hit — the newest-first tail is caught up, no need to
   keep scanning known territory.
 
-With the same 3–5 minute cadence, a full incremental cycle over all shards
+With the same ~7 minute cadence, a full incremental cycle over all shards
 completes in **a few hours**, so every listing's `last_seen_at` gets refreshed
 several times a day as long as it's still live on InfoCasas.
 
@@ -102,7 +110,7 @@ not crash and does not require the migration to have run.
 
 Recommended schedule: a weekly manual run (or a separate low-frequency
 AiroBase Cron entry calling this script via a small wrapper endpoint, if
-automating it later) — it is intentionally **not** wired into the 3–5 minute
+automating it later) — it is intentionally **not** wired into the ~7 minute
 `/api/cron/infocasas` tick, since delisting is a batch judgment call, not a
 per-tick action.
 
@@ -111,9 +119,9 @@ per-tick action.
 Three ways, from least to most disruptive:
 
 - **Pause the whole source:** set `scrape_sources.is_active = false` for
-  `key = 'infocasas'`. (Note: the cron route itself doesn't currently check
-  `is_active` before running — the reliable way to pause is to disable or
-  remove the AiroBase Cron schedule itself, or disable shards as below.)
+  `key = 'infocasas'`. The cron route checks `is_active` before running and
+  returns `{ ok: true, skipped: 'source_inactive' }` when it's false, so this
+  is a real pause switch — no need to touch the AiroBase Cron schedule.
 - **Disable specific shards:** set `enabled = false` on rows in
   `scrape_shards` (e.g. to stop backfilling a low-value estate while leaving
   the rest running). `nextDueShard` only considers `enabled = true` shards.
@@ -132,7 +140,7 @@ isn't the InfoCasas GraphQL API (which is fast), it's the per-listing pipeline
 run for *every* item: detail-page fetch for phone capture, image screening,
 AI property-type classification, watermark removal, and B2 mirroring. With
 ~90k listings estimated across all of Paraguay, backfill takes on the order of
-**a day or two** of continuous 3–5 minute ticks.
+**a day or two** of continuous ~7 minute ticks.
 
 ## 7. Verification — how to check progress
 

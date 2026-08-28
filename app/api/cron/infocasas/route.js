@@ -15,6 +15,7 @@ async function handle(req) {
   }
 
   const source = await getSourceByKey('infocasas');
+  if (!source.is_active) return NextResponse.json({ ok: true, skipped: 'source_inactive' });
   if (await getActiveRun(source.id)) {
     // a shard is still running — skip this tick
     return NextResponse.json({ ok: true, skipped: 'run_in_progress' });

@@ -206,9 +206,6 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
           >
             <span className="font-mono text-[10px] uppercase tracking-label px-1.5 py-0.5 rounded bg-ink text-paper">{activeObj.code}</span>
             <span className="font-semibold">Viewing {activeObj.label}</span>
-            {activeObj.is_live && (
-              <span className="font-mono text-[10px] uppercase tracking-label px-1.5 py-0.5 rounded bg-[#C0392B] text-white">live · production data</span>
-            )}
             <span className="text-ink/50">— every screen &amp; action applies to this country&apos;s database.</span>
           </div>
         )}

@@ -57,11 +57,6 @@ export default function CountrySwitcher({ countries = [], active }) {
               >
                 <span className={codePill(c.code, on)}>{c.code}</span>
                 <span className="flex-1 truncate">{c.label}</span>
-                {c.is_live ? (
-                  <span className={`text-[9px] font-mono uppercase tracking-label px-1.5 py-0.5 rounded ${on ? 'bg-paper/20 text-paper' : 'bg-[#C0392B] text-white'}`}>live</span>
-                ) : (
-                  <span className={`text-[9px] font-mono uppercase tracking-label ${on ? 'text-paper/60' : 'text-ink/35'}`}>soon</span>
-                )}
               </button>
             );
           })}

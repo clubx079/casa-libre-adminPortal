@@ -37,7 +37,7 @@ export default async function PropertiesPage({ searchParams }) {
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
 
   const parts = [
-    'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,scrape_sources(name)',
+    'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,scrape_sources(name)',
     'order=created_at.desc',
     // "live" is admin-active AND complete (a code check), so we can't filter it at
     // the DB — fetch the full matching set and filter/paginate in code below.
@@ -65,12 +65,31 @@ export default async function PropertiesPage({ searchParams }) {
   }
 
   const rate = await getUsdToPyg(); // guaraníes per 1 USD (live, cached)
+
+  // For USER-listed properties (self-published, no scraper source) the "source"
+  // column should show WHO listed it — the user's email — not a blank. There is no
+  // FK properties.created_by → users, so resolve it with a manual lookup.
+  const listerIds = [...new Set(
+    all.filter((r) => r.created_by && !r.scrape_sources?.name).map((r) => r.created_by),
+  )];
+  let listerMap = {};
+  if (listerIds.length) {
+    try {
+      const inList = listerIds.map((id) => `"${id}"`).join(',');
+      const us = await select('users', `select=id,email,full_name&id=in.(${inList})`);
+      listerMap = Object.fromEntries(us.map((u) => [u.id, u.email || u.full_name || null]));
+    } catch { listerMap = {}; }
+  }
+
   // A property is LIVE on the buyer portal only when it is admin-active AND passes
   // the completeness gate. Compute it once so the Active/Inactive filter and the
   // status badge both reflect exactly what buyers see.
   const annotated = all.map((r) => {
     const complete = validateListing(r, rate).ok;
-    return { ...r, _incomplete: !complete, _live: r.admin_status === 'active' && complete };
+    const listerEmail = (r.origin === 'user' || (r.created_by && !r.scrape_sources?.name))
+      ? (listerMap[r.created_by] || null)
+      : null;
+    return { ...r, _listerEmail: listerEmail, _incomplete: !complete, _live: r.admin_status === 'active' && complete };
   });
   const matched = status === 'active' ? annotated.filter((r) => r._live)
     : status === 'inactive' ? annotated.filter((r) => !r._live)

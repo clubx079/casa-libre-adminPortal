@@ -186,8 +186,12 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                       {typeLabel(r.property_type, lang) && (
                         <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ border: `1px solid ${T.borderLight}`, color: T.textSecondary }}>{typeLabel(r.property_type, lang)}</span>
                       )}
-                      {r.scrape_sources?.name && (
-                        <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>{r.scrape_sources.name}</span>
+                      {(r._listerEmail || r.scrape_sources?.name) && (
+                        <span
+                          className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full max-w-[160px] truncate align-bottom"
+                          style={r._listerEmail ? { background: '#EEF3FB', color: '#2857A6' } : { background: T.bgSurface, color: T.textSecondary }}
+                          title={r._listerEmail ? `Listed by ${r._listerEmail}` : undefined}
+                        >{r._listerEmail || r.scrape_sources.name}</span>
                       )}
                     </div>
                     <div className="text-[11px] mt-2" style={{ color: T.textMuted }}>{specs(r)}</div>
@@ -244,7 +248,11 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                         </td>
                         <td className="px-3 py-2 text-xs whitespace-nowrap" style={{ color: T.textBody }}>{typeOf(r)}</td>
                         <td className="px-3 py-2">
-                          <span className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: T.bgSurface, color: T.textSecondary }}>{r.scrape_sources?.name || '—'}</span>
+                          {r._listerEmail ? (
+                            <span className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full max-w-[190px] truncate align-bottom" style={{ background: '#EEF3FB', color: '#2857A6' }} title={`Listed by ${r._listerEmail}`}>{r._listerEmail}</span>
+                          ) : (
+                            <span className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: T.bgSurface, color: T.textSecondary }}>{r.scrape_sources?.name || '—'}</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-xs" style={{ color: T.textBody }}>{r.city || '—'}</td>
                         <td className="px-3 py-2 text-xs font-bold tracking-head whitespace-nowrap" style={{ color: T.textPrimary }}>{fmtUsd(money(r).usd, loc)}{rentSfx(r)}</td>

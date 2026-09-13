@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { startRun, runJob, getActiveRun } from '@/lib/scrape';
 
 export const runtime = 'nodejs';
@@ -22,9 +23,9 @@ export async function POST(req) {
   if (!sourceKey) return NextResponse.json({ error: 'sourceKey requerido' }, { status: 400 });
 
   try {
-    const { runId, attached } = await startRun({ sourceKey, filters: filters || {}, trigger: 'manual' });
+    const { runId, attached, country } = await startRun({ sourceKey, filters: filters || {}, trigger: 'manual' });
     // fire-and-forget: keeps running on the server after the response is sent.
-    if (!attached) runJob({ runId }).catch(() => {});
+    if (!attached) runJob({ runId, country }).catch(() => {});
     return NextResponse.json({ runId, attached });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
@@ -35,6 +36,7 @@ export async function POST(req) {
 // GET /api/scrape?sourceKey=...  -> the active (running|paused) run for a source, if any
 export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select } = dbFor(activeCountry());
   const { searchParams } = new URL(req.url);
   const runId = searchParams.get('runId');
   const sourceKey = searchParams.get('sourceKey');

@@ -1,4 +1,5 @@
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import ScrapeBoard from '@/components/ScrapeBoard';
@@ -12,6 +13,7 @@ const T = {
 };
 
 export default async function ScrapePage() {
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
   let sources = [];

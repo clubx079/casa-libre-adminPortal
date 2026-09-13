@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { update } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ const STATUSES = ['open', 'reviewed', 'resolved'];
 // PATCH /api/reports/:id -> update status only (whitelisted)
 export async function PATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { update } = dbFor(activeCountry());
   let body;
   try {
     body = await req.json();

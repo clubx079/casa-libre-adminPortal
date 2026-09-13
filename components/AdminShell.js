@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import LangSwitcher from '@/components/LangSwitcher';
+import CountrySwitcher from '@/components/CountrySwitcher';
 
 const NAV = [
   ['/', 'Overview', 'dash'],
@@ -85,11 +86,12 @@ function Icon({ name }) {
   );
 }
 
-export default function AdminShell({ admin, lang = 'es', children }) {
+export default function AdminShell({ admin, lang = 'es', countries = [], activeCountry, children }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const router = useRouter();
   const initials = (admin?.name || admin?.email || '?').trim().charAt(0).toUpperCase();
+  const activeObj = countries.find((c) => c.code === activeCountry) || (activeCountry ? { code: activeCountry, label: activeCountry.toUpperCase(), is_live: false } : null);
 
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 
@@ -187,9 +189,30 @@ export default function AdminShell({ admin, lang = 'es', children }) {
             casa-libre<em className="font-serif italic font-normal">.py</em>
           </span>
           <div className="hidden lg:block flex-1" />
+          {countries.length > 0 && <CountrySwitcher countries={countries} active={activeCountry} />}
           <LangSwitcher lang={lang} />
           <span className="hidden sm:inline text-[11px] font-mono tracking-label uppercase text-ink/40">Admin Portal</span>
         </div>
+
+        {/* Active-country banner — makes it impossible to act on the wrong country's data. */}
+        {activeObj && (
+          <div
+            className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2 border-b text-[12px]"
+            style={{
+              background: activeObj.is_live ? '#FBEDE9' : '#EEF3FB',
+              borderColor: activeObj.is_live ? '#E7C3BB' : '#CFDCF0',
+              color: '#111',
+            }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-label px-1.5 py-0.5 rounded bg-ink text-paper">{activeObj.code}</span>
+            <span className="font-semibold">Viewing {activeObj.label}</span>
+            {activeObj.is_live && (
+              <span className="font-mono text-[10px] uppercase tracking-label px-1.5 py-0.5 rounded bg-[#C0392B] text-white">live · production data</span>
+            )}
+            <span className="text-ink/50">— every screen &amp; action applies to this country&apos;s database.</span>
+          </div>
+        )}
+
         <main className="w-full px-5 md:px-8 py-8">{children}</main>
       </div>
     </div>

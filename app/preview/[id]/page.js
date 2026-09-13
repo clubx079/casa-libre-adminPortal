@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getSession } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
 import { makeT, locale } from '@/lib/i18n';
@@ -13,6 +14,7 @@ export const dynamic = 'force-dynamic';
 // would look on the public Casa Libre site. Auth-gated (uses the secret key).
 export default async function PreviewPage({ params }) {
   if (!getSession()) redirect('/login');
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
   const loc = locale(lang);

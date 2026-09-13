@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import ScrapeDetail from '@/components/ScrapeDetail';
@@ -13,6 +14,7 @@ const T = {
 };
 
 export default async function SourceDetailPage({ params }) {
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
 

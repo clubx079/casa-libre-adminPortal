@@ -1,4 +1,5 @@
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import { getUsdToPyg } from '@/lib/fx';
@@ -16,6 +17,7 @@ const T = {
 const PAGE_SIZE = 24;
 
 export default async function PropertiesPage({ searchParams }) {
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
 

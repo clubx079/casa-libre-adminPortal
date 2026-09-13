@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { select, update, remove } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import * as b2 from '@/lib/b2';
 
 export const runtime = 'nodejs';
@@ -19,6 +20,7 @@ const EDITABLE = [
 // GET /api/properties/:id  -> property + its images
 export async function GET(_req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, update, remove } = dbFor(activeCountry());
   try {
     const rows = await select(
       'properties',
@@ -36,6 +38,7 @@ export async function GET(_req, { params }) {
 // PATCH /api/properties/:id  -> update editable fields (incl. admin_status toggle)
 export async function PATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, update, remove } = dbFor(activeCountry());
   let body;
   try {
     body = await req.json();
@@ -57,6 +60,7 @@ export async function PATCH(req, { params }) {
 // DELETE /api/properties/:id  -> delete property (cascades image rows) + purge B2 objects
 export async function DELETE(_req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, update, remove } = dbFor(activeCountry());
   try {
     const imgs = await select('property_images', `property_id=eq.${params.id}&select=storage_key`);
     // remove the row first (FK cascade drops property_images rows)

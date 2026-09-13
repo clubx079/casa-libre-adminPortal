@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { select, insert } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { sendScraperAddedEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
@@ -9,6 +10,7 @@ export const dynamic = 'force-dynamic';
 // GET /api/scraper-registry -> all registry rows, newest first
 export async function GET() {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, insert } = dbFor(activeCountry());
   try {
     const rows = await select('scraper_registry', 'select=*&order=created_at.desc');
     return NextResponse.json({ rows });
@@ -20,6 +22,7 @@ export async function GET() {
 // POST /api/scraper-registry -> propose a new site (enters as 'pending')
 export async function POST(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, insert } = dbFor(activeCountry());
   let body;
   try {
     body = await req.json();

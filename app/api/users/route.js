@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { selectWithCount } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,7 @@ export const dynamic = 'force-dynamic';
 // Casa Libre `users` table (server-side, secret key — RLS has no policies).
 export async function GET(request) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const { selectWithCount } = dbFor(activeCountry());
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();

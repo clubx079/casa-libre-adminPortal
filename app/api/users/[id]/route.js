@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { update } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,7 @@ const EDITABLE = ['blocked', 'suspended'];
 // PATCH /api/users/:id -> toggle block/suspend flags
 export async function PATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const { update } = dbFor(activeCountry());
 
   let body;
   try {

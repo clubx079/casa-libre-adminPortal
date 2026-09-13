@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { select, insert } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import * as b2 from '@/lib/b2';
 
 export const runtime = 'nodejs';
@@ -13,6 +14,7 @@ const slug = (s) => s.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+
 // Uploads an image to Backblaze and records it in property_images.
 export async function POST(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, insert, update } = dbFor(activeCountry());
 
   const [prop] = await select('properties', `id=eq.${params.id}&select=id,external_id,source_id,feature_image_url&limit=1`);
   if (!prop) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
@@ -53,7 +55,6 @@ export async function POST(req, { params }) {
       },
     ]);
     if (isFeature) {
-      const { update } = await import('@/lib/db');
       await update('properties', `id=eq.${params.id}`, { feature_image_url: up.url }, { returning: 'minimal' });
     }
     return NextResponse.json({ ok: true, image: row });

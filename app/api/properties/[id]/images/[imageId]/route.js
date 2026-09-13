@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { select, update, remove } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import * as b2 from '@/lib/b2';
 
 export const runtime = 'nodejs';
@@ -9,6 +10,7 @@ export const dynamic = 'force-dynamic';
 // DELETE /api/properties/:id/images/:imageId  -> remove from DB + Backblaze
 export async function DELETE(_req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, update, remove } = dbFor(activeCountry());
   try {
     const [img] = await select('property_images', `id=eq.${params.imageId}&property_id=eq.${params.id}&select=*&limit=1`);
     if (!img) return NextResponse.json({ error: 'No encontrada' }, { status: 404 });
@@ -35,6 +37,7 @@ export async function DELETE(_req, { params }) {
 // PATCH /api/properties/:id/images/:imageId  { feature: true }  -> set as cover
 export async function PATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, update, remove } = dbFor(activeCountry());
   let body;
   try { body = await req.json(); } catch { body = {}; }
   if (!body.feature) return NextResponse.json({ error: 'Nada para actualizar' }, { status: 400 });

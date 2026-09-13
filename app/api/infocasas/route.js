@@ -4,7 +4,8 @@
 // runs ONE bounded shard slice on demand (a manual/test tick).
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { selectWithCount, select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getSourceByKey, getActiveRun, startRun, runJob } from '@/lib/scrape';
 import { nextDueShard, advanceShard } from '@/lib/shards';
 
@@ -15,6 +16,7 @@ export const maxDuration = 300;
 const SRC_KEY = 'infocasas';
 
 async function shardStats(sourceId) {
+  const { selectWithCount, select } = dbFor(activeCountry());
   const [total, backfill, incremental] = await Promise.all([
     selectWithCount('scrape_shards', `select=id&source_id=eq.${sourceId}&limit=1`).then((r) => r.count).catch(() => null),
     selectWithCount('scrape_shards', `select=id&source_id=eq.${sourceId}&phase=eq.backfill&limit=1`).then((r) => r.count).catch(() => null),
@@ -26,6 +28,7 @@ async function shardStats(sourceId) {
 // GET /api/infocasas -> { source, shards, properties, quarantined, activeRun, recentRuns }
 export async function GET() {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { selectWithCount, select } = dbFor(activeCountry());
   try {
     const source = await getSourceByKey(SRC_KEY);
     const [shards, properties, quarantined, active, recentRuns] = await Promise.all([
@@ -73,8 +76,8 @@ export async function POST(req) {
       class: 'all',
       ...(isIncremental ? { stopWhenKnown: true } : {}),
     };
-    const { runId } = await startRun({ sourceKey: SRC_KEY, filters, trigger: 'manual' });
-    const summary = await runJob({ runId });
+    const { runId, country } = await startRun({ sourceKey: SRC_KEY, filters, trigger: 'manual' });
+    const summary = await runJob({ runId, country });
     const reachedEnd = summary.found < bodyLimit;
     await advanceShard(shard, { found: summary.found, inserted: summary.inserted, updated: summary.updated, reachedEnd });
     return NextResponse.json({ ok: true, shard: shard.shard_key, phase: shard.phase, ...summary, reachedEnd });

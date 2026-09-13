@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { selectWithCount } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getUsdToPyg } from '@/lib/fx';
 
 export const runtime = 'nodejs';
@@ -19,6 +20,7 @@ const DEFAULT_PAGE_SIZE = 50;
 // page through the whole queue (not just the first N).
 export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { selectWithCount } = dbFor(activeCountry());
   const { searchParams } = new URL(req.url);
   const status = STATUSES.includes(searchParams.get('status')) ? searchParams.get('status') : 'pending';
   const reason = REASON_CODES.includes(searchParams.get('reason')) ? searchParams.get('reason') : null;

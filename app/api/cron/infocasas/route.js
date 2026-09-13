@@ -52,8 +52,8 @@ async function handle(req) {
     class: 'all',
     ...(isIncremental ? { stopWhenKnown: true } : {}),
   };
-  const { runId } = await startRun({ sourceKey: 'infocasas', filters, trigger: 'cron' });
-  const summary = await runJob({ runId });
+  const { runId, country } = await startRun({ sourceKey: 'infocasas', filters, trigger: 'cron' });
+  const summary = await runJob({ runId, country });
   const reachedEnd = summary.found < limit; // fewer than asked ⇒ slice exhausted
   await advanceShard(shard, { found: summary.found, inserted: summary.inserted, updated: summary.updated, reachedEnd });
 

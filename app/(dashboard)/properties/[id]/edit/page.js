@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import PropertyEditor from '@/components/PropertyEditor';
@@ -8,6 +9,7 @@ import PropertyEditor from '@/components/PropertyEditor';
 export const dynamic = 'force-dynamic';
 
 export default async function EditPropertyPage({ params }) {
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
 

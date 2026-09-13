@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSession } from '@/lib/auth';
-import { select, insert, update } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,7 @@ const ACTIONS = ['release', 'discard'];
 export async function PATCH(req, { params }) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, insert, update } = dbFor(activeCountry());
 
   let body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }); }

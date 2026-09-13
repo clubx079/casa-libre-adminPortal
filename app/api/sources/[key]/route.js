@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { update } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const runtime = 'nodejs';
 
 // PATCH cron / activation settings for one source.
 export async function PATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { update } = dbFor(activeCountry());
   const key = params.key;
   let body;
   try {

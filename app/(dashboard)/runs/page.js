@@ -1,4 +1,5 @@
-import { select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT, locale } from '@/lib/i18n';
 
@@ -24,6 +25,7 @@ const STATUS = {
 };
 
 export default async function RunsPage() {
+  const { select } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
   let runs = [];

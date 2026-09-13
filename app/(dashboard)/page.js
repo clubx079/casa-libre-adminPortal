@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { selectWithCount, select } from '@/lib/db';
+import { dbFor } from '@/lib/db';
+import { activeCountry } from '@/lib/adminCountry';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ const T = {
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 async function getStats() {
+  const { selectWithCount, select } = dbFor(activeCountry());
   try {
     const [{ count: total }, verified, recent] = await Promise.all([
       selectWithCount('users', 'select=id&limit=1'),

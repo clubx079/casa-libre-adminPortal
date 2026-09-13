@@ -118,7 +118,7 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
       >
         <div className="flex items-center justify-between px-5 h-[68px] border-b border-ink/10 shrink-0">
           <Link href="/" className="text-[20px] font-bold tracking-head">
-            casa-libre<em className="font-serif italic font-normal">.py</em>
+            Casa Libre <em className="font-serif italic font-normal">Admin</em>
           </Link>
           <button
             onClick={() => setOpen(false)}
@@ -186,7 +186,7 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
             </svg>
           </button>
           <span className="lg:hidden text-[18px] font-bold tracking-head">
-            casa-libre<em className="font-serif italic font-normal">.py</em>
+            Casa Libre <em className="font-serif italic font-normal">Admin</em>
           </span>
           <div className="hidden lg:block flex-1" />
           {countries.length > 0 && <CountrySwitcher countries={countries} active={activeCountry} />}
@@ -199,8 +199,8 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
           <div
             className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2 border-b text-[12px]"
             style={{
-              background: activeObj.is_live ? '#FBEDE9' : '#EEF3FB',
-              borderColor: activeObj.is_live ? '#E7C3BB' : '#CFDCF0',
+              background: '#EEF3FB',
+              borderColor: '#CFDCF0',
               color: '#111',
             }}
           >

@@ -6,7 +6,21 @@ import { NextResponse } from 'next/server';
 // presence so unauthenticated traffic never reaches a protected page.
 const COOKIE = 'cl_admin_session';
 // /api/media = public image proxy (no session); /api/cron = Bearer CRON_SECRET auth.
-const PUBLIC = ['/login', '/api/auth/login', '/api/media', '/api/cron'];
+// The invite / password-recovery surface is reachable pre-login (logged-out users
+// set/reset their password) — the APIs validate the one-time token themselves.
+const PUBLIC = [
+  '/login',
+  '/api/auth/login',
+  '/api/media',
+  '/api/cron',
+  // Pre-login account flows (pages + their token-validated APIs):
+  '/aceptar-invitacion',
+  '/recuperar-clave',
+  '/restablecer-clave',
+  '/api/auth/accept-invite',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+];
 
 export function middleware(request) {
   const { pathname } = request.nextUrl;

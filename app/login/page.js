@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -72,6 +73,12 @@ export default function LoginPage() {
             className="w-full mb-1 px-3.5 py-2.5 rounded-input border border-ink/20 bg-card text-[14px] outline-none focus:border-ink/60 transition-colors"
             placeholder="••••••••"
           />
+
+          <div className="mt-2 text-right">
+            <Link href="/recuperar-clave" className="text-[12px] text-ink/55 hover:text-ink underline underline-offset-2">
+              Forgot password?
+            </Link>
+          </div>
 
           {error && <p className="mt-3 text-[12.5px] text-[#B0361F]">{error}</p>}
 

@@ -75,6 +75,13 @@ function Icon({ name }) {
         <path d="M9 12l2 2 4-4" />
       </svg>
     );
+  if (name === 'user')
+    return (
+      <svg {...p}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" />
+      </svg>
+    );
   // chart
   return (
     <svg {...p}>
@@ -92,6 +99,11 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
   const router = useRouter();
   const initials = (admin?.name || admin?.email || '?').trim().charAt(0).toUpperCase();
   const activeObj = countries.find((c) => c.code === activeCountry) || (activeCountry ? { code: activeCountry, label: activeCountry.toUpperCase(), is_live: false } : null);
+  const isSuper = admin?.role === 'superadmin';
+
+  // Super admins get a full "Team" screen; everyone else gets "Account" (same
+  // route, but the page only renders member management to superadmins).
+  const nav = [...NAV, isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user']];
 
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 
@@ -134,7 +146,7 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 pt-1 flex flex-col gap-1 cl-scroll">
-          {NAV.map(([href, label, ic]) => {
+          {nav.map(([href, label, ic]) => {
             const on = isActive(href);
             return (
               <Link

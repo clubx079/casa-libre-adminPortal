@@ -59,6 +59,8 @@ export default function UsersPage() {
   const [term, setTerm] = useState('');
   const [geoData, setGeoData] = useState({}); // ip -> { city, state, country }
   const [busy, setBusy] = useState(null); // { id, field } of the in-flight PATCH, or null
+  const [confirmUser, setConfirmUser] = useState(null); // user pending delete confirmation (opens the modal)
+  const [delErr, setDelErr] = useState(null);           // delete error, shown inside the modal
 
   useEffect(() => {
     let cancelled = false;
@@ -140,23 +142,26 @@ export default function UsersPage() {
     }
   }
 
-  // Permanently delete a user (admin cleanup of test accounts). Destructive, so it
-  // confirms first, then removes the row from the DB and the table on success.
-  async function deleteUser(u) {
-    const who = u.email || u.full_name || 'this user';
-    if (!window.confirm(`Delete ${who}?\n\nThis permanently removes the account and cannot be undone. Their published listings (if any) are kept.`)) return;
+  // Permanently delete a user (admin cleanup of test accounts). Destructive, so the
+  // row's Delete button opens a styled confirmation modal (below); confirmDelete()
+  // runs the actual DELETE and removes the row from the table on success.
+  async function confirmDelete() {
+    const u = confirmUser;
+    if (!u) return;
+    setDelErr(null);
     setBusy({ id: u.id, field: 'delete' });
     try {
       const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' });
       if (res.ok) {
         setUsers((prev) => prev.filter((x) => x.id !== u.id));
         setCount((c) => Math.max(0, c - 1));
+        setConfirmUser(null);
       } else {
         const j = await res.json().catch(() => ({}));
-        alert(`Couldn't delete: ${j.error || res.status}`);
+        setDelErr(`Couldn't delete: ${j.error || res.status}`);
       }
     } catch (e) {
-      alert(`Couldn't delete: ${String(e.message || e)}`);
+      setDelErr(`Couldn't delete: ${String(e.message || e)}`);
     } finally {
       setBusy(null);
     }
@@ -342,7 +347,7 @@ export default function UsersPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteUser(u)}
+                          onClick={() => { setDelErr(null); setConfirmUser(u); }}
                           disabled={busy?.id === u.id}
                           title="Delete user permanently"
                           className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50"
@@ -361,6 +366,60 @@ export default function UsersPage() {
       </div>
 
       <p className="text-[11px]" style={{ color: T.textMuted }}>Showing up to 500 most recent users. Activity opens their PostHog session timeline.</p>
+
+      {/* Delete confirmation modal — replaces the browser's native confirm(). */}
+      {confirmUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(17,17,17,0.45)', backdropFilter: 'blur(2px)' }}
+          onClick={() => { if (busy?.field !== 'delete') setConfirmUser(null); }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="w-full max-w-md bg-white p-6"
+            style={{ ...CARD, boxShadow: '0 24px 60px rgba(17,17,17,0.28)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full" style={{ background: T.dangerSurface }}>
+                <Trash2 className="w-5 h-5" style={{ color: T.danger }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[16px] font-bold tracking-head" style={{ color: T.textPrimary }}>Delete user</h3>
+                <p className="text-[13px] mt-1.5 leading-relaxed" style={{ color: T.textSecondary }}>
+                  Delete{' '}
+                  <span className="font-semibold break-all" style={{ color: T.textPrimary }}>{confirmUser.email || confirmUser.full_name || 'this user'}</span>?
+                  {' '}This permanently removes the account and cannot be undone. Their published listings, if any, are kept.
+                </p>
+                {delErr && (
+                  <p className="text-[12px] mt-3 px-3 py-2 rounded-[10px]" style={{ background: T.dangerSurface, color: T.danger }}>{delErr}</p>
+                )}
+              </div>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmUser(null)}
+                disabled={busy?.field === 'delete'}
+                className="text-[13px] font-medium px-4 py-2 rounded-full border transition-colors disabled:opacity-50"
+                style={{ borderColor: T.borderLight, background: T.bgWhite, color: T.textBody }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={busy?.field === 'delete'}
+                className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-60"
+                style={{ background: T.danger, color: '#FFFFFF' }}
+              >
+                {busy?.field === 'delete' ? 'Deleting…' : (<><Trash2 className="w-3.5 h-3.5" /> Delete user</>)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

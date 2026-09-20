@@ -10,11 +10,22 @@ import { typeLabel } from '@/lib/propertyType';
 
 export const dynamic = 'force-dynamic';
 
+// The public buyer-portal origin per country (the live sites — UY runs on a
+// subdomain, VE on its ccTLD). Used for the "Preview on buyer portal" link so it
+// opens the REAL public listing, not the in-admin preview.
+const BUYER_ORIGIN = {
+  py: 'https://casa-libre.com.py',
+  bo: 'https://casa-libre.com.bo',
+  uy: 'https://uy.casa-libre.com',
+  ve: 'https://casa-libre.com.ve',
+};
+
 // Standalone marketplace-style preview (no admin sidebar) — how the listing
 // would look on the public Casa Libre site. Auth-gated (uses the secret key).
 export default async function PreviewPage({ params }) {
   if (!getSession()) redirect('/login');
-  const { select } = dbFor(activeCountry());
+  const cc = activeCountry();
+  const { select } = dbFor(cc);
   const lang = getLang();
   const t = makeT(lang);
   const loc = locale(lang);
@@ -30,6 +41,9 @@ export default async function PreviewPage({ params }) {
     p = null;
   }
   if (!p) notFound();
+
+  // The real public listing URL on the country's buyer portal.
+  const publicUrl = `${BUYER_ORIGIN[cc] || BUYER_ORIGIN.py}/propiedad/${p.id}`;
 
   const imgs = (p.property_images || []).sort((a, b) => (b.is_feature - a.is_feature) || (a.position - b.position));
   const feature = imgs[0];
@@ -59,9 +73,22 @@ export default async function PreviewPage({ params }) {
       {/* simple marketplace nav */}
       <nav className="flex items-center justify-between px-6 md:px-11 py-4 border-b border-ink/10 max-w-[1200px] mx-auto">
         <span className="font-bold text-[22px] tracking-head">casa-libre<em className="font-serif italic font-normal">.py</em></span>
-        <span className="text-[11px] font-semibold px-3 py-1 rounded-pill bg-ink text-paper">
-          {p.listing_type === 'rent' ? t('preview.forRent') : t('preview.forSale')}
-        </span>
+        <div className="flex items-center gap-2">
+          <a
+            href={publicUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3.5 py-1.5 rounded-pill border-[1.5px] border-ink hover:bg-ink hover:text-paper transition-colors"
+          >
+            {lang === 'es' ? 'Ver en el sitio real' : 'Preview on buyer portal'}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 17 17 7M8 7h9v9" />
+            </svg>
+          </a>
+          <span className="text-[11px] font-semibold px-3 py-1 rounded-pill bg-ink text-paper">
+            {p.listing_type === 'rent' ? t('preview.forRent') : t('preview.forSale')}
+          </span>
+        </div>
       </nav>
 
       <main className="max-w-[1200px] mx-auto px-6 md:px-11 py-8">

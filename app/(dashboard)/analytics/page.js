@@ -378,6 +378,93 @@ const UserActivityDetail = ({ user, onBack }) => {
   );
 };
 
+// Donut: unique visitors by country, click a slice to drill into that
+// country's cities, back-arrow to return. Reads /api/analytics/posthog?type=geo.
+const PIE_COLORS = ['#111111', '#0F6E56', '#2F6DB4', '#B4531A', '#7A3E8E', '#C23B3B', '#3C8C7A', '#8A6D12'];
+const polar = (cx, cy, r, deg) => { const a = ((deg - 90) * Math.PI) / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+function arcPath(cx, cy, rO, rI, start, end) {
+  if (end - start >= 359.999) end = start + 359.999; // full ring guard
+  const large = end - start > 180 ? 1 : 0;
+  const [ox1, oy1] = polar(cx, cy, rO, start), [ox2, oy2] = polar(cx, cy, rO, end);
+  const [ix2, iy2] = polar(cx, cy, rI, end), [ix1, iy1] = polar(cx, cy, rI, start);
+  return `M ${ox1} ${oy1} A ${rO} ${rO} 0 ${large} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rI} ${rI} 0 ${large} 0 ${ix1} ${iy1} Z`;
+}
+const GeoDonut = () => {
+  const [level, setLevel] = useState('countries');
+  const [country, setCountry] = useState('');
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [hover, setHover] = useState(-1);
+  const load = async (c = '') => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/analytics/posthog?type=geo${c ? `&country=${encodeURIComponent(c)}` : ''}`);
+      const j = await res.json();
+      setRows(Array.isArray(j.rows) ? j.rows : []);
+      setLevel(j.level || (c ? 'cities' : 'countries'));
+      setCountry(c);
+    } catch { setRows([]); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(''); }, []);
+  const total = rows.reduce((s, r) => s + r.visitors, 0);
+  const top = rows.slice(0, 7);
+  const otherSum = rows.slice(7).reduce((s, r) => s + r.visitors, 0);
+  const slices = otherSum > 0 ? [...top, { name: 'Other', visitors: otherSum, _other: true }] : top;
+  let acc = 0;
+  const arcs = slices.map((s, i) => {
+    const frac = total > 0 ? s.visitors / total : 0;
+    const start = acc * 360; acc += frac; const end = acc * 360;
+    return { ...s, i, start, end, color: PIE_COLORS[i % PIE_COLORS.length], pct: Math.round(frac * 100) };
+  });
+  const drillable = (a) => !a._other && level === 'countries';
+  const cx = 90, cy = 90, rO = 82, rI = 50;
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center gap-2 mb-3">
+        {level === 'cities' && (
+          <button onClick={() => load('')} className="flex items-center justify-center w-6 h-6 rounded-full" style={{ border: `1px solid ${T.borderLight}` }} aria-label="Back to countries">
+            <ChevronLeft className="w-3.5 h-3.5" style={{ color: T.textSecondary }} />
+          </button>
+        )}
+        <MapPin className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{level === 'cities' ? `${country} — cities` : 'Visitors by country'}</h2>
+        <span className="text-[10px] ml-auto" style={{ color: T.textMuted }}>{level === 'countries' ? 'click a slice to drill in' : 'last 90 days'}</span>
+      </div>
+      {loading ? (
+        <div className="py-16 text-center text-xs" style={{ color: T.textMuted }}>Loading…</div>
+      ) : arcs.length === 0 ? (
+        <div className="py-16 text-center text-xs" style={{ color: T.textMuted }}>No data.</div>
+      ) : (
+        <div className="flex items-center gap-5 flex-wrap">
+          <svg width="180" height="180" viewBox="0 0 180 180" className="flex-shrink-0">
+            {arcs.map((a) => (
+              <path key={a.i} d={arcPath(cx, cy, rO, rI, a.start, a.end)} fill={a.color} stroke="#fff" strokeWidth="2"
+                style={{ cursor: drillable(a) ? 'pointer' : 'default', opacity: hover === -1 || hover === a.i ? 1 : 0.4, transition: 'opacity .15s' }}
+                onMouseEnter={() => setHover(a.i)} onMouseLeave={() => setHover(-1)}
+                onClick={() => drillable(a) && load(a.name)} />
+            ))}
+            <text x={cx} y={cy - 3} textAnchor="middle" style={{ fontSize: 24, fontWeight: 700, fill: T.textPrimary }}>{total}</text>
+            <text x={cx} y={cy + 15} textAnchor="middle" style={{ fontSize: 10, fill: T.textMuted }}>visitors</text>
+          </svg>
+          <div className="flex-1 min-w-[150px] space-y-1.5 max-h-[180px] overflow-y-auto cl-scroll">
+            {arcs.map((a) => (
+              <div key={a.i} className="flex items-center gap-2 text-xs"
+                onMouseEnter={() => setHover(a.i)} onMouseLeave={() => setHover(-1)}
+                style={{ cursor: drillable(a) ? 'pointer' : 'default', opacity: hover === -1 || hover === a.i ? 1 : 0.5 }}
+                onClick={() => drillable(a) && load(a.name)}>
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: a.color }} />
+                <span className="flex-1 truncate" style={{ color: T.textBody }}>{a.name}</span>
+                <span className="font-semibold" style={{ color: T.textPrimary }}>{a.visitors}</span>
+                <span className="w-8 text-right" style={{ color: T.textMuted }}>{a.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Users Analytics — user behaviour + funnel, read from PostHog.
 const UsersAnalytics = () => {
   const [data, setData] = useState(null);
@@ -388,6 +475,9 @@ const UsersAnalytics = () => {
   const [usersLoading, setUsersLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [resolveNote, setResolveNote] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+  useEffect(() => { setPage(0); }, [users.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -500,7 +590,8 @@ const UsersAnalytics = () => {
         ))}
       </div>
 
-      {/* User funnel */}
+      {/* User funnel + country donut, side by side */}
+      <div className="grid lg:grid-cols-2 gap-4 items-start">
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-4 h-4" style={{ color: T.primary }} />
@@ -531,6 +622,8 @@ const UsersAnalytics = () => {
           <p className="text-xs mt-3" style={{ color: T.textMuted }}>No events yet — data appears once users use the site.</p>
         )}
       </div>
+        <GeoDonut />
+      </div>
 
       {/* Users — click to drill into activity */}
       <div className="bg-white" style={CARD}>
@@ -538,7 +631,7 @@ const UsersAnalytics = () => {
           <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Users</h2>
           <span className="text-[10px]" style={{ color: T.textMuted }}>click a user to see their activity</span>
         </div>
-        <div className="overflow-x-auto cl-scroll">
+        <div className="cl-scroll" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 520 }}>
           <table className="w-full min-w-[900px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
@@ -552,7 +645,7 @@ const UsersAnalytics = () => {
                 <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
-              ) : users.map((u) => (
+              ) : users.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).map((u) => (
                 <tr key={u.is_anon && u.ip ? `ip:${u.ip}` : u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
                   onClick={() => setSelected(u)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
@@ -574,6 +667,24 @@ const UsersAnalytics = () => {
             </tbody>
           </table>
         </div>
+        {users.length > PAGE_SIZE && (
+          <div className="px-4 py-2.5 border-t flex items-center justify-between gap-2" style={{ borderColor: T.borderLight, background: T.bgSurface }}>
+            <span className="text-[11px]" style={{ color: T.textSecondary }}>
+              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, users.length)} of {users.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium border disabled:opacity-30" style={{ borderColor: T.borderLight, color: T.textBody, borderRadius: '999px', background: T.bgWhite }}>
+                <ChevronLeft className="w-3.5 h-3.5" /> Prev
+              </button>
+              <span className="text-[11px]" style={{ color: T.textMuted }}>Page {page + 1} of {Math.ceil(users.length / PAGE_SIZE)}</span>
+              <button onClick={() => setPage((p) => Math.min(Math.ceil(users.length / PAGE_SIZE) - 1, p + 1))} disabled={page >= Math.ceil(users.length / PAGE_SIZE) - 1}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium border disabled:opacity-30" style={{ borderColor: T.borderLight, color: T.textBody, borderRadius: '999px', background: T.bgWhite }}>
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {data?.project_url && (

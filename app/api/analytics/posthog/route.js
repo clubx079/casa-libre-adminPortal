@@ -40,10 +40,17 @@ async function hogql(query) {
 // the same IP collapse into ONE "person" in every count/funnel below.
 const UKEY = `if(coalesce(person.properties.email, '') != '', toString(person_id), coalesce(nullIf(properties.$ip, ''), 'unknown'))`;
 
+// Investor-facing geo policy. Pakistan (the dev team) is NEVER shown. Saudi
+// Arabia's historical test traffic is hidden, but any Saudi visits from the
+// cutoff date onward DO show. Applied to every aggregate query below. Uses
+// coalesce so events with an unresolved country are kept, not dropped.
+const HIDE_SAUDI_BEFORE = '2026-09-21';
+const GEO_FILTER = `coalesce(properties.$geoip_country_name, '') != 'Pakistan' AND NOT (coalesce(properties.$geoip_country_name, '') = 'Saudi Arabia' AND timestamp < toDateTime('${HIDE_SAUDI_BEFORE} 00:00:00'))`;
+
 const stepQuery = (event) => `
   SELECT count(DISTINCT ${UKEY}) AS c
   FROM events
-  WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY
+  WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
 `;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
@@ -70,7 +77,7 @@ async function usersList() {
       min(timestamp) AS first_seen,
       max(timestamp) AS last_seen
     FROM events
-    WHERE timestamp >= now() - INTERVAL 90 DAY
+    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
     GROUP BY idkey
     ORDER BY last_seen DESC
     LIMIT 300
@@ -215,6 +222,29 @@ async function userActivity({ personId, ip }) {
   return NextResponse.json({ configured: true, profile, activity });
 }
 
+// ── geo breakdown for the donut: unique visitors by country, or by city
+// within one country when ?country= is given. Honors the geo policy. ──
+async function geoBreakdown(country) {
+  const q = (s) => String(s || '').replace(/'/g, "''");
+  if (country) {
+    const rows = await hogql(`
+      SELECT coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS name,
+             count(DISTINCT ${UKEY}) AS visitors
+      FROM events
+      WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
+        AND coalesce(properties.$geoip_country_name, '') = '${q(country)}'
+      GROUP BY name ORDER BY visitors DESC LIMIT 30`);
+    return NextResponse.json({ level: 'cities', country, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
+  }
+  const rows = await hogql(`
+    SELECT coalesce(nullIf(properties.$geoip_country_name, ''), 'Unknown') AS name,
+           count(DISTINCT ${UKEY}) AS visitors
+    FROM events
+    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
+    GROUP BY name ORDER BY visitors DESC LIMIT 30`);
+  return NextResponse.json({ level: 'countries', rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
+}
+
 export async function GET(request) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -232,6 +262,7 @@ export async function GET(request) {
     if (type === 'users') return await usersList();
     if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
+    if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '');
 
     // ── default: dashboard ──
     const [
@@ -240,12 +271,12 @@ export async function GET(request) {
       topEvents, topProps,
     ] = await Promise.all([
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY`),
+             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}`),
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE toDate(timestamp) = today()`),
-      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE`),
+             FROM events WHERE toDate(timestamp) = today() AND ${GEO_FILTER}`),
+      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${GEO_FILTER}`),
       hogql(`SELECT toDate(timestamp) AS day, count() AS c
-             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY
+             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
              GROUP BY day ORDER BY day ASC`),
       hogql(stepQuery('$pageview')),
       hogql(stepQuery('search_applied')),
@@ -254,11 +285,11 @@ export async function GET(request) {
       hogql(stepQuery('contact_seller_clicked')),
       hogql(stepQuery('listing_created')),
       hogql(`SELECT event, count() AS c
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY
+             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
              GROUP BY event ORDER BY c DESC LIMIT 15`),
       hogql(`SELECT properties.property_id AS pid, count() AS c
              FROM events
-             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL 30 DAY
+             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
                AND properties.property_id IS NOT NULL AND properties.property_id != ''
              GROUP BY pid ORDER BY c DESC LIMIT 10`),
     ]);

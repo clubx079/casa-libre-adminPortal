@@ -35,22 +35,33 @@ async function hogql(query) {
   return data.results || [];
 }
 
+// Unique-visitor key: an identified user counts by their person_id; an
+// anonymous visitor counts by their IP address, so many browser sessions from
+// the same IP collapse into ONE "person" in every count/funnel below.
+const UKEY = `if(coalesce(person.properties.email, '') != '', toString(person_id), coalesce(nullIf(properties.$ip, ''), 'unknown'))`;
+
 const stepQuery = (event) => `
-  SELECT count(DISTINCT person_id) AS c
+  SELECT count(DISTINCT ${UKEY}) AS c
   FROM events
   WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY
 `;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
 
-// ── users list: one row per identified user ──
+// ── users list: identified users by person_id, anonymous visitors by IP ──
+// Grouped on UKEY, so all same-IP anonymous sessions become one row. Each row
+// carries its IP + geo location; identified rows also show their most recent IP.
 async function usersList() {
   const rows = await hogql(`
     SELECT
-      person_id,
+      ${UKEY} AS idkey,
+      any(person_id) AS person_id,
       any(person.properties.email) AS email,
       any(person.properties.first_name) AS first_name,
       any(person.properties.last_name) AS last_name,
+      argMax(properties.$ip, timestamp) AS ip,
+      argMax(properties.$geoip_city_name, timestamp) AS city,
+      argMax(properties.$geoip_country_name, timestamp) AS country,
       count() AS events,
       countIf(event = 'property_viewed') AS views,
       countIf(event = 'property_saved') AS saves,
@@ -60,22 +71,30 @@ async function usersList() {
       max(timestamp) AS last_seen
     FROM events
     WHERE timestamp >= now() - INTERVAL 90 DAY
-    GROUP BY person_id
+    GROUP BY idkey
     ORDER BY last_seen DESC
-    LIMIT 200
+    LIMIT 300
   `);
-  const users = flat(rows).map((r) => ({
-    person_id: r[0],
-    email: r[1] || '',
-    name: [r[2], r[3]].filter(Boolean).join(' '),
-    events: Number(r[4] || 0),
-    views: Number(r[5] || 0),
-    saves: Number(r[6] || 0),
-    contacts: Number(r[7] || 0),
-    listings: Number(r[8] || 0),
-    first_seen: r[9],
-    last_seen: r[10],
-  }));
+  const users = flat(rows).map((r) => {
+    const email = r[2] || '';
+    return {
+      person_id: r[1],
+      email,
+      is_anon: !email,
+      name: [r[3], r[4]].filter(Boolean).join(' '),
+      ip: r[5] || '',
+      city: r[6] || '',
+      country: r[7] || '',
+      location: [r[6], r[7]].filter(Boolean).join(', '),
+      events: Number(r[8] || 0),
+      views: Number(r[9] || 0),
+      saves: Number(r[10] || 0),
+      contacts: Number(r[11] || 0),
+      listings: Number(r[12] || 0),
+      first_seen: r[13],
+      last_seen: r[14],
+    };
+  });
   return NextResponse.json({ configured: true, users });
 }
 
@@ -117,10 +136,15 @@ async function resolveUser({ distinctId, email }) {
   });
 }
 
-// ── single user's event timeline ──
-async function userActivity(personId) {
-  if (!/^[0-9a-f-]{16,40}$/i.test(personId)) {
-    return NextResponse.json({ error: 'Invalid personId' }, { status: 400 });
+// ── single visitor's event timeline (by person_id, or by IP for anonymous) ──
+async function userActivity({ personId, ip }) {
+  let scope;
+  if (ip) {
+    if (!/^[0-9a-fA-F:.]{3,45}$/.test(ip)) return NextResponse.json({ error: 'Invalid ip' }, { status: 400 });
+    scope = `properties.$ip = '${ip.replace(/'/g, "''")}'`;
+  } else {
+    if (!/^[0-9a-f-]{16,40}$/i.test(personId)) return NextResponse.json({ error: 'Invalid personId' }, { status: 400 });
+    scope = `person_id = '${personId}'`;
   }
   const [profileRows, eventRows] = await Promise.all([
     hogql(`
@@ -130,10 +154,13 @@ async function userActivity(personId) {
         any(person.properties.last_name) AS last_name,
         count() AS events,
         count(DISTINCT properties.$session_id) AS sessions,
+        argMax(properties.$ip, timestamp) AS ip,
+        argMax(properties.$geoip_city_name, timestamp) AS city,
+        argMax(properties.$geoip_country_name, timestamp) AS country,
         min(timestamp) AS first_seen,
         max(timestamp) AS last_seen
       FROM events
-      WHERE person_id = '${personId}' AND timestamp >= now() - INTERVAL 90 DAY
+      WHERE ${scope} AND timestamp >= now() - INTERVAL 90 DAY
     `),
     hogql(`
       SELECT timestamp, event,
@@ -144,7 +171,7 @@ async function userActivity(personId) {
              properties.state AS state,
              properties.$session_id AS session_id
       FROM events
-      WHERE person_id = '${personId}' AND timestamp >= now() - INTERVAL 90 DAY
+      WHERE ${scope} AND timestamp >= now() - INTERVAL 90 DAY
         AND event NOT IN ('$autocapture', '$set', '$pageleave')
       ORDER BY timestamp DESC
       LIMIT 500
@@ -156,8 +183,12 @@ async function userActivity(personId) {
     name: [p[1], p[2]].filter(Boolean).join(' '),
     events: Number(p[3] || 0),
     sessions: Number(p[4] || 0),
-    first_seen: p[5],
-    last_seen: p[6],
+    ip: p[5] || (ip || ''),
+    city: p[6] || '',
+    country: p[7] || '',
+    location: [p[6], p[7]].filter(Boolean).join(', '),
+    first_seen: p[8],
+    last_seen: p[9],
   };
   const pathOf = (url) => {
     if (!url) return '';
@@ -199,7 +230,7 @@ export async function GET(request) {
 
   try {
     if (type === 'users') return await usersList();
-    if (type === 'activity') return await userActivity(searchParams.get('personId') || '');
+    if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
 
     // ── default: dashboard ──
@@ -208,11 +239,11 @@ export async function GET(request) {
       fPage, fSearch, fView, fSave, fContact, fListing,
       topEvents, topProps,
     ] = await Promise.all([
-      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT person_id) AS uu
+      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
              FROM events WHERE timestamp >= now() - INTERVAL 30 DAY`),
-      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT person_id) AS uu
+      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
              FROM events WHERE toDate(timestamp) = today()`),
-      hogql(`SELECT count(DISTINCT person_id) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE`),
+      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE`),
       hogql(`SELECT toDate(timestamp) AS day, count() AS c
              FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY
              GROUP BY day ORDER BY day ASC`),

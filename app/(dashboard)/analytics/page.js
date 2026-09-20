@@ -180,8 +180,11 @@ const UserActivityDetail = ({ user, onBack }) => {
     setLoading(true); setError(null); setBusy(false);
     (async () => {
       try {
+        const qs = user.is_anon && user.ip
+          ? `type=activity&ip=${encodeURIComponent(user.ip)}`
+          : `type=activity&personId=${encodeURIComponent(user.person_id)}`;
         const json = await loadAnalytics(
-          `/api/analytics/posthog?type=activity&personId=${encodeURIComponent(user.person_id)}`,
+          `/api/analytics/posthog?${qs}`,
           { onBusy: () => { if (!cancelled) setBusy(true); }, isCancelled: () => cancelled },
         );
         if (!cancelled) setData(json);
@@ -192,9 +195,9 @@ const UserActivityDetail = ({ user, onBack }) => {
       }
     })();
     return () => { cancelled = true; };
-  }, [user.person_id]);
+  }, [user.person_id, user.ip, user.is_anon]);
 
-  const label = user.name || user.email || 'Anonymous user';
+  const label = user.name || user.email || (user.ip ? `Visitor · ${user.ip}` : 'Anonymous visitor');
 
   const acts = data?.activity || [];
   const reached = STAGES.map((s) => acts.some((a) => a.event === s.key));
@@ -267,7 +270,7 @@ const UserActivityDetail = ({ user, onBack }) => {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold truncate" style={{ color: T.textPrimary }}>{label}</p>
-            <p className="text-xs truncate font-mono" style={{ color: T.textMuted }}>{user.email || user.person_id}</p>
+            <p className="text-xs truncate font-mono" style={{ color: T.textMuted }}>{user.email || (user.ip ? `${user.ip}${user.location ? ' · ' + user.location : ''}` : user.person_id)}</p>
           </div>
         </div>
         <div className="grid grid-cols-4 gap-3 mt-4">
@@ -536,28 +539,31 @@ const UsersAnalytics = () => {
           <span className="text-[10px]" style={{ color: T.textMuted }}>click a user to see their activity</span>
         </div>
         <div className="overflow-x-auto cl-scroll">
-          <table className="w-full min-w-[720px]">
+          <table className="w-full min-w-[900px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
-                  <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`} style={{ color: T.textSecondary }}>{h}</th>
+                {['User', 'IP address', 'Location', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
+                  <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i < 3 ? 'text-left' : 'text-right'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {usersLoading ? (
-                <tr><td colSpan="6" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
+                <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan="6" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
+                <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
               ) : users.map((u) => (
-                <tr key={u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
+                <tr key={u.is_anon && u.ip ? `ip:${u.ip}` : u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
                   onClick={() => setSelected(u)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
                   <td className="px-4 py-2.5">
-                    <p className="text-xs font-medium" style={{ color: T.textPrimary }}>{u.name || u.email || 'Anonymous user'}</p>
+                    <p className="text-xs font-medium" style={{ color: T.textPrimary }}>{u.name || u.email || 'Visitor'}</p>
                     {u.email && u.name && <p className="text-[10px] font-mono" style={{ color: T.textMuted }}>{u.email}</p>}
+                    {u.is_anon && <p className="text-[10px]" style={{ color: T.textMuted }}>anonymous · counted by IP</p>}
                   </td>
+                  <td className="px-4 py-2.5 text-left text-[11px] font-mono" style={{ color: T.textBody }}>{u.ip || '—'}</td>
+                  <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>{u.location || '—'}</td>
                   <td className="px-4 py-2.5 text-right text-xs font-semibold" style={{ color: T.textPrimary }}>{u.events}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.views}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.saves}</td>

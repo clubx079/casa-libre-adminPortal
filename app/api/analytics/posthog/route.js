@@ -224,25 +224,27 @@ async function userActivity({ personId, ip }) {
 
 // ── geo breakdown for the donut: unique visitors by country, or by city
 // within one country when ?country= is given. Honors the geo policy. ──
-async function geoBreakdown(country) {
+async function geoBreakdown(country, days) {
   const q = (s) => String(s || '').replace(/'/g, "''");
+  // Whitelist the window (7d / 30d / 3mo / 6mo / 12mo) — never interpolate raw input.
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
   if (country) {
     const rows = await hogql(`
       SELECT coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS name,
              count(DISTINCT ${UKEY}) AS visitors
       FROM events
-      WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
+      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER}
         AND coalesce(properties.$geoip_country_name, '') = '${q(country)}'
       GROUP BY name ORDER BY visitors DESC LIMIT 30`);
-    return NextResponse.json({ level: 'cities', country, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
+    return NextResponse.json({ level: 'cities', country, days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
   }
   const rows = await hogql(`
     SELECT coalesce(nullIf(properties.$geoip_country_name, ''), 'Unknown') AS name,
            count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER}
     GROUP BY name ORDER BY visitors DESC LIMIT 30`);
-  return NextResponse.json({ level: 'countries', rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
+  return NextResponse.json({ level: 'countries', days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
 }
 
 export async function GET(request) {
@@ -262,7 +264,7 @@ export async function GET(request) {
     if (type === 'users') return await usersList();
     if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
-    if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '');
+    if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '');
 
     // ── default: dashboard ──
     const [

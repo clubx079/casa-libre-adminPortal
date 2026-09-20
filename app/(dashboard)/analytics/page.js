@@ -389,23 +389,27 @@ function arcPath(cx, cy, rO, rI, start, end) {
   const [ix2, iy2] = polar(cx, cy, rI, end), [ix1, iy1] = polar(cx, cy, rI, start);
   return `M ${ox1} ${oy1} A ${rO} ${rO} 0 ${large} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rI} ${rI} 0 ${large} 0 ${ix1} ${iy1} Z`;
 }
+const GEO_RANGES = [{ v: 7, l: '7 days' }, { v: 30, l: '30 days' }, { v: 90, l: '3 months' }, { v: 180, l: '6 months' }, { v: 365, l: '12 months' }];
 const GeoDonut = () => {
   const [level, setLevel] = useState('countries');
   const [country, setCountry] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState(-1);
-  const load = async (c = '') => {
+  const [days, setDays] = useState(90);
+  const load = async (c = '', d = days) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/analytics/posthog?type=geo${c ? `&country=${encodeURIComponent(c)}` : ''}`);
+      const res = await fetch(`/api/analytics/posthog?type=geo&days=${d}${c ? `&country=${encodeURIComponent(c)}` : ''}`);
       const j = await res.json();
       setRows(Array.isArray(j.rows) ? j.rows : []);
       setLevel(j.level || (c ? 'cities' : 'countries'));
       setCountry(c);
     } catch { setRows([]); } finally { setLoading(false); }
   };
-  useEffect(() => { load(''); }, []);
+  useEffect(() => { load('', days); }, []);
+  // Re-fetch the current view (country or cities) when the range changes.
+  const onRange = (d) => { setDays(d); load(level === 'cities' ? country : '', d); };
   const total = rows.reduce((s, r) => s + r.visitors, 0);
   const top = rows.slice(0, 7);
   const otherSum = rows.slice(7).reduce((s, r) => s + r.visitors, 0);
@@ -428,8 +432,13 @@ const GeoDonut = () => {
         )}
         <MapPin className="w-4 h-4" style={{ color: T.primary }} />
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{level === 'cities' ? `${country} — cities` : 'Visitors by country'}</h2>
-        <span className="text-[10px] ml-auto" style={{ color: T.textMuted }}>{level === 'countries' ? 'click a slice to drill in' : 'last 90 days'}</span>
+        <select value={days} onChange={(e) => onRange(Number(e.target.value))} style={selectStyle} className="ml-auto">
+          {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+        </select>
       </div>
+      {level === 'countries' && !loading && arcs.length > 0 && (
+        <p className="text-[10px] mb-2" style={{ color: T.textMuted }}>Click a slice to drill into that country&apos;s cities.</p>
+      )}
       {loading ? (
         <div className="py-16 text-center text-xs" style={{ color: T.textMuted }}>Loading…</div>
       ) : arcs.length === 0 ? (
@@ -476,7 +485,7 @@ const UsersAnalytics = () => {
   const [selected, setSelected] = useState(null);
   const [resolveNote, setResolveNote] = useState('');
   const [page, setPage] = useState(0);
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 25;
   useEffect(() => { setPage(0); }, [users.length]);
 
   useEffect(() => {

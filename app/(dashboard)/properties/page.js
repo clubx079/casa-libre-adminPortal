@@ -35,6 +35,10 @@ export default async function PropertiesPage({ searchParams }) {
     sources = await select('scrape_sources', 'select=id,key,name&order=name.asc');
   } catch { sources = []; }
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
+  // "User submissions — buyer portal" is a VIRTUAL source: self-published listings
+  // carry no scraper source_id (they're tagged origin='user'), so filtering by that
+  // row's source_id returns nothing. Match on origin instead. See below.
+  const isUserSubs = source === 'user_submissions';
 
   const parts = [
     'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,scrape_sources(name)',
@@ -43,7 +47,8 @@ export default async function PropertiesPage({ searchParams }) {
     // the DB — fetch the full matching set and filter/paginate in code below.
     'limit=5000',
   ];
-  if (sourceId) parts.push(`source_id=eq.${sourceId}`);
+  if (isUserSubs) parts.push('origin=eq.user');
+  else if (sourceId) parts.push(`source_id=eq.${sourceId}`);
 
   // class + text search. 'buildings' (default) hides land; 'land' shows only land;
   // 'all' shows both. land + search needs a nested and() to avoid two top-level or=.

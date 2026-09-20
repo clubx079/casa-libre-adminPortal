@@ -35,3 +35,30 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }
+
+// DELETE /api/users/:id -> permanently remove a buyer user (admin cleanup of test
+// accounts). Best-effort clears the user's own dependent rows first so a foreign-key
+// constraint doesn't block the delete; each dependent table is optional (ignored if
+// it doesn't exist on this country's DB). Self-published PROPERTIES are intentionally
+// left in place (properties.created_by has no FK to users) — deleting an account
+// should not silently pull its live listings.
+export async function DELETE(req, { params }) {
+  if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const { remove } = dbFor(activeCountry());
+  const id = params.id;
+  // Dependent rows keyed by the user id, cleared before the user row itself.
+  for (const [table, col] of [
+    ['saved_properties', 'user_id'],
+    ['otp_codes', 'user_id'],
+    ['sessions', 'user_id'],
+    ['feedback', 'user_id'],
+  ]) {
+    try { await remove(table, `${col}=eq.${id}`); } catch { /* table may not exist / no rows — ignore */ }
+  }
+  try {
+    await remove('users', `id=eq.${id}`);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
+  }
+}

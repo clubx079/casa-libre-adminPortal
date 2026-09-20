@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Search, X, Users as UsersIcon, Activity, CheckCircle2, Circle, Globe, Ban, ShieldOff } from 'lucide-react';
+import { Search, X, Users as UsersIcon, Activity, CheckCircle2, Circle, Globe, Ban, ShieldOff, Trash2 } from 'lucide-react';
 
 const T = {
   primary: '#111111',
@@ -135,6 +135,28 @@ export default function UsersPage() {
       }
     } catch {
       // silently ignore — button re-enables, state stays unchanged
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Permanently delete a user (admin cleanup of test accounts). Destructive, so it
+  // confirms first, then removes the row from the DB and the table on success.
+  async function deleteUser(u) {
+    const who = u.email || u.full_name || 'this user';
+    if (!window.confirm(`Delete ${who}?\n\nThis permanently removes the account and cannot be undone. Their published listings (if any) are kept.`)) return;
+    setBusy({ id: u.id, field: 'delete' });
+    try {
+      const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((x) => x.id !== u.id));
+        setCount((c) => Math.max(0, c - 1));
+      } else {
+        const j = await res.json().catch(() => ({}));
+        alert(`Couldn't delete: ${j.error || res.status}`);
+      }
+    } catch (e) {
+      alert(`Couldn't delete: ${String(e.message || e)}`);
     } finally {
       setBusy(null);
     }
@@ -317,6 +339,16 @@ export default function UsersPage() {
                           }}
                         >
                           {busy?.id === u.id && busy?.field === 'blocked' ? '…' : u.blocked ? 'Unblock' : 'Block'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteUser(u)}
+                          disabled={busy?.id === u.id}
+                          title="Delete user permanently"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50"
+                          style={{ borderColor: '#F0BDB6', background: T.bgWhite, color: T.danger }}
+                        >
+                          {busy?.id === u.id && busy?.field === 'delete' ? '…' : (<><Trash2 className="w-3.5 h-3.5" /> Delete</>)}
                         </button>
                       </div>
                     </td>

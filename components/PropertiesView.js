@@ -19,7 +19,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 const LIST_MAX_HEIGHT = 640;
 
-export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings' }) {
+export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped' }) {
   const t = makeT(lang);
   const loc = locale(lang);
   const router = useRouter();
@@ -41,6 +41,8 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
     if (nsrc) sp.set('source', nsrc);
     if (ncls && ncls !== 'buildings') sp.set('class', ncls);
     if (np && np > 1) sp.set('page', String(np));
+    // Keep the active sub-tab (Scraped/Originals) across filter changes.
+    if (kind && kind !== 'scraped') sp.set('kind', kind);
     router.push(`/properties${sp.toString() ? '?' + sp.toString() : ''}`);
   };
 

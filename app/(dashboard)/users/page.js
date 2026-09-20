@@ -370,8 +370,8 @@ export default function UsersPage() {
       {/* Delete confirmation modal — replaces the browser's native confirm(). */}
       {confirmUser && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(17,17,17,0.45)', backdropFilter: 'blur(2px)' }}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+          style={{ background: 'rgba(17,17,17,0.45)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
           onClick={() => { if (busy?.field !== 'delete') setConfirmUser(null); }}
           role="dialog"
           aria-modal="true"

@@ -27,18 +27,19 @@ export default async function PropertiesPage({ searchParams }) {
   const view = searchParams?.view === 'cards' ? 'cards' : 'table'; // default table
   const source = (searchParams?.source || '').trim(); // scrape_sources.key filter
   const cls = ['buildings', 'land', 'all'].includes(searchParams?.class) ? searchParams.class : 'buildings';
+  // Properties split into two sub-tabs: 'scraped' (competitor scrapers, default) and
+  // 'originals' (buyer-portal user submissions).
+  const kind = searchParams?.kind === 'originals' ? 'originals' : 'scraped';
   const offset = (page - 1) * PAGE_SIZE;
 
-  // source templates for the filter dropdown (+ resolve the selected one to its id)
+  // source templates for the filter dropdown — exclude the "User submissions" virtual
+  // row: user-published listings now live under the Originals sub-tab.
   let sources = [];
   try {
     sources = await select('scrape_sources', 'select=id,key,name&order=name.asc');
   } catch { sources = []; }
+  sources = sources.filter((s) => s.key !== 'user_submissions');
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
-  // "User submissions — buyer portal" is a VIRTUAL source: self-published listings
-  // carry no scraper source_id (they're tagged origin='user'), so filtering by that
-  // row's source_id returns nothing. Match on origin instead. See below.
-  const isUserSubs = source === 'user_submissions';
 
   const parts = [
     'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,scrape_sources(name)',
@@ -47,8 +48,14 @@ export default async function PropertiesPage({ searchParams }) {
     // the DB — fetch the full matching set and filter/paginate in code below.
     'limit=5000',
   ];
-  if (isUserSubs) parts.push('origin=eq.user');
-  else if (sourceId) parts.push(`source_id=eq.${sourceId}`);
+  // Originals = user self-published (no scraper source_id). Scraped = anything with a
+  // scraper source, optionally narrowed to one source.
+  if (kind === 'originals') {
+    parts.push('origin=eq.user');
+  } else {
+    parts.push('source_id=not.is.null');
+    if (sourceId) parts.push(`source_id=eq.${sourceId}`);
+  }
 
   // class + text search. 'buildings' (default) hides land; 'land' shows only land;
   // 'all' shows both. land + search needs a nested and() to avoid two top-level or=.
@@ -106,8 +113,12 @@ export default async function PropertiesPage({ searchParams }) {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{t('prop.title1')} {t('prop.title2')}</h1>
-        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{t('prop.subtitle')}</p>
+        <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>
+          {kind === 'originals' ? (lang === 'es' ? 'Publicaciones de usuarios' : 'User submissions') : `${t('prop.title1')} ${t('prop.title2')}`}
+        </h1>
+        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
+          {kind === 'originals' ? (lang === 'es' ? 'Propiedades publicadas por usuarios del portal' : 'Listings created by buyer-portal users') : t('prop.subtitle')}
+        </p>
       </div>
 
       {error ? (
@@ -123,9 +134,10 @@ export default async function PropertiesPage({ searchParams }) {
           view={view}
           lang={lang}
           rate={rate}
-          sources={sources}
-          source={source}
+          sources={kind === 'originals' ? [] : sources}
+          source={kind === 'originals' ? '' : source}
           cls={cls}
+          kind={kind}
         />
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import LangSwitcher from '@/components/LangSwitcher';
 import CountrySwitcher from '@/components/CountrySwitcher';
 
@@ -97,6 +97,9 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Which Properties sub-tab is active (Scraped default). Drives the sub-nav highlight.
+  const kindParam = searchParams.get('kind') || 'scraped';
   const initials = (admin?.name || admin?.email || '?').trim().charAt(0).toUpperCase();
   const activeObj = countries.find((c) => c.code === activeCountry) || (activeCountry ? { code: activeCountry, label: activeCountry.toUpperCase(), is_live: false } : null);
   const isSuper = admin?.role === 'superadmin';
@@ -148,6 +151,37 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
         <nav className="flex-1 overflow-y-auto p-3 pt-1 flex flex-col gap-1 cl-scroll">
           {nav.map(([href, label, ic]) => {
             const on = isActive(href);
+            // Properties splits into two sub-tabs: Scraped (competitor scrapers) and
+            // Originals (buyer-portal user submissions).
+            if (href === '/properties') {
+              const subs = [
+                ['/properties?kind=scraped', 'Scraped', 'scraped'],
+                ['/properties?kind=originals', 'Originals', 'originals'],
+              ];
+              return (
+                <div key={href} className="flex flex-col gap-1">
+                  <div className={`flex items-center gap-3 px-3.5 py-2.5 rounded-input text-[14px] font-medium ${on ? 'text-ink' : 'text-ink/70'}`}>
+                    <span className="text-ink/55"><Icon name={ic} /></span>
+                    {label}
+                  </div>
+                  <div className="ml-[27px] flex flex-col gap-1 border-l border-ink/12 pl-2.5">
+                    {subs.map(([shref, slabel, skind]) => {
+                      const son = on && kindParam === skind;
+                      return (
+                        <Link
+                          key={shref}
+                          href={shref}
+                          onClick={() => setOpen(false)}
+                          className={`px-3 py-2 rounded-input text-[13px] font-medium transition-colors ${son ? 'bg-ink text-paper' : 'text-ink/60 hover:bg-ink/5'}`}
+                        >
+                          {slabel}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
             return (
               <Link
                 key={href}

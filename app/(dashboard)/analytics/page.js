@@ -394,7 +394,18 @@ const GEO_RANGES = [{ v: 7, l: '7 days' }, { v: 30, l: '30 days' }, { v: 90, l: 
 // /r/<slug>; anything with no utm and no referrer is 'direct', and organic Google
 // arrives as a google referrer. Anonymous visitors are counted by IP, same as the
 // rest of this page, so a source is recorded whether or not they sign up.
-function SourcesCard() {
+const SITES = [['', 'All country sites'], ['py', 'Paraguay'], ['bo', 'Bolivia'], ['uy', 'Uruguay'], ['ve', 'Venezuela']];
+
+function SiteSelect({ value, onChange }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
+      {SITES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+    </select>
+  );
+}
+
+function SourcesCard({ site, onSite }) {
   const [rows, setRows] = useState([]);
   const [days, setDays] = useState(90);
   const [loading, setLoading] = useState(true);
@@ -403,21 +414,21 @@ function SourcesCard() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(`/api/analytics/posthog?type=sources&days=${days}`)
+    fetch(`/api/analytics/posthog?type=sources&days=${days}${site ? `&site=${site}` : ''}`)
       .then((r) => r.json())
       .then((d) => { if (alive) setRows(Array.isArray(d.rows) ? d.rows : []); })
       .catch(() => { if (alive) setRows([]); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [days]);
+  }, [days, site]);
 
   const [tech, setTech] = useState(null);
   useEffect(() => {
     let alive = true;
-    fetch(`/api/analytics/posthog?type=tech&days=${days}`).then((r) => r.json())
+    fetch(`/api/analytics/posthog?type=tech&days=${days}${site ? `&site=${site}` : ''}`).then((r) => r.json())
       .then((d) => { if (alive && d?.configured) setTech(d); }).catch(() => {});
     return () => { alive = false; };
-  }, [days]);
+  }, [days, site]);
 
   useEffect(() => {
     let alive = true;
@@ -440,6 +451,8 @@ function SourcesCard() {
     <div className="bg-white p-5" style={CARD}>
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Where visitors come from</h2>
+        <div className="flex items-center gap-2">
+        <SiteSelect value={site} onChange={onSite} />
         <select value={days} onChange={(e) => setDays(Number(e.target.value))}
           className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
           <option value={7}>7 days</option>
@@ -447,6 +460,7 @@ function SourcesCard() {
           <option value={90}>90 days</option>
           <option value={365}>12 months</option>
         </select>
+        </div>
       </div>
       <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
         first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct
@@ -522,15 +536,15 @@ function SourcesCard() {
 // AI answer engines on their own. ChatGPT tags its own outbound links
 // (?utm_source=chatgpt.com), so this traffic is measurable without us placing
 // anything — and which pages it lands on says what the engines are recommending.
-function AiCard() {
+function AiCard({ site }) {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(90);
   useEffect(() => {
     let alive = true;
-    fetch(`/api/analytics/posthog?type=ai&days=${days}`).then((r) => r.json())
+    fetch(`/api/analytics/posthog?type=ai&days=${days}${site ? `&site=${site}` : ''}`).then((r) => r.json())
       .then((d) => { if (alive && d?.configured) setData(d); }).catch(() => {});
     return () => { alive = false; };
-  }, [days]);
+  }, [days, site]);
 
   if (!data) return null;
   const total = (data.engines || []).reduce((n, e) => n + e.visitors, 0);
@@ -597,7 +611,8 @@ const GeoDonut = () => {
   const onRange = (d) => { setDays(d); load(level === 'cities' ? country : '', d); };
   const total = rows.reduce((s, r) => s + r.visitors, 0);
   const top = rows.slice(0, 7);
-  const otherSum = rows.slice(7).reduce((s, r) => s + r.visitors, 0);
+  const otherRows = rows.slice(7);
+  const otherSum = otherRows.reduce((s, r) => s + r.visitors, 0);
   const slices = otherSum > 0 ? [...top, { name: 'Other', visitors: otherSum, _other: true }] : top;
   let acc = 0;
   const arcs = slices.map((s, i) => {
@@ -606,6 +621,20 @@ const GeoDonut = () => {
     return { ...s, i, start, end, color: PIE_COLORS[i % PIE_COLORS.length], pct: Math.round(frac * 100) };
   });
   const drillable = (a) => !a._other && level === 'countries';
+  // 'Other' is this chart's own grouping (everything past the top 7), not a
+  // mystery bucket — clicking it says exactly which countries are in there.
+  // 'Other' is this chart's own grouping (everything past the top 7), not a
+  // mystery bucket — so name what is in it rather than make people guess.
+  const OtherList = () => (otherRows.length === 0 ? null : (
+    <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
+      <p className="text-[10px]" style={{ color: T.textMuted }}>
+        “Other” = {otherRows.map((r) => `${r.name} ${r.visitors}`).join(' · ')}
+      </p>
+      <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>
+        “Unknown” would mean an IP we could not place — there are none right now.
+      </p>
+    </div>
+  ));
   const cx = 90, cy = 90, rO = 82, rI = 50;
   return (
     <div className="bg-white p-5" style={CARD}>
@@ -655,12 +684,16 @@ const GeoDonut = () => {
           </div>
         </div>
       )}
+      <OtherList />
     </div>
   );
 };
 
 // Users Analytics — user behaviour + funnel, read from PostHog.
 const UsersAnalytics = () => {
+  // One PostHog project serves every country site, so the admin picks which one
+  // these cards describe. '' = all of them.
+  const [site, setSite] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -820,8 +853,8 @@ const UsersAnalytics = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SourcesCard />
-        <AiCard />
+        <SourcesCard site={site} onSite={setSite} />
+        <AiCard site={site} />
       </div>
 
       {/* Users — click to drill into activity */}

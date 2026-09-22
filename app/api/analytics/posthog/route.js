@@ -44,21 +44,9 @@ const UKEY = `if(coalesce(person.properties.email, '') != '', toString(person_id
 // Arabia's historical test traffic is hidden, but any Saudi visits from the
 // cutoff date onward DO show. Applied to every aggregate query below. Uses
 // coalesce so events with an unresolved country are kept, not dropped.
-// Where a visit came from, in priority order: the utm_source we put on our own
-// outbound links (/r/<slug>), then the referring domain mapped to a channel, then
-// 'direct'. Organic Google is simply a google referrer with no utm — exactly the
-// rule Roland asked for.
-// Where a visit came from, in priority order: the utm_source we put on our own
-// outbound links (/r/<slug>), then the referring domain mapped to a channel, then
-// 'direct'. Organic Google is simply a google referrer with no utm — exactly the
-// rule Roland asked for.
-//
-// String.raw on purpose: a plain template would hand ClickHouse '\.', which it
-// unescapes to '.' (any character). '\\.' below reaches it as a literal dot.
-// Where a visit came from, in priority order. Two signals feed it: the utm tag on
-// a link (ours via /r/<slug>, or one an AI engine adds itself — ChatGPT appends
-// ?utm_source=chatgpt.com) and the referring domain. Organic Google is a google
-// referrer with no utm; 'direct' is genuinely no tag and no referrer.
+// Where a visit came from, in priority order: AI engines (they tag their own
+// links), then any utm tag, then the referring domain, then 'direct'. Organic
+// Google is a google referrer with no tag.
 //
 // String.raw on purpose: a plain template hands ClickHouse '\.', which it
 // unescapes to '.' (any character). '\\.' below reaches it as a literal dot.
@@ -71,6 +59,8 @@ const SOURCE_EXPR = String.raw`
     match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(copilot|bing chat)'), 'copilot',
     match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(grok|x\\.ai|deepseek|mistral)'), 'other ai',
     coalesce(nullIf(properties.utm_source, ''), '') != '', lower(properties.utm_source),
+    match(coalesce(properties.$referring_domain, ''), '(?i)^accounts\\.google\\.'), 'direct',
+    match(coalesce(properties.$referring_domain, ''), '(?i)^mail\\.google\\.'), 'email',
     match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)google\\.'), 'google',
     match(coalesce(properties.$referring_domain, ''), '(?i)bing\\.'), 'bing',
     match(coalesce(properties.$referring_domain, ''), '(?i)duckduckgo\\.'), 'duckduckgo',

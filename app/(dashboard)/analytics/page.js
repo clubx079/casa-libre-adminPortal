@@ -411,6 +411,14 @@ function SourcesCard() {
     return () => { alive = false; };
   }, [days]);
 
+  const [tech, setTech] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/analytics/posthog?type=tech&days=${days}`).then((r) => r.json())
+      .then((d) => { if (alive && d?.configured) setTech(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, [days]);
+
   useEffect(() => {
     let alive = true;
     fetch('/api/analytics/posthog?type=usage').then((r) => r.json())
@@ -471,6 +479,22 @@ function SourcesCard() {
                   ))}
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tech && (tech.browsers?.length > 0) && (
+        <div className="mt-5 pt-4 border-t grid grid-cols-1 sm:grid-cols-3 gap-4" style={{ borderColor: T.borderLight }}>
+          {[['Browser', tech.browsers], ['Device', tech.devices], ['System', tech.systems]].map(([label, list]) => (
+            <div key={label}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: T.textMuted }}>{label}</p>
+              {(list || []).slice(0, 5).map((r) => (
+                <div key={r.name} className="flex items-center justify-between text-[11px] py-0.5">
+                  <span style={{ color: T.textBody }}>{r.name}</span>
+                  <span style={{ color: T.textPrimary }}>{r.visitors}</span>
+                </div>
+              ))}
             </div>
           ))}
         </div>

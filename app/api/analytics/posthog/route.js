@@ -59,7 +59,9 @@ const SOURCE_EXPR = String.raw`
   multiIf(
     coalesce(nullIf(properties.utm_source, ''), '') != '', lower(properties.utm_source),
     match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)google\\.'), 'google',
-    match(coalesce(properties.$referring_domain, ''), '(?i)(bing|duckduckgo|yahoo|ecosia)\\.'), 'search',
+    match(coalesce(properties.$referring_domain, ''), '(?i)bing\\.'), 'bing',
+    match(coalesce(properties.$referring_domain, ''), '(?i)duckduckgo\\.'), 'duckduckgo',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(yahoo|ecosia|brave)\\.'), 'search',
     match(coalesce(properties.$referring_domain, ''), '(?i)(chatgpt|openai|perplexity|claude\\.ai|gemini)'), 'ai',
     match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)reddit\\.'), 'reddit',
     match(coalesce(properties.$referring_domain, ''), '(?i)(instagram|facebook|^fb\\.|tiktok|linkedin|twitter|^x\\.com)'), 'social',
@@ -324,6 +326,24 @@ async function sourcesBreakdown(days, site) {
   });
 }
 
+// What people browse with. "From Google" is a source (above); "from Safari" is a
+// browser — different question, so it gets its own cut.
+async function techBreakdown(days, site) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const one = async (expr) => flat(await hogql(`
+    SELECT coalesce(nullIf(${expr}, ''), 'Unknown') AS name, count(DISTINCT ${UKEY}) AS visitors
+    FROM events
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)}
+    GROUP BY name ORDER BY visitors DESC LIMIT 12`)).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) }));
+
+  const [browsers, devices, systems] = await Promise.all([
+    one('properties.$browser'),
+    one('properties.$device_type'),
+    one('properties.$os'),
+  ]);
+  return NextResponse.json({ configured: true, days: d, browsers, devices, systems });
+}
+
 // How much of PostHog's free allowance we are using. The free plan covers 1M
 // analytics events a month; this is the number to watch before it bites.
 async function usage() {
@@ -367,6 +387,7 @@ export async function GET(request) {
     if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '');
     if (type === 'sources') return await sourcesBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'usage') return await usage();
+    if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
 
     // ── default: dashboard ──
     const [

@@ -391,25 +391,49 @@ async function techBreakdown(days, site) {
   return NextResponse.json({ configured: true, days: d, browsers, devices, systems });
 }
 
-// How much of PostHog's free allowance we are using. The free plan covers 1M
-// analytics events a month; this is the number to watch before it bites.
+// How much of PostHog's free allowance we are using.
+//
+// PostHog bills on a CYCLE, not a calendar month — this org's runs 18th → 18th,
+// so counting "events this month" reported 5,601 while the billing page said 113.
+// The cycle day is configurable; the response carries the cycle start so the
+// number can be checked against posthog.com/organization/billing directly.
+const CYCLE_DAY = Math.min(28, Math.max(1, Number(process.env.POSTHOG_BILLING_CYCLE_DAY || 18)));
+const FREE_MONTHLY_EVENTS = 1000000;
+
+function cycleStart(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), CYCLE_DAY));
+  if (now < d) d.setUTCMonth(d.getUTCMonth() - 1);
+  return d;
+}
+
 async function usage() {
-  const rows = await hogql(`
+  const start = cycleStart();
+  const startSql = start.toISOString().slice(0, 19).replace('T', ' ');
+  const [cur] = flat(await hogql(`
+    SELECT count() AS events, uniq(distinct_id) AS visitors
+    FROM events WHERE timestamp >= toDateTime('${startSql}')`));
+  const current = Number(cur?.[0] || 0);
+
+  const months = flat(await hogql(`
     SELECT toStartOfMonth(timestamp) AS month, count() AS events, uniq(distinct_id) AS visitors
-    FROM events WHERE timestamp >= now() - INTERVAL 180 DAY GROUP BY month ORDER BY month DESC LIMIT 6`);
-  const months = flat(rows).map((r) => ({ month: String(r[0]).slice(0, 7), events: Number(r[1] || 0), visitors: Number(r[2] || 0) }));
+    FROM events WHERE timestamp >= now() - INTERVAL 180 DAY GROUP BY month ORDER BY month DESC LIMIT 6`))
+    .map((r) => ({ month: String(r[0]).slice(0, 7), events: Number(r[1] || 0), visitors: Number(r[2] || 0) }));
+
   const bySite = flat(await hogql(`
     SELECT ${SITE_EXPR} AS site, count() AS events
-    FROM events WHERE timestamp >= now() - INTERVAL 30 DAY GROUP BY site ORDER BY events DESC`))
+    FROM events WHERE timestamp >= toDateTime('${startSql}') GROUP BY site ORDER BY events DESC`))
     .map((r) => ({ site: r[0], events: Number(r[1] || 0) }));
-  const current = months[0]?.events || 0;
-  const FREE_MONTHLY_EVENTS = 1000000;
-  // crude but useful: this month's pace projected to a full month
-  const day = new Date().getUTCDate();
-  const projected = Math.round((current / Math.max(day, 1)) * 30);
+
+  // pace for the full cycle, from how far into it we are
+  const elapsedDays = Math.max(1, (Date.now() - start.getTime()) / 86400000);
+  const projected = Math.round((current / elapsedDays) * 30);
+
   return NextResponse.json({
-    configured: true, freeMonthlyEvents: FREE_MONTHLY_EVENTS,
-    current, projected, percentOfFree: Math.round((projected / FREE_MONTHLY_EVENTS) * 1000) / 10,
+    configured: true,
+    freeMonthlyEvents: FREE_MONTHLY_EVENTS,
+    cycleStart: start.toISOString().slice(0, 10),
+    current, projected,
+    percentOfFree: Math.round((projected / FREE_MONTHLY_EVENTS) * 1000) / 10,
     months, bySite,
   });
 }

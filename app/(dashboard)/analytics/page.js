@@ -518,9 +518,14 @@ function SourcesCard({ site, onSite }) {
 
       {usage && (
         <div className="mt-5 pt-3 border-t" style={{ borderColor: T.borderLight }}>
-          <p className="text-[10px] mb-1" style={{ color: T.textMuted }}>PostHog usage (free plan covers 1M events/month)</p>
+          <p className="text-[10px] mb-1" style={{ color: T.textMuted }}>
+            PostHog usage · billing cycle from {usage.cycleStart} · free plan covers 1M events per cycle
+          </p>
           <p className="text-xs" style={{ color: T.textBody }}>
-            {usage.current.toLocaleString()} events this month · on pace for ~{usage.projected.toLocaleString()} ({usage.percentOfFree}% of the free allowance)
+            {usage.current.toLocaleString()} events so far · on pace for ~{usage.projected.toLocaleString()} ({usage.percentOfFree}% of the allowance)
+          </p>
+          <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>
+            matches posthog.com/organization/billing — it bills per cycle, not per calendar month
           </p>
           {usage.bySite?.length > 1 && (
             <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>

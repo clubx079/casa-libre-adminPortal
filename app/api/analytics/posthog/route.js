@@ -55,14 +55,26 @@ const UKEY = `if(coalesce(person.properties.email, '') != '', toString(person_id
 //
 // String.raw on purpose: a plain template would hand ClickHouse '\.', which it
 // unescapes to '.' (any character). '\\.' below reaches it as a literal dot.
+// Where a visit came from, in priority order. Two signals feed it: the utm tag on
+// a link (ours via /r/<slug>, or one an AI engine adds itself — ChatGPT appends
+// ?utm_source=chatgpt.com) and the referring domain. Organic Google is a google
+// referrer with no utm; 'direct' is genuinely no tag and no referrer.
+//
+// String.raw on purpose: a plain template hands ClickHouse '\.', which it
+// unescapes to '.' (any character). '\\.' below reaches it as a literal dot.
 const SOURCE_EXPR = String.raw`
   multiIf(
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(chatgpt|openai)'), 'chatgpt',
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)perplexity'), 'perplexity',
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(gemini|bard\\.google)'), 'gemini',
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(claude|anthropic)'), 'claude',
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(copilot|bing chat)'), 'copilot',
+    match(concat(coalesce(properties.utm_source, ''), ' ', coalesce(properties.$referring_domain, '')), '(?i)(grok|x\\.ai|deepseek|mistral)'), 'other ai',
     coalesce(nullIf(properties.utm_source, ''), '') != '', lower(properties.utm_source),
     match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)google\\.'), 'google',
     match(coalesce(properties.$referring_domain, ''), '(?i)bing\\.'), 'bing',
     match(coalesce(properties.$referring_domain, ''), '(?i)duckduckgo\\.'), 'duckduckgo',
     match(coalesce(properties.$referring_domain, ''), '(?i)(yahoo|ecosia|brave)\\.'), 'search',
-    match(coalesce(properties.$referring_domain, ''), '(?i)(chatgpt|openai|perplexity|claude\\.ai|gemini)'), 'ai',
     match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)reddit\\.'), 'reddit',
     match(coalesce(properties.$referring_domain, ''), '(?i)(instagram|facebook|^fb\\.|tiktok|linkedin|twitter|^x\\.com)'), 'social',
     match(coalesce(properties.$referring_domain, ''), '(?i)(whatsapp|wa\\.me)'), 'whatsapp',
@@ -70,6 +82,10 @@ const SOURCE_EXPR = String.raw`
     match(coalesce(properties.$referring_domain, ''), '(?i)(casa-libre|localhost|airosofts)'), 'direct',
     lower(properties.$referring_domain)
   )`;
+
+// The AI engines, so the admin can show them on their own — this is the number
+// Roland's AI-visibility work moves.
+const AI_SOURCES = ['chatgpt', 'perplexity', 'gemini', 'claude', 'copilot', 'other ai'];
 
 // Which country site the event came from. New events carry site_country (set by
 // the buyer portal); older ones only have $host, so fall back to that — every
@@ -308,6 +324,7 @@ async function sourcesBreakdown(days, site) {
       SELECT ${UKEY} AS idkey,
              argMin(${SOURCE_EXPR}, timestamp) AS source,
              argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+             max(coalesce(person.properties.email, '')) != '' AS known,
              max(timestamp) AS last_seen,
              countIf(event = 'listing_created') AS listings,
              countIf(event = 'contact_whatsapp_click') AS contacts
@@ -315,15 +332,45 @@ async function sourcesBreakdown(days, site) {
       WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)}
       GROUP BY idkey
     )
-    SELECT source, campaign, count() AS visitors, sum(listings) AS listings, sum(contacts) AS contacts
+    SELECT source, campaign, count() AS visitors, countIf(known = 0) AS anon, countIf(known = 1) AS signed_in,
+           sum(listings) AS listings, sum(contacts) AS contacts
     FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 40`);
   return NextResponse.json({
     configured: true, days: d,
     rows: flat(rows).map((r) => ({
       source: r[0] || 'direct', campaign: r[1] || '',
-      visitors: Number(r[2] || 0), listings: Number(r[3] || 0), contacts: Number(r[4] || 0),
+      visitors: Number(r[2] || 0),
+      // anonymous visitors count too — by IP, the same way the rest of this page does
+      anon: Number(r[3] || 0), signedIn: Number(r[4] || 0),
+      listings: Number(r[5] || 0), contacts: Number(r[6] || 0),
     })),
   });
+}
+
+// AI answer engines on their own: which ones send people, and — the useful part
+// for the AIEO work — which pages they send them to.
+async function aiBreakdown(days, site) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const aiList = AI_SOURCES.map((x) => `'${x}'`).join(', ');
+  const isAi = `${SOURCE_EXPR} IN (${aiList})`;
+
+  const engines = flat(await hogql(`
+    SELECT ${SOURCE_EXPR} AS engine, count(DISTINCT ${UKEY}) AS visitors, count() AS events,
+           min(timestamp) AS first_seen, max(timestamp) AS last_seen
+    FROM events
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)} AND ${isAi}
+    GROUP BY engine ORDER BY visitors DESC LIMIT 10`))
+    .map((r) => ({ engine: r[0], visitors: Number(r[1] || 0), events: Number(r[2] || 0), firstSeen: r[3], lastSeen: r[4] }));
+
+  const pages = flat(await hogql(`
+    SELECT coalesce(nullIf(properties.$pathname, ''), '/') AS page,
+           count(DISTINCT ${UKEY}) AS visitors
+    FROM events
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)} AND ${isAi} AND event = '$pageview'
+    GROUP BY page ORDER BY visitors DESC LIMIT 10`))
+    .map((r) => ({ page: r[0], visitors: Number(r[1] || 0) }));
+
+  return NextResponse.json({ configured: true, days: d, engines, pages });
 }
 
 // What people browse with. "From Google" is a source (above); "from Safari" is a
@@ -387,6 +434,7 @@ export async function GET(request) {
     if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '');
     if (type === 'sources') return await sourcesBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'usage') return await usage();
+    if (type === 'ai') return await aiBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
 
     // ── default: dashboard ──

@@ -430,8 +430,8 @@ function SourcesCard() {
   const byChannel = [];
   for (const r of rows) {
     const hit = byChannel.find((x) => x.source === r.source);
-    if (hit) { hit.visitors += r.visitors; hit.listings += r.listings; hit.campaigns.push(r); }
-    else byChannel.push({ source: r.source, visitors: r.visitors, listings: r.listings, campaigns: [r] });
+    if (hit) { hit.visitors += r.visitors; hit.listings += r.listings; hit.anon += r.anon || 0; hit.signedIn += r.signedIn || 0; hit.campaigns.push(r); }
+    else byChannel.push({ source: r.source, visitors: r.visitors, listings: r.listings, anon: r.anon || 0, signedIn: r.signedIn || 0, campaigns: [r] });
   }
   byChannel.sort((a, b) => b.visitors - a.visitors);
   const total = byChannel.reduce((n, r) => n + r.visitors, 0) || 1;
@@ -464,6 +464,8 @@ function SourcesCard() {
                 <span className="font-medium" style={{ color: T.textPrimary }}>{r.source}</span>
                 <span style={{ color: T.textBody }}>
                   {r.visitors} {r.visitors === 1 ? 'visitor' : 'visitors'}
+                  {r.anon ? ` · ${r.anon} anon` : ''}
+                  {r.signedIn ? ` · ${r.signedIn} signed in` : ''}
                   {r.listings > 0 ? ` · ${r.listings} listed` : ''}
                 </span>
               </div>
@@ -512,6 +514,62 @@ function SourcesCard() {
             </p>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// AI answer engines on their own. ChatGPT tags its own outbound links
+// (?utm_source=chatgpt.com), so this traffic is measurable without us placing
+// anything — and which pages it lands on says what the engines are recommending.
+function AiCard() {
+  const [data, setData] = useState(null);
+  const [days, setDays] = useState(90);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/analytics/posthog?type=ai&days=${days}`).then((r) => r.json())
+      .then((d) => { if (alive && d?.configured) setData(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, [days]);
+
+  if (!data) return null;
+  const total = (data.engines || []).reduce((n, e) => n + e.visitors, 0);
+
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>AI answer engines</h2>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}
+          className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+          <option value={365}>12 months</option>
+        </select>
+      </div>
+      <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
+        visitors sent by ChatGPT, Perplexity, Gemini, Claude and Copilot — they tag their own links
+      </p>
+
+      {total === 0 ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>No AI referrals in this window.</p>
+      ) : (
+        <>
+          <div className="space-y-2 mb-4">
+            {data.engines.map((e) => (
+              <div key={e.engine} className="flex items-center justify-between text-xs">
+                <span className="font-medium" style={{ color: T.textPrimary }}>{e.engine}</span>
+                <span style={{ color: T.textBody }}>{e.visitors} visitors · {e.events} events</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: T.textMuted }}>Pages they land on</p>
+          {(data.pages || []).slice(0, 6).map((pg) => (
+            <div key={pg.page} className="flex items-center justify-between text-[11px] py-0.5">
+              <span className="truncate mr-3" style={{ color: T.textBody }}>{pg.page}</span>
+              <span style={{ color: T.textPrimary }}>{pg.visitors}</span>
+            </div>
+          ))}
+        </>
       )}
     </div>
   );
@@ -761,7 +819,10 @@ const UsersAnalytics = () => {
         <GeoDonut />
       </div>
 
-      <SourcesCard />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SourcesCard />
+        <AiCard />
+      </div>
 
       {/* Users — click to drill into activity */}
       <div className="bg-white" style={CARD}>

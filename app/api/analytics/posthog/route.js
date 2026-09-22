@@ -44,8 +44,51 @@ const UKEY = `if(coalesce(person.properties.email, '') != '', toString(person_id
 // Arabia's historical test traffic is hidden, but any Saudi visits from the
 // cutoff date onward DO show. Applied to every aggregate query below. Uses
 // coalesce so events with an unresolved country are kept, not dropped.
+// Where a visit came from, in priority order: the utm_source we put on our own
+// outbound links (/r/<slug>), then the referring domain mapped to a channel, then
+// 'direct'. Organic Google is simply a google referrer with no utm — exactly the
+// rule Roland asked for.
+// Where a visit came from, in priority order: the utm_source we put on our own
+// outbound links (/r/<slug>), then the referring domain mapped to a channel, then
+// 'direct'. Organic Google is simply a google referrer with no utm — exactly the
+// rule Roland asked for.
+//
+// String.raw on purpose: a plain template would hand ClickHouse '\.', which it
+// unescapes to '.' (any character). '\\.' below reaches it as a literal dot.
+const SOURCE_EXPR = String.raw`
+  multiIf(
+    coalesce(nullIf(properties.utm_source, ''), '') != '', lower(properties.utm_source),
+    match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)google\\.'), 'google',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(bing|duckduckgo|yahoo|ecosia)\\.'), 'search',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(chatgpt|openai|perplexity|claude\\.ai|gemini)'), 'ai',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(^|\\.)reddit\\.'), 'reddit',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(instagram|facebook|^fb\\.|tiktok|linkedin|twitter|^x\\.com)'), 'social',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(whatsapp|wa\\.me)'), 'whatsapp',
+    coalesce(properties.$referring_domain, '') IN ('', '$direct'), 'direct',
+    match(coalesce(properties.$referring_domain, ''), '(?i)(casa-libre|localhost|airosofts)'), 'direct',
+    lower(properties.$referring_domain)
+  )`;
+
+// Which country site the event came from. New events carry site_country (set by
+// the buyer portal); older ones only have $host, so fall back to that — every
+// real visit before this was casa-libre.com.py.
+const SITE_EXPR = String.raw`
+  multiIf(
+    coalesce(properties.site_country, '') != '', lower(properties.site_country),
+    match(coalesce(properties.$host, ''), '(?i)casa-libre\\.com\\.bo'), 'bo',
+    match(coalesce(properties.$host, ''), '(?i)(^|\\.)uy\\.casa-libre\\.com'), 'uy',
+    match(coalesce(properties.$host, ''), '(?i)casa-libre\\.com\\.ve'), 've',
+    'py'
+  )`;
+
 const HIDE_SAUDI_BEFORE = '2026-09-21';
 const GEO_FILTER = `coalesce(properties.$geoip_country_name, '') != 'Pakistan' AND NOT (coalesce(properties.$geoip_country_name, '') = 'Saudi Arabia' AND timestamp < toDateTime('${HIDE_SAUDI_BEFORE} 00:00:00'))`;
+
+// ?site=py|bo|uy|ve → only that country site's traffic. Anything else = all sites.
+const siteClause = (site) => {
+  const s = String(site || '').toLowerCase();
+  return ['py', 'bo', 'uy', 've'].includes(s) ? ` AND ${SITE_EXPR} = '${s}'` : '';
+};
 
 const stepQuery = (event) => `
   SELECT count(DISTINCT ${UKEY}) AS c
@@ -69,6 +112,9 @@ async function usersList() {
       argMax(properties.$ip, timestamp) AS ip,
       argMax(properties.$geoip_city_name, timestamp) AS city,
       argMax(properties.$geoip_country_name, timestamp) AS country,
+      argMin(${SOURCE_EXPR}, timestamp) AS source,
+      argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+      argMax(${SITE_EXPR}, timestamp) AS site,
       count() AS events,
       countIf(event = 'property_viewed') AS views,
       countIf(event = 'property_saved') AS saves,
@@ -93,13 +139,16 @@ async function usersList() {
       city: r[6] || '',
       country: r[7] || '',
       location: [r[6], r[7]].filter(Boolean).join(', '),
-      events: Number(r[8] || 0),
-      views: Number(r[9] || 0),
-      saves: Number(r[10] || 0),
-      contacts: Number(r[11] || 0),
-      listings: Number(r[12] || 0),
-      first_seen: r[13],
-      last_seen: r[14],
+      source: r[8] || 'direct',
+      campaign: r[9] || '',
+      site: r[10] || 'py',
+      events: Number(r[11] || 0),
+      views: Number(r[12] || 0),
+      saves: Number(r[13] || 0),
+      contacts: Number(r[14] || 0),
+      listings: Number(r[15] || 0),
+      first_seen: r[16],
+      last_seen: r[17],
     };
   });
   return NextResponse.json({ configured: true, users });
@@ -247,6 +296,57 @@ async function geoBreakdown(country, days) {
   return NextResponse.json({ level: 'countries', days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
 }
 
+// Where visitors came from, first touch, per channel. 'direct' is the honest
+// bucket for "arrived with no utm and no referrer"; organic Google shows as
+// 'google' via the referrer.
+async function sourcesBreakdown(days, site) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const rows = await hogql(`
+    WITH first_touch AS (
+      SELECT ${UKEY} AS idkey,
+             argMin(${SOURCE_EXPR}, timestamp) AS source,
+             argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+             max(timestamp) AS last_seen,
+             countIf(event = 'listing_created') AS listings,
+             countIf(event = 'contact_whatsapp_click') AS contacts
+      FROM events
+      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)}
+      GROUP BY idkey
+    )
+    SELECT source, campaign, count() AS visitors, sum(listings) AS listings, sum(contacts) AS contacts
+    FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 40`);
+  return NextResponse.json({
+    configured: true, days: d,
+    rows: flat(rows).map((r) => ({
+      source: r[0] || 'direct', campaign: r[1] || '',
+      visitors: Number(r[2] || 0), listings: Number(r[3] || 0), contacts: Number(r[4] || 0),
+    })),
+  });
+}
+
+// How much of PostHog's free allowance we are using. The free plan covers 1M
+// analytics events a month; this is the number to watch before it bites.
+async function usage() {
+  const rows = await hogql(`
+    SELECT toStartOfMonth(timestamp) AS month, count() AS events, uniq(distinct_id) AS visitors
+    FROM events WHERE timestamp >= now() - INTERVAL 180 DAY GROUP BY month ORDER BY month DESC LIMIT 6`);
+  const months = flat(rows).map((r) => ({ month: String(r[0]).slice(0, 7), events: Number(r[1] || 0), visitors: Number(r[2] || 0) }));
+  const bySite = flat(await hogql(`
+    SELECT ${SITE_EXPR} AS site, count() AS events
+    FROM events WHERE timestamp >= now() - INTERVAL 30 DAY GROUP BY site ORDER BY events DESC`))
+    .map((r) => ({ site: r[0], events: Number(r[1] || 0) }));
+  const current = months[0]?.events || 0;
+  const FREE_MONTHLY_EVENTS = 1000000;
+  // crude but useful: this month's pace projected to a full month
+  const day = new Date().getUTCDate();
+  const projected = Math.round((current / Math.max(day, 1)) * 30);
+  return NextResponse.json({
+    configured: true, freeMonthlyEvents: FREE_MONTHLY_EVENTS,
+    current, projected, percentOfFree: Math.round((projected / FREE_MONTHLY_EVENTS) * 1000) / 10,
+    months, bySite,
+  });
+}
+
 export async function GET(request) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -265,6 +365,8 @@ export async function GET(request) {
     if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
     if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '');
+    if (type === 'sources') return await sourcesBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
+    if (type === 'usage') return await usage();
 
     // ── default: dashboard ──
     const [

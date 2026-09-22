@@ -390,6 +390,109 @@ function arcPath(cx, cy, rO, rI, start, end) {
   return `M ${ox1} ${oy1} A ${rO} ${rO} 0 ${large} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rI} ${rI} 0 ${large} 0 ${ix1} ${iy1} Z`;
 }
 const GEO_RANGES = [{ v: 7, l: '7 days' }, { v: 30, l: '30 days' }, { v: 90, l: '3 months' }, { v: 180, l: '6 months' }, { v: 365, l: '12 months' }];
+// Where visitors came from, first touch. Our own outbound links carry a utm via
+// /r/<slug>; anything with no utm and no referrer is 'direct', and organic Google
+// arrives as a google referrer. Anonymous visitors are counted by IP, same as the
+// rest of this page, so a source is recorded whether or not they sign up.
+function SourcesCard() {
+  const [rows, setRows] = useState([]);
+  const [days, setDays] = useState(90);
+  const [loading, setLoading] = useState(true);
+  const [usage, setUsage] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetch(`/api/analytics/posthog?type=sources&days=${days}`)
+      .then((r) => r.json())
+      .then((d) => { if (alive) setRows(Array.isArray(d.rows) ? d.rows : []); })
+      .catch(() => { if (alive) setRows([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/analytics/posthog?type=usage').then((r) => r.json())
+      .then((d) => { if (alive && d?.configured) setUsage(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // one row per channel (campaigns rolled up), biggest first
+  const byChannel = [];
+  for (const r of rows) {
+    const hit = byChannel.find((x) => x.source === r.source);
+    if (hit) { hit.visitors += r.visitors; hit.listings += r.listings; hit.campaigns.push(r); }
+    else byChannel.push({ source: r.source, visitors: r.visitors, listings: r.listings, campaigns: [r] });
+  }
+  byChannel.sort((a, b) => b.visitors - a.visitors);
+  const total = byChannel.reduce((n, r) => n + r.visitors, 0) || 1;
+
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Where visitors come from</h2>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}
+          className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+          <option value={365}>12 months</option>
+        </select>
+      </div>
+      <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
+        first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct
+      </p>
+
+      {loading ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+      ) : byChannel.length === 0 ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>No visits in this window.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {byChannel.map((r) => (
+            <div key={r.source}>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="font-medium" style={{ color: T.textPrimary }}>{r.source}</span>
+                <span style={{ color: T.textBody }}>
+                  {r.visitors} {r.visitors === 1 ? 'visitor' : 'visitors'}
+                  {r.listings > 0 ? ` · ${r.listings} listed` : ''}
+                </span>
+              </div>
+              <div style={{ height: 6, background: T.bgSurface, borderRadius: 999 }}>
+                <div style={{ width: `${Math.max(2, Math.round((r.visitors / total) * 100))}%`, height: 6, background: T.primary, borderRadius: 999 }} />
+              </div>
+              {r.campaigns.filter((c) => c.campaign).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {r.campaigns.filter((c) => c.campaign).map((c) => (
+                    <span key={c.campaign} className="text-[10px] px-2 py-0.5 border" style={{ borderColor: T.borderLight, color: T.textMuted }}>
+                      {c.campaign} · {c.visitors}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {usage && (
+        <div className="mt-5 pt-3 border-t" style={{ borderColor: T.borderLight }}>
+          <p className="text-[10px] mb-1" style={{ color: T.textMuted }}>PostHog usage (free plan covers 1M events/month)</p>
+          <p className="text-xs" style={{ color: T.textBody }}>
+            {usage.current.toLocaleString()} events this month · on pace for ~{usage.projected.toLocaleString()} ({usage.percentOfFree}% of the free allowance)
+          </p>
+          {usage.bySite?.length > 1 && (
+            <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>
+              by site (30d): {usage.bySite.map((b) => `${b.site} ${b.events.toLocaleString()}`).join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const GeoDonut = () => {
   const [level, setLevel] = useState('countries');
   const [country, setCountry] = useState('');
@@ -634,6 +737,8 @@ const UsersAnalytics = () => {
         <GeoDonut />
       </div>
 
+      <SourcesCard />
+
       {/* Users — click to drill into activity */}
       <div className="bg-white" style={CARD}>
         <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: T.borderLight }}>
@@ -641,19 +746,19 @@ const UsersAnalytics = () => {
           <span className="text-[10px]" style={{ color: T.textMuted }}>click a user to see their activity</span>
         </div>
         <div className="cl-scroll" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 520 }}>
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[1000px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'IP address', 'Location', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
-                  <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i < 3 ? 'text-left' : 'text-right'}`} style={{ color: T.textSecondary }}>{h}</th>
+                {['User', 'IP address', 'Location', 'Source', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
+                  <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i < 4 ? 'text-left' : 'text-right'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {usersLoading ? (
-                <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
+                <tr><td colSpan="9" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan="8" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
+                <tr><td colSpan="9" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
               ) : users.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).map((u) => (
                 <tr key={u.is_anon && u.ip ? `ip:${u.ip}` : u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
                   onClick={() => setSelected(u)}
@@ -666,6 +771,10 @@ const UsersAnalytics = () => {
                   </td>
                   <td className="px-4 py-2.5 text-left text-[11px] font-mono" style={{ color: T.textBody }}>{u.ip || '—'}</td>
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>{u.location || '—'}</td>
+                  <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>
+                    {u.source || 'direct'}
+                    {u.campaign ? <span className="block text-[10px]" style={{ color: T.textMuted }}>{u.campaign}</span> : null}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-xs font-semibold" style={{ color: T.textPrimary }}>{u.events}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.views}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.saves}</td>

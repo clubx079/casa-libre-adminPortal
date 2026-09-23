@@ -948,14 +948,158 @@ const UsersAnalytics = () => {
   );
 };
 
+// Which listings people actually open, most-viewed first.
+//
+// Deliberately two numbers per row: `views` counts every opening (so a listing
+// someone keeps coming back to stands out) and `visitors` counts distinct people
+// (so one person refreshing does not read as demand).
+const PropertyAnalytics = () => {
+  const [days, setDays] = useState(90);
+  const [limit, setLimit] = useState(20);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetch(`/api/analytics/posthog?type=properties&days=${days}&limit=${limit}`)
+      .then((r) => r.json())
+      .then((d) => { if (alive) setData(d?.error ? null : d); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days, limit]);
+
+  const rows = data?.rows || [];
+  const top = rows[0]?.views || 1;
+  const money = (n) => (n == null ? '' : `US$ ${Math.round(n).toLocaleString('en-US')}`);
+  const label = (r) => r.address || r.neighborhood || r.city || `${r.propertyId.slice(0, 8)}…`;
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white p-5" style={CARD}>
+        <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Most viewed properties</h2>
+          <div className="flex items-center gap-2">
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={selectStyle}>
+              <option value={10}>Top 10</option>
+              <option value={20}>Top 20</option>
+              <option value={30}>Top 30</option>
+              <option value={50}>Top 50</option>
+              <option value={100}>Top 100</option>
+            </select>
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+              <option value={180}>6 months</option>
+              <option value={365}>12 months</option>
+            </select>
+          </div>
+        </div>
+        <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
+          one row per listing · views counts every opening, people counts distinct visitors
+        </p>
+
+        {data && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {[
+              ['Views', data.totals.views],
+              ['Properties viewed', data.totals.properties],
+              ['People', data.totals.visitors],
+            ].map(([k, v]) => (
+              <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
+                <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
+                <div className="text-xl font-bold mt-0.5" style={{ color: T.textPrimary }}>{v.toLocaleString('en-US')}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {loading ? (
+          <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-xs" style={{ color: T.textMuted }}>
+            No property views in this window{data ? '' : ' (PostHog unavailable)'}.
+          </p>
+        ) : (
+          <div className="space-y-3.5">
+            {rows.map((r, i) => (
+              <div key={r.propertyId} className="flex items-center gap-3">
+                <span className="text-[11px] font-mono w-6 text-right shrink-0" style={{ color: T.textMuted }}>{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }}>{label(r)}</span>
+                    <span className="text-[11px] shrink-0" style={{ color: T.textBody }}>
+                      <b style={{ color: T.textPrimary }}>{r.views}</b> {r.views === 1 ? 'view' : 'views'}
+                      <span style={{ color: T.textMuted }}> · {r.visitors} {r.visitors === 1 ? 'person' : 'people'}</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 5, background: T.bgSurface, borderRadius: 999, marginTop: 4 }}>
+                    <div style={{ width: `${Math.max(3, Math.round((r.views / top) * 100))}%`, height: 5, background: T.primary, borderRadius: 999 }} />
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 text-[10px]" style={{ color: T.textMuted }}>
+                    {r.mode && <span className="uppercase tracking-wider">{r.mode}</span>}
+                    {r.type && <span>· {r.type}</span>}
+                    {r.city && <span>· {r.city}</span>}
+                    {r.price != null && <span>· {money(r.price)}</span>}
+                    <a
+                      href={`/properties/${r.propertyId}/edit`}
+                      className="ml-auto inline-flex items-center gap-1 hover:underline"
+                      style={{ color: T.textSecondary }}
+                    >
+                      Open <ExternalLink size={10} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const TABS = [
+  { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
+  { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
+];
+
 export default function AnalyticsPage() {
+  const [tab, setTab] = useState('users');
+  const active = TABS.find((t) => t.key === tab) || TABS[0];
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Analytics</h1>
-        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>User behaviour &amp; funnel, from PostHog</p>
+        <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{active.sub}</p>
       </div>
-      <UsersAnalytics />
+
+      <div className="flex items-center gap-2">
+        {TABS.map((t) => {
+          const on = t.key === tab;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className="text-[13px] font-semibold px-3.5 py-1.5 rounded-full transition-colors"
+              style={{
+                background: on ? T.primary : T.bgWhite,
+                color: on ? T.bgWhite : T.textBody,
+                border: `1px solid ${on ? T.primary : T.borderLight}`,
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Both stay mounted: switching tabs should not re-run every PostHog query. */}
+      <div hidden={tab !== 'users'}><UsersAnalytics /></div>
+      <div hidden={tab !== 'properties'}><PropertyAnalytics /></div>
     </div>
   );
 }

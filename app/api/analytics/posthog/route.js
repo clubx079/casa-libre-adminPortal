@@ -412,6 +412,72 @@ async function techBreakdown(days, site) {
   return NextResponse.json({ configured: true, days: d, browsers, devices, systems });
 }
 
+// Which properties people actually look at, most-viewed first.
+//
+// One row per property, from the `property_viewed` event the buyer portal fires
+// when a detail page opens. Two different numbers on purpose:
+//   views    — every opening, so re-visits count
+//   visitors — distinct people, so one person refreshing does not look like demand
+// The label fields (address, city, type…) are taken from the most recent event
+// rather than the database: it keeps this a single query, and it still reflects
+// how the listing looked when people were viewing it.
+async function propertyViews(days, limit) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 30;
+  const n = [10, 20, 30, 50, 100].includes(Number(limit)) ? Number(limit) : 20;
+  const rows = flat(await hogql(`
+    SELECT coalesce(nullIf(properties.property_id, ''), 'unknown') AS pid,
+           count() AS views,
+           count(DISTINCT ${UKEY}) AS visitors,
+           argMax(coalesce(properties.address, ''), timestamp) AS address,
+           argMax(coalesce(properties.city, ''), timestamp) AS city,
+           argMax(coalesce(properties.neighborhood, ''), timestamp) AS neighborhood,
+           argMax(coalesce(properties.type, ''), timestamp) AS type,
+           argMax(coalesce(properties.mode, ''), timestamp) AS mode,
+           argMax(toFloat64OrNull(toString(properties.price)), timestamp) AS price,
+           max(timestamp) AS last_seen
+    FROM events
+    WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY
+      AND ${geoFilter()}
+    GROUP BY pid
+    ORDER BY views DESC
+    LIMIT ${n}`));
+
+  // Totals across ALL viewed properties, not just the page we return, so the
+  // header reads "N views across M properties" honestly.
+  // NB: no alias named `properties` here — it would shadow the events table's
+  // own `properties` field and break ${UKEY}.
+  const [tot] = flat(await hogql(`
+    SELECT count() AS views,
+           count(DISTINCT coalesce(nullIf(properties.property_id, ''), 'unknown')) AS property_count,
+           count(DISTINCT ${UKEY}) AS visitors
+    FROM events
+    WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY
+      AND ${geoFilter()}`));
+
+  return NextResponse.json({
+    configured: true,
+    days: d,
+    limit: n,
+    totals: {
+      views: Number(tot?.[0] || 0),
+      properties: Number(tot?.[1] || 0),
+      visitors: Number(tot?.[2] || 0),
+    },
+    rows: rows.map((r) => ({
+      propertyId: r[0],
+      views: Number(r[1] || 0),
+      visitors: Number(r[2] || 0),
+      address: r[3] || '',
+      city: r[4] || '',
+      neighborhood: r[5] || '',
+      type: r[6] || '',
+      mode: r[7] || '',
+      price: r[8] == null ? null : Number(r[8]),
+      lastSeen: r[9] || null,
+    })),
+  });
+}
+
 // How much of PostHog's free allowance we are using.
 //
 // PostHog bills on a CYCLE, not a calendar month — this org's runs 18th → 18th,
@@ -482,6 +548,7 @@ export async function GET(request) {
     if (type === 'ai') return await aiBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'clicks') return await linkClicks(searchParams.get('days') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
+    if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '');
 
     // ── default: dashboard ──
     const [

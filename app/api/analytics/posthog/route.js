@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { activeCountry } from '@/lib/adminCountry';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -90,7 +91,7 @@ const SITE_EXPR = String.raw`
   )`;
 
 const HIDE_SAUDI_BEFORE = '2026-09-21';
-const GEO_FILTER = `coalesce(properties.$geoip_country_name, '') != 'Pakistan' AND NOT (coalesce(properties.$geoip_country_name, '') = 'Saudi Arabia' AND timestamp < toDateTime('${HIDE_SAUDI_BEFORE} 00:00:00'))`;
+const GEO_BASE = `coalesce(properties.$geoip_country_name, '') != 'Pakistan' AND NOT (coalesce(properties.$geoip_country_name, '') = 'Saudi Arabia' AND timestamp < toDateTime('${HIDE_SAUDI_BEFORE} 00:00:00'))`;
 
 // ?site=py|bo|uy|ve → only that country site's traffic. Anything else = all sites.
 const siteClause = (site) => {
@@ -98,10 +99,18 @@ const siteClause = (site) => {
   return ['py', 'bo', 'uy', 've'].includes(s) ? ` AND ${SITE_EXPR} = '${s}'` : '';
 };
 
+// The country the admin picked in the header switcher. Every query on this page
+// is scoped to it, so "Bolivia" means Bolivia everywhere, not just in two cards.
+const currentSite = () => { try { return activeCountry(); } catch { return ''; } };
+
+// Every aggregate query filters through this, so the header's country switcher
+// scopes the whole page — totals, funnel, trend, map, sources, AI and users.
+const geoFilter = () => `${GEO_BASE}${siteClause(currentSite())}`;
+
 const stepQuery = (event) => `
   SELECT count(DISTINCT ${UKEY}) AS c
   FROM events
-  WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
+  WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
 `;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
@@ -131,7 +140,7 @@ async function usersList() {
       min(timestamp) AS first_seen,
       max(timestamp) AS last_seen
     FROM events
-    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${GEO_FILTER}
+    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${geoFilter()}
     GROUP BY idkey
     ORDER BY last_seen DESC
     LIMIT 300
@@ -290,7 +299,7 @@ async function geoBreakdown(country, days) {
       SELECT coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS name,
              count(DISTINCT ${UKEY}) AS visitors
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER}
+      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
         AND coalesce(properties.$geoip_country_name, '') = '${q(country)}'
       GROUP BY name ORDER BY visitors DESC LIMIT 30`);
     return NextResponse.json({ level: 'cities', country, days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
@@ -299,7 +308,7 @@ async function geoBreakdown(country, days) {
     SELECT coalesce(nullIf(properties.$geoip_country_name, ''), 'Unknown') AS name,
            count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
     GROUP BY name ORDER BY visitors DESC LIMIT 30`);
   return NextResponse.json({ level: 'countries', days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
 }
@@ -319,7 +328,7 @@ async function sourcesBreakdown(days, site) {
              countIf(event = 'listing_created') AS listings,
              countIf(event = 'contact_whatsapp_click') AS contacts
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)}
+      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
       GROUP BY idkey
     )
     SELECT source, campaign, count() AS visitors, countIf(known = 0) AS anon, countIf(known = 1) AS signed_in,
@@ -348,7 +357,7 @@ async function aiBreakdown(days, site) {
     SELECT ${SOURCE_EXPR} AS engine, count(DISTINCT ${UKEY}) AS visitors, count() AS events,
            min(timestamp) AS first_seen, max(timestamp) AS last_seen
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)} AND ${isAi}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()} AND ${isAi}
     GROUP BY engine ORDER BY visitors DESC LIMIT 10`))
     .map((r) => ({ engine: r[0], visitors: Number(r[1] || 0), events: Number(r[2] || 0), firstSeen: r[3], lastSeen: r[4] }));
 
@@ -356,11 +365,33 @@ async function aiBreakdown(days, site) {
     SELECT coalesce(nullIf(properties.$pathname, ''), '/') AS page,
            count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)} AND ${isAi} AND event = '$pageview'
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()} AND ${isAi} AND event = '$pageview'
     GROUP BY page ORDER BY visitors DESC LIMIT 10`))
     .map((r) => ({ page: r[0], visitors: Number(r[1] || 0) }));
 
   return NextResponse.json({ configured: true, days: d, engines, pages });
+}
+
+// Clicks on our own tagged links (/r/<slug>), recorded server-side at the
+// redirect. This is deliberately a different number from the visitors the
+// sources card shows: a click counts even when the person never reaches the page
+// (left early, JavaScript blocked, in-app browser). clicks − landings = the leak.
+async function linkClicks(days) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const rows = flat(await hogql(`
+    SELECT coalesce(properties.utm_source, '?') AS source,
+           coalesce(properties.slug, '?') AS slug,
+           coalesce(nullIf(properties.utm_content, ''), '') AS thread,
+           count() AS clicks,
+           count(DISTINCT coalesce(nullIf(properties.$ip, ''), distinct_id)) AS people
+    FROM events
+    WHERE event = 'link_click' AND timestamp >= now() - INTERVAL ${d} DAY
+      ${siteClause(currentSite())}
+    GROUP BY source, slug, thread ORDER BY clicks DESC LIMIT 30`));
+  return NextResponse.json({
+    configured: true, days: d,
+    rows: rows.map((r) => ({ source: r[0], slug: r[1], thread: r[2], clicks: Number(r[3] || 0), people: Number(r[4] || 0) })),
+  });
 }
 
 // What people browse with. "From Google" is a source (above); "from Safari" is a
@@ -370,7 +401,7 @@ async function techBreakdown(days, site) {
   const one = async (expr) => flat(await hogql(`
     SELECT coalesce(nullIf(${expr}, ''), 'Unknown') AS name, count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${GEO_FILTER} ${siteClause(site)}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
     GROUP BY name ORDER BY visitors DESC LIMIT 12`)).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) }));
 
   const [browsers, devices, systems] = await Promise.all([
@@ -449,6 +480,7 @@ export async function GET(request) {
     if (type === 'sources') return await sourcesBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'usage') return await usage();
     if (type === 'ai') return await aiBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
+    if (type === 'clicks') return await linkClicks(searchParams.get('days') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
 
     // ── default: dashboard ──
@@ -458,12 +490,12 @@ export async function GET(request) {
       topEvents, topProps,
     ] = await Promise.all([
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}`),
+             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}`),
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE toDate(timestamp) = today() AND ${GEO_FILTER}`),
-      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${GEO_FILTER}`),
+             FROM events WHERE toDate(timestamp) = today() AND ${geoFilter()}`),
+      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter()}`),
       hogql(`SELECT toDate(timestamp) AS day, count() AS c
-             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
+             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
              GROUP BY day ORDER BY day ASC`),
       hogql(stepQuery('$pageview')),
       hogql(stepQuery('search_applied')),
@@ -472,11 +504,11 @@ export async function GET(request) {
       hogql(stepQuery('contact_seller_clicked')),
       hogql(stepQuery('listing_created')),
       hogql(`SELECT event, count() AS c
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
+             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
              GROUP BY event ORDER BY c DESC LIMIT 15`),
       hogql(`SELECT properties.property_id AS pid, count() AS c
              FROM events
-             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL 30 DAY AND ${GEO_FILTER}
+             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
                AND properties.property_id IS NOT NULL AND properties.property_id != ''
              GROUP BY pid ORDER BY c DESC LIMIT 10`),
     ]);

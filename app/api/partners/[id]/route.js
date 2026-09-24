@@ -33,3 +33,19 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }
+
+// DELETE /api/partners/:id -> remove a lead for good. Only DISCARDED leads can be
+// deleted (test entries, spam), so a live lead can't be wiped by a stray click.
+export async function DELETE(req, { params }) {
+  if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const { select, remove } = dbFor(activeCountry());
+  try {
+    const [row] = await select('partner_inquiries', `select=id,status&id=eq.${encodeURIComponent(params.id)}&limit=1`);
+    if (!row) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+    if (row.status !== 'discarded') return NextResponse.json({ error: 'Discard the lead first' }, { status: 409 });
+    await remove('partner_inquiries', `id=eq.${encodeURIComponent(params.id)}`);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
+  }
+}

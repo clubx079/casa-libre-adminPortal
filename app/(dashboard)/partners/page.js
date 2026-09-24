@@ -71,6 +71,18 @@ export default function PartnersPage() {
     finally { setUpdatingId(null); }
   }
 
+  async function deleteRow(row) {
+    if (!window.confirm(`Delete the lead "${row.name || row.email || row.id}" for good? This can't be undone.`)) return;
+    setUpdatingId(row.id);
+    try {
+      const res = await fetch(`/api/partners/${row.id}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (e) { window.alert(`Could not delete: ${e.message}`); }
+    finally { setUpdatingId(null); }
+  }
+
   const statusStyle = (s) => {
     if (s === 'live') return { background: T.successSurface, color: T.success };
     if (s === 'migrating') return { background: T.warningSurface, color: T.warning };
@@ -169,6 +181,13 @@ export default function PartnersPage() {
                           {updatingId === r.id ? '…' : ACTION_LABEL[s]}
                         </button>
                       ))}
+                      {r.status === 'discarded' && (
+                        <button onClick={() => deleteRow(r)} disabled={updatingId === r.id}
+                          className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
+                          style={{ borderColor: T.danger, color: T.danger }}>
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

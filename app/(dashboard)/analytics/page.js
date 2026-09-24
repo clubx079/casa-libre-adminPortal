@@ -22,6 +22,8 @@ const T = {
   successSurface: '#E4F1E9',
   warning: '#8A5A12',
   warningSurface: '#F5EAD5',
+  info: '#2A5B8A',
+  danger: '#B23A3A',
 };
 
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
@@ -1061,13 +1063,165 @@ const PropertyAnalytics = () => {
   );
 };
 
+// ── Email analytics (Resend): what the site sent for the ACTIVE country, and
+// what happened to it. Counts come from each email's latest Resend status.
+const EmailAnalytics = () => {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr('');
+    fetch(`/api/analytics/emails?days=${days}`)
+      .then((r) => r.json())
+      .then((d) => { if (!alive) return; if (d?.error) { setErr(d.error); setData(null); } else setData(d); })
+      .catch(() => { if (alive) { setErr('failed'); setData(null); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days]);
+
+  const pct = (n, of) => (of ? `${Math.round((n / of) * 1000) / 10}%` : '—');
+  const fmtAt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const statusColor = (s) => (s === 'opened' || s === 'clicked' ? T.success : s === 'delivered' ? T.info : ['bounced', 'complained', 'failed', 'suppressed'].includes(s) ? T.danger : T.textMuted);
+  const t = data?.totals;
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white p-5" style={CARD}>
+        <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Emails sent via Resend</h2>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
+            <option value={1}>24 hours</option>
+            <option value={7}>7 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+          </select>
+        </div>
+        <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
+          {data ? `from ${data.domain} · ` : ''}each email counted once, by its latest status · opens need open tracking on in Resend
+        </p>
+
+        {loading ? (
+          <p className="text-xs" style={{ color: T.textMuted }}>Loading from Resend…</p>
+        ) : err === 'no_key' ? (
+          <div className="text-xs p-3" style={{ ...CARD, background: T.warningSurface, color: T.textBody }}>
+            <b>Not connected yet.</b> Add a <b>full-access</b> Resend API key to the admin portal as <code>RESEND_READ_API_KEY</code>
+            {' '}(the sites&apos; keys can only send), and switch on <b>open tracking</b> for each sending domain in Resend → Domains.
+          </div>
+        ) : err ? (
+          <p className="text-xs" style={{ color: T.danger }}>Could not load from Resend: {err}</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+              {[
+                ['Sent', t.sent, null],
+                ['Delivered', t.delivered, pct(t.delivered, t.sent)],
+                ['Opened', t.opened, pct(t.opened, t.sent)],
+                ['Clicked', t.clicked, pct(t.clicked, t.sent)],
+                ['Bounced / failed', t.failed, pct(t.failed, t.sent)],
+              ].map(([k, v, sub]) => (
+                <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
+                  <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
+                  <div className="text-xl font-bold mt-0.5" style={{ color: T.textPrimary }}>{v.toLocaleString('en-US')}</div>
+                  {sub ? <div className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{sub} of sent</div> : null}
+                </div>
+              ))}
+            </div>
+            {data.truncated ? <p className="text-[10px] mb-3" style={{ color: T.warning }}>Showing the most recent 4,000 emails only — pick a shorter period for exact totals.</p> : null}
+
+            <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>By email type</h3>
+            {data.byType.length === 0 ? (
+              <p className="text-xs mb-5" style={{ color: T.textMuted }}>No emails sent in this period.</p>
+            ) : (
+              <div className="overflow-x-auto mb-5">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ color: T.textMuted }}>
+                      {['Type', 'Sent', 'Delivered', 'Opened', 'Clicked', 'Bounced', 'Open rate'].map((h, i) => (
+                        <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byType.map((r) => (
+                      <tr key={r.type} className="border-t" style={{ borderColor: T.borderLight, color: T.textBody }}>
+                        <td className="py-1.5 font-medium" style={{ color: T.textPrimary }}>{r.type}</td>
+                        <td className="py-1.5 text-right">{r.sent}</td>
+                        <td className="py-1.5 text-right">{r.delivered}</td>
+                        <td className="py-1.5 text-right">{r.opened}</td>
+                        <td className="py-1.5 text-right">{r.clicked}</td>
+                        <td className="py-1.5 text-right">{r.failed}</td>
+                        <td className="py-1.5 text-right font-semibold">{r.openRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {data.byDay.length > 0 && (
+              <>
+                <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>By day</h3>
+                <div className="overflow-x-auto mb-5">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ color: T.textMuted }}>
+                        {['Day', 'Sent', 'Delivered', 'Opened', 'Clicked'].map((h, i) => (
+                          <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...data.byDay].reverse().map((r) => (
+                        <tr key={r.day} className="border-t" style={{ borderColor: T.borderLight, color: T.textBody }}>
+                          <td className="py-1.5 font-mono">{r.day}</td>
+                          <td className="py-1.5 text-right">{r.sent}</td>
+                          <td className="py-1.5 text-right">{r.delivered}</td>
+                          <td className="py-1.5 text-right">{r.opened}</td>
+                          <td className="py-1.5 text-right">{r.clicked}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {data.recent.length > 0 && (
+              <>
+                <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>Most recent</h3>
+                <div className="space-y-1.5">
+                  {data.recent.map((r) => (
+                    <div key={r.id} className="flex items-center gap-3 text-xs border-t pt-1.5" style={{ borderColor: T.borderLight }}>
+                      <span className="w-28 shrink-0" style={{ color: T.textMuted }}>{fmtAt(r.at)}</span>
+                      <span className="w-32 shrink-0 font-medium truncate" style={{ color: T.textPrimary }}>{r.type}</span>
+                      <span className="flex-1 min-w-0 truncate font-mono" style={{ color: T.textBody }} title={r.subject}>{r.to}</span>
+                      <span className="shrink-0 font-semibold capitalize" style={{ color: statusColor(r.status) }}>{r.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const TABS = [
   { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
+  { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
 ];
 
 export default function AnalyticsPage() {
   const [tab, setTab] = useState('users');
+  // Resend lists are rate-limited: load the email tab only once it is opened.
+  const [emailsSeen, setEmailsSeen] = useState(false);
+  useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
 
   return (
@@ -1100,6 +1254,7 @@ export default function AnalyticsPage() {
       {/* Both stay mounted: switching tabs should not re-run every PostHog query. */}
       <div hidden={tab !== 'users'}><UsersAnalytics /></div>
       <div hidden={tab !== 'properties'}><PropertyAnalytics /></div>
+      <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics /> : null}</div>
     </div>
   );
 }

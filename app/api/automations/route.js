@@ -17,7 +17,7 @@ const inList = (ids) => `in.(${ids.map((id) => `"${String(id).replace(/"/g, '')}
 async function payload(db) {
   const [[automation], templates, runs] = await Promise.all([
     db.select('automations', `select=*&id=eq.${AUTOMATION_ID}&limit=1`),
-    db.select('email_templates', 'select=id,name,key,is_active&order=created_at.asc'),
+    db.select('email_templates', 'select=id,name,key,subject,is_active&order=created_at.asc'),
     db.select('automation_runs', `select=*&automation_id=eq.${AUTOMATION_ID}&order=created_at.desc&limit=2000`),
   ]);
   if (!automation) return { missing: true };

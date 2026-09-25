@@ -17,6 +17,8 @@ const NAV = [
   ['/contacts', 'Contacts', 'chart'],
   ['/feedbacks', 'Feedback', 'shield'],
   ['/partners', 'Partners', 'users'],
+  ['/automations', 'Automations', 'bolt'],
+  ['/email-templates', 'Email templates', 'mail'],
   ['/properties', 'Properties', 'home'],
   ['/runs', 'Runs', 'runs'],
 ];
@@ -73,6 +75,19 @@ function Icon({ name }) {
       <svg {...p}>
         <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" />
         <path d="M9 12l2 2 4-4" />
+      </svg>
+    );
+  if (name === 'mail')
+    return (
+      <svg {...p}>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="m3 7 9 6 9-6" />
+      </svg>
+    );
+  if (name === 'bolt')
+    return (
+      <svg {...p}>
+        <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
       </svg>
     );
   if (name === 'user')

@@ -71,19 +71,59 @@ function TemplatePicker({ label, value, templates, onChange, error }) {
   );
 }
 
+// One automation: name + status + on/off switch, the steps in a row, a save bar.
+function AutomationCard({ title, description, enabled, enabledAt, busy, onToggle, dirty, onSave, footnote, children }) {
+  return (
+    <section className="rounded-[18px] overflow-hidden" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 md:px-6 py-5 border-b" style={{ borderColor: T.borderLight }}>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-[18px] font-bold tracking-head" style={{ color: T.textPrimary }}>{title}</h2>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={enabled ? { background: T.successSurface, color: T.success } : { background: T.bgSurface, color: T.textMuted }}>{enabled ? 'Live' : 'Off'}</span>
+          </div>
+          <p className="text-[13px] mt-1" style={{ color: T.textSecondary }}>
+            {description}{enabled && enabledAt ? ` On since ${fmtDate(enabledAt, true)}.` : ''}
+          </p>
+        </div>
+        <button onClick={onToggle} disabled={!!busy} role="switch" aria-checked={enabled} aria-label={`${title}: on or off`}
+          className="inline-flex items-center gap-3 pl-2 pr-4 py-1.5 rounded-full border text-[13px] font-semibold transition-colors disabled:opacity-50"
+          style={enabled ? { background: T.successSurface, borderColor: T.success, color: T.success } : { background: T.bgWhite, borderColor: 'rgba(17,17,17,.2)', color: T.textBody }}>
+          <span className="relative w-10 h-[22px] rounded-full transition-colors" style={{ background: enabled ? T.success : 'rgba(17,17,17,.2)' }}>
+            <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: enabled ? 21 : 3 }} />
+          </span>
+          {busy === 'toggle' ? 'Saving…' : enabled ? 'On' : 'Off'}
+        </button>
+      </div>
+      <div className="p-4 md:p-5" style={{ background: T.bgSurface }}>
+        <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-1">{children}</div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 md:px-6 py-4 border-t" style={{ borderColor: T.borderLight }}>
+        <p className="text-[12px]" style={{ color: T.textMuted }}>{footnote}</p>
+        <div className="flex items-center gap-3">
+          {dirty && <span className="text-[12px]" style={{ color: T.textMuted }}>Unsaved changes</span>}
+          <button onClick={onSave} disabled={!dirty || !!busy} className={btnPrimary}>{busy === 'save' ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function AutomationsPage() {
   const [data, setData] = useState(null);
   const [form, setForm] = useState(null);
+  const [vform, setVform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
   const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState('');
+  const [busy, setBusy] = useState({});       // { first: 'toggle'|'save', views: … }
 
   function apply(j) {
     setData(j);
     const a = j.automation;
     setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
+    const v = j.views?.automation;
+    setVform(v ? { milestones: (v.milestones || []).join(', '), template_id: v.template_id || '' } : null);
   }
 
   useEffect(() => {
@@ -98,39 +138,43 @@ export default function AutomationsPage() {
     })();
   }, []);
 
-  async function put(patch, okText) {
+  async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : patch;
+    const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
-    if (res.status === 400 && j.errors) { setErrors(j.errors); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
+    if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
     if (!res.ok) { setError(j.error || `HTTP ${res.status}`); return false; }
     apply(j);
     if (okText) setNotice(okText);
     return true;
   }
-
-  async function toggle() {
-    const turningOn = !data.automation.enabled;
-    if (turningOn && !window.confirm('Switch the automation on?\n\nOnly sellers whose FIRST listing is published from now on get the free home display and the emails. Nobody who already published is affected.')) return;
-    if (!turningOn && !window.confirm('Switch the automation off?\n\nNobody new gets the gift. Sellers already on free display keep it until it ends, but won’t get the reminder email.')) return;
-    setBusy('toggle');
-    await put({ enabled: turningOn }, turningOn ? 'The automation is on.' : 'The automation is off.');
-    setBusy('');
-  }
-
-  async function save() {
-    setBusy('save');
-    await put(form, 'Changes saved.');
-    setBusy('');
-  }
+  const run = async (which, kind, fn) => { setBusy((b) => ({ ...b, [which]: kind })); await fn(); setBusy((b) => ({ ...b, [which]: '' })); };
 
   if (pending) return <div className="space-y-5"><PageHeader title="Automations" /><PendingMigration /></div>;
   if (!data || !form) return <div className="space-y-5"><PageHeader title="Automations" />{error ? <Banner>{error}</Banner> : <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>}</div>;
 
   const a = data.automation;
+  const e1 = errors.first || {};
   const setF = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
   const dirty = ['wait_days', 'free_days', 'remind_days_before', 'gift_template_id', 'reminder_template_id']
     .some((k) => String(form[k] ?? '') !== String(a[k] ?? ''));
+
+  const toggleFirst = () => {
+    const on = !a.enabled;
+    if (on && !window.confirm('Switch the automation on?\n\nOnly sellers whose FIRST listing is published from now on get the free home display and the emails. Nobody who already published is affected.')) return;
+    if (!on && !window.confirm('Switch the automation off?\n\nNobody new gets the gift. Sellers already on free display keep it until it ends, but won’t get the reminder email.')) return;
+    run('first', 'toggle', () => put('first', { enabled: on }, on ? 'First listing automation is on.' : 'First listing automation is off.'));
+  };
+
+  const va = data.views?.automation;
+  const e2 = errors.views || {};
+  const vDirty = !!(va && vform && (vform.milestones.replace(/\s/g, '') !== (va.milestones || []).join(',') || String(vform.template_id || '') !== String(va.template_id || '')));
+  const toggleViews = () => {
+    const on = !va.enabled;
+    if (on && !window.confirm('Switch "Listing getting views" on?\n\nSellers get an email when their listing reaches your view numbers. Listings that already passed a number before now won’t be emailed for it.')) return;
+    run('views', 'toggle', () => put('views', { enabled: on }, on ? '“Listing getting views” is on.' : '“Listing getting views” is off.'));
+  };
 
   return (
     <div className="space-y-5">
@@ -138,61 +182,60 @@ export default function AutomationsPage() {
       {error && <Banner>{error}</Banner>}
       {notice && <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: T.successSurface, color: T.success }}>{notice}</div>}
 
-      <section className="rounded-[18px] overflow-hidden" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
-        {/* Header: name, what it does, on/off */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-5 md:px-6 py-5 border-b" style={{ borderColor: T.borderLight }}>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-[18px] font-bold tracking-head" style={{ color: T.textPrimary }}>First listing → free home display</h2>
-              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={a.enabled ? { background: T.successSurface, color: T.success } : { background: T.bgSurface, color: T.textMuted }}>{a.enabled ? 'Live' : 'Off'}</span>
+      <AutomationCard
+        title="First listing → free home display"
+        description="A thank-you for a seller’s first listing: free days on the home page, then an offer to extend for US$20."
+        enabled={a.enabled} enabledAt={a.enabled_at} busy={busy.first}
+        onToggle={toggleFirst} dirty={dirty} onSave={() => run('first', 'save', () => put('first', form, 'Changes saved.'))}
+        footnote="Paid home listings always come first; free ones only fill empty home slots. After the free days the listing stays live, just not on the home page."
+      >
+        <StepCard n={1} kind="Trigger" title="A seller publishes their first listing" />
+        <Connector />
+        <StepCard n={2} kind="Wait" title="Wait before the gift">
+          <DayField value={form.wait_days} onChange={setF('wait_days')} min={0} max={60} error={e1.wait_days} suffix="days" />
+        </StepCard>
+        <Connector />
+        <StepCard n={3} kind="Gift" title="Free home display + thank-you email">
+          <DayField value={form.free_days} onChange={setF('free_days')} min={1} max={365} error={e1.free_days} suffix="days on the home page" />
+          <TemplatePicker label="Email sent" value={form.gift_template_id} templates={data.templates} onChange={setF('gift_template_id')} />
+        </StepCard>
+        <Connector />
+        <StepCard n={4} kind="Reminder" title="Ending-soon email with the pay button">
+          <DayField value={form.remind_days_before} onChange={setF('remind_days_before')} min={1} max={60} error={e1.remind_days_before} suffix="days before the end" />
+          <TemplatePicker label="Email sent" value={form.reminder_template_id} templates={data.templates} onChange={setF('reminder_template_id')} />
+        </StepCard>
+      </AutomationCard>
+
+      {va && vform ? (
+        <AutomationCard
+          title="Listing getting views"
+          description="Tells a seller their listing is getting attention, with the view count, and invites them to list another property."
+          enabled={va.enabled} enabledAt={va.enabled_at} busy={busy.views}
+          onToggle={toggleViews} dirty={vDirty} onSave={() => run('views', 'save', () => put('views', vform, 'Changes saved.'))}
+          footnote={`Views are the same count as Analytics → Property analytics. Only listings sellers published themselves.${data.views.sent ? ` ${data.views.sent.toLocaleString('en-US')} sent so far.` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A seller’s listing reaches a number of views" />
+          <Connector />
+          <StepCard n={2} kind="Views" title="Email at these view counts">
+            <div>
+              <input value={vform.milestones} onChange={(e) => setVform((f) => ({ ...f, milestones: e.target.value }))} placeholder="50" aria-label="View numbers"
+                className="w-full px-3 py-2 rounded-[10px] border text-[15px] font-bold outline-none focus:border-ink/60 tabular-nums"
+                style={{ borderColor: e2.milestones ? T.danger : 'rgba(17,17,17,.2)', color: T.textPrimary }} />
+              {e2.milestones
+                ? <p className="text-[11px] mt-1" style={{ color: T.danger }}>{e2.milestones}</p>
+                : <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>One number, or several separated by commas (e.g. 25, 50, 100). Each is emailed once per listing.</p>}
             </div>
-            <p className="text-[13px] mt-1" style={{ color: T.textSecondary }}>
-              A thank-you for a seller’s first listing: free days on the home page, then an offer to extend for US$20.
-              {a.enabled && a.enabled_at ? ` On since ${fmtDate(a.enabled_at, true)}.` : ''}
-            </p>
-          </div>
-          <button onClick={toggle} disabled={!!busy} role="switch" aria-checked={a.enabled} aria-label="Automation on or off"
-            className="inline-flex items-center gap-3 pl-2 pr-4 py-1.5 rounded-full border text-[13px] font-semibold transition-colors disabled:opacity-50"
-            style={a.enabled ? { background: T.successSurface, borderColor: T.success, color: T.success } : { background: T.bgWhite, borderColor: 'rgba(17,17,17,.2)', color: T.textBody }}>
-            <span className="relative w-10 h-[22px] rounded-full transition-colors" style={{ background: a.enabled ? T.success : 'rgba(17,17,17,.2)' }}>
-              <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all" style={{ left: a.enabled ? 21 : 3 }} />
-            </span>
-            {busy === 'toggle' ? 'Saving…' : a.enabled ? 'On' : 'Off'}
-          </button>
-        </div>
-
-        {/* The flow, left to right */}
-        <div className="p-4 md:p-5" style={{ background: T.bgSurface }}>
-          <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-1">
-            <StepCard n={1} kind="Trigger" title="A seller publishes their first listing" />
-            <Connector />
-            <StepCard n={2} kind="Wait" title="Wait before the gift">
-              <DayField value={form.wait_days} onChange={setF('wait_days')} min={0} max={60} error={errors.wait_days} suffix="days" />
-            </StepCard>
-            <Connector />
-            <StepCard n={3} kind="Gift" title="Free home display + thank-you email">
-              <DayField value={form.free_days} onChange={setF('free_days')} min={1} max={365} error={errors.free_days} suffix="days on the home page" />
-              <TemplatePicker label="Email sent" value={form.gift_template_id} templates={data.templates} onChange={setF('gift_template_id')} />
-            </StepCard>
-            <Connector />
-            <StepCard n={4} kind="Reminder" title="Ending-soon email with the pay button">
-              <DayField value={form.remind_days_before} onChange={setF('remind_days_before')} min={1} max={60} error={errors.remind_days_before} suffix="days before the end" />
-              <TemplatePicker label="Email sent" value={form.reminder_template_id} templates={data.templates} onChange={setF('reminder_template_id')} />
-            </StepCard>
-          </div>
-        </div>
-
-        {/* Footer: save */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 md:px-6 py-4 border-t" style={{ borderColor: T.borderLight }}>
-          <p className="text-[12px]" style={{ color: T.textMuted }}>
-            Paid home listings always come first; free ones only fill empty home slots. After the free days the listing stays live, just not on the home page.
-          </p>
-          <div className="flex items-center gap-3">
-            {dirty && <span className="text-[12px]" style={{ color: T.textMuted }}>Unsaved changes</span>}
-            <button onClick={save} disabled={!dirty || !!busy} className={btnPrimary}>{busy === 'save' ? 'Saving…' : 'Save changes'}</button>
-          </div>
-        </div>
-      </section>
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Email" title="Email to the seller">
+            <TemplatePicker label="Email sent" value={vform.template_id} templates={data.templates} onChange={(v) => setVform((f) => ({ ...f, template_id: v }))} />
+          </StepCard>
+        </AutomationCard>
+      ) : (
+        <Banner tone="warning">
+          <b>“Listing getting views” isn’t set up for this country yet.</b> Apply <span className="font-mono">migrations/006_views_automation.sql</span> (buyer portal repo) in the AiroBase SQL editor, then reload.
+        </Banner>
+      )}
     </div>
   );
 }

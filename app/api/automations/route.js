@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { AUTOMATION_ID, validateSettings, automationStats } from '@/lib/automationAdmin';
+import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, validateSettings, validateViewsSettings, automationStats } from '@/lib/automationAdmin';
 import { dbError, q } from '@/lib/automationDb';
 
 export const runtime = 'nodejs';
@@ -21,6 +21,15 @@ async function payload(db) {
     db.select('automation_runs', `select=*&automation_id=eq.${AUTOMATION_ID}&order=created_at.desc&limit=2000`),
   ]);
   if (!automation) return { missing: true };
+  // "Listing getting views" (migration 006). Missing → the page explains how to add it.
+  let views = null;
+  try {
+    const [va] = await db.select('automations', `select=*&id=eq.${VIEWS_AUTOMATION_ID}&limit=1`);
+    if (va && 'milestones' in va) {
+      const sent = await db.selectWithCount('email_log', `select=id&automation_id=eq.${VIEWS_AUTOMATION_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 }));
+      views = { automation: va, sent: sent.count || 0 };
+    }
+  } catch { views = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -36,6 +45,7 @@ async function payload(db) {
   const pById = new Map(props.map((p) => [String(p.id), p]));
   return {
     automation,
+    views,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -66,6 +76,15 @@ export async function PUT(req) {
   const db = dbFor(activeCountry());
   const body = await req.json().catch(() => ({}));
   try {
+    if (body.id === VIEWS_AUTOMATION_ID) {
+      const [cur] = await db.select('automations', `select=*&id=eq.${VIEWS_AUTOMATION_ID}&limit=1`);
+      if (!cur) return NextResponse.json({ pending: true, error: 'migration_pending' });
+      const { id, ...patch } = body;
+      const v = validateViewsSettings(patch, cur);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      await db.update('automations', `id=eq.${q(VIEWS_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
     const [current] = await db.select('automations', `select=*&id=eq.${AUTOMATION_ID}&limit=1`);
     if (!current) return NextResponse.json({ pending: true, error: 'migration_pending' });
     const v = validateSettings(body, current);

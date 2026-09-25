@@ -66,3 +66,30 @@ describe('countryFrame / templateUsage', () => {
     expect(u).toEqual(['First listing → gift email']);
   });
 });
+
+import { validateViewsSettings, parseMilestones, VIEWS_AUTOMATION_ID } from '../lib/automationAdmin.js';
+
+describe('views automation settings', () => {
+  it('parses "25, 50, 100" into sorted unique numbers', () => {
+    expect(parseMilestones('100, 25,50 ,25')).toEqual([25, 50, 100]);
+    expect(parseMilestones([50, '10'])).toEqual([10, 50]);
+  });
+  it('rejects empty, zero, text, too many or too large numbers', () => {
+    expect(validateViewsSettings({ milestones: '' }).ok).toBe(false);
+    expect(validateViewsSettings({ milestones: '0, 50' }).ok).toBe(false);
+    expect(validateViewsSettings({ milestones: 'abc' }).ok).toBe(false);
+    expect(validateViewsSettings({ milestones: Array.from({ length: 11 }, (_, i) => i + 1) }).ok).toBe(false);
+    expect(validateViewsSettings({ milestones: '2000000' }).ok).toBe(false);
+    expect(validateViewsSettings({ milestones: '50' }).value.milestones).toEqual([50]);
+  });
+  it('switching on needs numbers and a template, and stamps enabled_at', () => {
+    const now = '2026-10-01T00:00:00.000Z';
+    expect(validateViewsSettings({ enabled: true }, { enabled: false, milestones: [50], template_id: null }, now).ok).toBe(false);
+    const ok = validateViewsSettings({ enabled: true }, { enabled: false, milestones: [50], template_id: 't' }, now);
+    expect(ok.ok).toBe(true);
+    expect(ok.value.enabled_at).toBe(now);
+  });
+  it('templates list shows the views automation usage', () => {
+    expect(templateUsage('tv', [{ id: VIEWS_AUTOMATION_ID, template_id: 'tv' }])).toEqual(['Listing getting views → email']);
+  });
+});

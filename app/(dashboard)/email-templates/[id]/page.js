@@ -36,6 +36,10 @@ export default function TemplateEditor({ params }) {
   const [dirty, setDirty] = useState(false);
   const refs = useRef({});
   const lastField = useRef('body');
+  // "Preview in English": translated copy of the text fields, preview only.
+  const [english, setEnglish] = useState(false);
+  const [tr, setTr] = useState(null);
+  const [trState, setTrState] = useState(''); // '' | 'loading' | 'error'
 
   useEffect(() => {
     let alive = true;
@@ -86,10 +90,29 @@ export default function TemplateEditor({ params }) {
     requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(start + tag.length, start + tag.length); } });
   }
 
-  const preview = useMemo(() => renderTemplate(form, sampleVars, countryFrame(country, {
+  // Re-translate (after a short pause in typing) while the English preview is on.
+  useEffect(() => {
+    if (!english) return undefined;
+    let alive = true;
+    setTrState('loading');
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/email-templates/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+        const j = await res.json();
+        if (!alive) return;
+        if (!res.ok) throw new Error(j.message || 'failed');
+        setTr({ subject: j.subject, heading: j.heading, body: j.body, button_label: j.button_label });
+        setTrState('');
+      } catch { if (alive) setTrState('error'); }
+    }, 700);
+    return () => { alive = false; clearTimeout(id); };
+  }, [english, form.subject, form.heading, form.body, form.button_label]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const shown = english && tr ? { ...form, ...tr } : form;
+  const preview = useMemo(() => renderTemplate(shown, sampleVars, countryFrame(country, {
     appleSrc: `data:image/png;base64,${BADGE_APPLE_PNG}`,
     playSrc: `data:image/png;base64,${BADGE_PLAY_PNG}`,
-  })), [form, country]);
+  })), [shown, country]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function check() {
     const v = validateTemplate(form);
@@ -249,7 +272,18 @@ export default function TemplateEditor({ params }) {
           {/* Preview */}
           <div className="overflow-hidden xl:sticky xl:top-4" style={CARD}>
             <div className="px-5 py-3 border-b" style={{ borderColor: T.borderLight, background: T.bgSurface }}>
-              <div className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>Preview · sample data</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>
+                  {english ? 'English preview · not saved, emails go out in Spanish' : 'Preview · sample data'}
+                </div>
+                <button type="button" onClick={() => { setEnglish((v) => !v); if (english) setTrState(''); }}
+                  className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors"
+                  style={english ? { background: T.primary, color: '#fff', borderColor: T.primary } : { background: T.bgWhite, color: T.textBody, borderColor: T.borderLight }}>
+                  {english ? 'Back to Spanish' : 'Preview in English'}
+                </button>
+              </div>
+              {english && trState === 'loading' && <div className="text-[11px] mt-1" style={{ color: T.textMuted }}>Translating…</div>}
+              {english && trState === 'error' && <div className="text-[11px] mt-1" style={{ color: T.danger }}>The translation service didn’t answer. Showing Spanish.</div>}
               <div className="text-[13px] font-semibold mt-1 truncate" style={{ color: T.textPrimary }} title={preview.subject}>{preview.subject || <span style={{ color: T.textMuted }}>No subject yet</span>}</div>
             </div>
             <iframe title="Email preview" srcDoc={preview.html} className="w-full block" style={{ height: 640, border: 0, background: '#f9f4ee' }} sandbox="" />

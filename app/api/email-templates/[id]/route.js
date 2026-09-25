@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 async function load(db, id) {
   const [row] = await db.select('email_templates', `select=*&id=eq.${q(id)}&limit=1`);
   if (!row) return null;
-  const automations = await db.select('automations', 'select=id,gift_template_id,reminder_template_id');
+  const automations = await db.select('automations', 'select=*');
   return { ...row, usedBy: templateUsage(row.id, automations) };
 }
 

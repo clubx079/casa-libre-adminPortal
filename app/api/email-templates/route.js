@@ -17,7 +17,7 @@ export async function GET() {
   try {
     const [templates, automations, logs] = await Promise.all([
       select('email_templates', 'select=*&order=created_at.asc'),
-      select('automations', 'select=id,gift_template_id,reminder_template_id'),
+      select('automations', 'select=*'),
       select('email_log', 'select=template_id,status,created_at&status=eq.sent&order=created_at.desc&limit=5000'),
     ]);
     const sent = new Map();

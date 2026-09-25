@@ -164,9 +164,7 @@ export default function AutomationsPage() {
         {/* The flow, left to right */}
         <div className="p-4 md:p-5" style={{ background: T.bgSurface }}>
           <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-1">
-            <StepCard n={1} kind="Trigger" title="A seller publishes their first listing">
-              <p style={{ color: T.textSecondary }}>Only listings with a photo, published after the automation is switched on.</p>
-            </StepCard>
+            <StepCard n={1} kind="Trigger" title="A seller publishes their first listing" />
             <Connector />
             <StepCard n={2} kind="Wait" title="Wait before the gift">
               <DayField value={form.wait_days} onChange={setF('wait_days')} min={0} max={60} error={errors.wait_days} suffix="days" />

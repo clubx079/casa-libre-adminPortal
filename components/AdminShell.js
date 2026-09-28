@@ -17,6 +17,7 @@ const NAV = [
   ['/contacts', 'Contacts', 'chart'],
   ['/feedbacks', 'Feedback', 'shield'],
   ['/partners', 'Partners', 'users'],
+  ['/leads', 'Leads', 'users'],
   ['/automations', 'Automations', 'bolt'],
   ['/email-templates', 'Email templates', 'mail'],
   ['/properties', 'Properties', 'home'],

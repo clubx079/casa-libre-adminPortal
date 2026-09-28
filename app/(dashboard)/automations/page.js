@@ -121,7 +121,7 @@ export default function AutomationsPage() {
   function apply(j) {
     setData(j);
     const a = j.automation;
-    setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
+    setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, first_tier_count: a.first_tier_count, later_free_days: a.later_free_days, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
     const v = j.views?.automation;
     setVform(v ? { milestones: (v.milestones || []).join(', '), template_id: v.template_id || '' } : null);
   }
@@ -157,7 +157,8 @@ export default function AutomationsPage() {
   const a = data.automation;
   const e1 = errors.first || {};
   const setF = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
-  const dirty = ['wait_days', 'free_days', 'remind_days_before', 'gift_template_id', 'reminder_template_id']
+  const hasTiers = a.first_tier_count !== undefined && a.later_free_days !== undefined;   // migration 009
+  const dirty = ['wait_days', 'free_days', 'remind_days_before', 'first_tier_count', 'later_free_days', 'gift_template_id', 'reminder_template_id']
     .some((k) => String(form[k] ?? '') !== String(a[k] ?? ''));
 
   const toggleFirst = () => {
@@ -196,12 +197,31 @@ export default function AutomationsPage() {
         </StepCard>
         <Connector />
         <StepCard n={3} kind="Gift" title="Free home display + thank-you email">
-          <DayField value={form.free_days} onChange={setF('free_days')} min={1} max={365} error={e1.free_days} suffix="days on the home page" />
+          {hasTiers ? (
+            <div className="space-y-2.5" data-testid="tiers">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: T.textSecondary }}>The first</p>
+                <DayField value={form.first_tier_count} onChange={setF('first_tier_count')} min={0} max={100000} error={e1.first_tier_count} suffix="sellers to ever list get…" />
+              </div>
+              <DayField value={form.free_days} onChange={setF('free_days')} min={1} max={365} error={e1.free_days} suffix="days on the home page" />
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: T.textSecondary }}>After that, everyone gets</p>
+                <DayField value={form.later_free_days} onChange={setF('later_free_days')} min={1} max={365} error={e1.later_free_days} suffix="days on the home page" />
+              </div>
+              <p className="text-[11px]" style={{ color: T.textMuted }}>Place in line counts every seller who ever published, including the early ones.</p>
+            </div>
+          ) : (
+            <>
+              <DayField value={form.free_days} onChange={setF('free_days')} min={1} max={365} error={e1.free_days} suffix="days on the home page" />
+              <p className="text-[11px]" style={{ color: T.textMuted }}>Apply <span className="font-mono">migrations/009_first_listing_tiers.sql</span> (buyer portal repo) to set “first 25 get 30 days, then 7 days”.</p>
+            </>
+          )}
           <TemplatePicker label="Email sent" value={form.gift_template_id} templates={data.templates} onChange={setF('gift_template_id')} />
         </StepCard>
         <Connector />
         <StepCard n={4} kind="Reminder" title="Ending-soon email with the pay button">
           <DayField value={form.remind_days_before} onChange={setF('remind_days_before')} min={1} max={60} error={e1.remind_days_before} suffix="days before the end" />
+          {Number(form.remind_days_before) === 1 && <p className="text-[11px]" style={{ color: T.textMuted }}>Sent on the last day — e.g. day 6 of a 7-day gift.</p>}
           <TemplatePicker label="Email sent" value={form.reminder_template_id} templates={data.templates} onChange={setF('reminder_template_id')} />
         </StepCard>
       </AutomationCard>

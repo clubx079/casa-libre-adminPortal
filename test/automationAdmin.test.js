@@ -93,3 +93,23 @@ describe('views automation settings', () => {
     expect(templateUsage('tv', [{ id: VIEWS_AUTOMATION_ID, template_id: 'tv' }])).toEqual(['Listing getting views → email']);
   });
 });
+
+describe('validateSettings — free-highlight tiers (migration 009)', () => {
+  const cur = { free_days: 30, later_free_days: 7, remind_days_before: 1, first_tier_count: 25 };
+  it('accepts first 25 → 30 days, then 7, reminder 1 day before', () => {
+    const v = validateSettings({ first_tier_count: 25, free_days: 30, later_free_days: 7, remind_days_before: 1 }, cur);
+    expect(v.ok).toBe(true);
+    expect(v.value).toMatchObject({ first_tier_count: 25, later_free_days: 7, remind_days_before: 1 });
+  });
+  it('0 sellers is allowed (everyone gets the later days)', () => {
+    expect(validateSettings({ first_tier_count: 0 }, cur).ok).toBe(true);
+  });
+  it('rejects bad numbers with a clear message', () => {
+    expect(validateSettings({ first_tier_count: -1 }, cur).errors.first_tier_count).toMatch(/sellers/);
+    expect(validateSettings({ later_free_days: 0 }, cur).errors.later_free_days).toMatch(/days/);
+  });
+  it('the reminder must fit inside the shortest gift', () => {
+    expect(validateSettings({ remind_days_before: 7 }, cur).errors.remind_days_before).toMatch(/less than 7/);
+    expect(validateSettings({ remind_days_before: 6 }, cur).ok).toBe(true);
+  });
+});

@@ -33,6 +33,42 @@ function Connector() {
   );
 }
 
+// "#1–30 → 30 days · next 20 → 20 days · … · after that → 7 days" — add / remove rows.
+function TierList({ tiers, later, errors, onChange, onLater }) {
+  const set = (i, k) => (v) => onChange(tiers.map((t, j) => (j === i ? { ...t, [k]: v } : t)));
+  const add = () => onChange([...tiers, { sellers: 10, days: Math.max(1, Math.min(...tiers.map((t) => Number(t.days) || 1), Number(later) + 1 || 1)) }]);
+  const remove = (i) => onChange(tiers.filter((_, j) => j !== i));
+  let from = 1;
+  const ranges = tiers.map((t) => { const n = Number(t.sellers) || 0, r = n ? `#${from}–${from + n - 1}` : '—'; from += n; return r; });
+  return (
+    <div className="space-y-2.5" data-testid="tier-list">
+      {tiers.map((t, i) => (
+        <div key={i} className="rounded-[12px] border px-3 py-2.5 space-y-2" style={{ borderColor: 'rgba(17,17,17,.12)', background: '#fff' }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>
+              {i === 0 ? 'The first' : 'The next'} <span className="font-mono normal-case tracking-normal" style={{ color: T.textMuted }}>({ranges[i]})</span>
+            </p>
+            {tiers.length > 1 && (
+              <button type="button" onClick={() => remove(i)} aria-label={`Remove tier ${i + 1}`} className="w-6 h-6 rounded-full text-[14px] leading-none hover:bg-black/5" style={{ color: T.textMuted }}>×</button>
+            )}
+          </div>
+          <DayField value={t.sellers} onChange={set(i, 'sellers')} min={1} max={100000} error={errors[`tier_${i}_sellers`]} suffix="sellers get…" />
+          <DayField value={t.days} onChange={set(i, 'days')} min={1} max={365} error={errors[`tier_${i}_days`]} suffix="days on the home page" />
+        </div>
+      ))}
+      {errors.free_tiers ? <p className="text-[11px]" style={{ color: T.danger }}>{errors.free_tiers}</p> : null}
+      {tiers.length < 10 && (
+        <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add tier</button>
+      )}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: T.textSecondary }}>After that, everyone gets <span className="font-mono normal-case tracking-normal" style={{ color: T.textMuted }}>(#{from}+)</span></p>
+        <DayField value={later} onChange={onLater} min={1} max={365} error={errors.later_free_days} suffix="days on the home page" />
+      </div>
+      <p className="text-[11px]" style={{ color: T.textMuted }}>Place in line counts every seller who ever published, including the early ones.</p>
+    </div>
+  );
+}
+
 function DayField({ value, onChange, min, max, error, suffix }) {
   return (
     <div>
@@ -121,7 +157,7 @@ export default function AutomationsPage() {
   function apply(j) {
     setData(j);
     const a = j.automation;
-    setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, first_tier_count: a.first_tier_count, later_free_days: a.later_free_days, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
+    setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, first_tier_count: a.first_tier_count, later_free_days: a.later_free_days, free_tiers: Array.isArray(a.free_tiers) ? a.free_tiers.map((t) => ({ sellers: t.sellers, days: t.days })) : undefined, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
     const v = j.views?.automation;
     setVform(v ? { milestones: (v.milestones || []).join(', '), template_id: v.template_id || '' } : null);
   }
@@ -158,8 +194,12 @@ export default function AutomationsPage() {
   const e1 = errors.first || {};
   const setF = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
   const hasTiers = a.first_tier_count !== undefined && a.later_free_days !== undefined;   // migration 009
+  const hasTierList = Array.isArray(a.free_tiers);   // migration 010
   const dirty = ['wait_days', 'free_days', 'remind_days_before', 'first_tier_count', 'later_free_days', 'gift_template_id', 'reminder_template_id']
-    .some((k) => String(form[k] ?? '') !== String(a[k] ?? ''));
+    .some((k) => String(form[k] ?? '') !== String(a[k] ?? ''))
+    || (hasTierList && JSON.stringify(form.free_tiers || []) !== JSON.stringify((a.free_tiers || []).map((t) => ({ sellers: t.sellers, days: t.days }))));
+  // Only send the tier list once the column exists; before that the single-tier fields apply.
+  const firstPatch = () => { const { free_tiers, ...rest } = form; return hasTierList ? { ...rest, free_tiers } : rest; };
 
   const toggleFirst = () => {
     const on = !a.enabled;
@@ -187,7 +227,7 @@ export default function AutomationsPage() {
         title="First listing → free home display"
         description="A thank-you for a seller’s first listing: free days on the home page, then an offer to extend for US$20."
         enabled={a.enabled} enabledAt={a.enabled_at} busy={busy.first}
-        onToggle={toggleFirst} dirty={dirty} onSave={() => run('first', 'save', () => put('first', form, 'Changes saved.'))}
+        onToggle={toggleFirst} dirty={dirty} onSave={() => run('first', 'save', () => put('first', firstPatch(), 'Changes saved.'))}
         footnote="Paid home listings always come first; free ones only fill empty home slots. After the free days the listing stays live, just not on the home page."
       >
         <StepCard n={1} kind="Trigger" title="A seller publishes their first listing" />
@@ -197,7 +237,10 @@ export default function AutomationsPage() {
         </StepCard>
         <Connector />
         <StepCard n={3} kind="Gift" title="Free home display + thank-you email">
-          {hasTiers ? (
+          {hasTierList ? (
+            <TierList tiers={form.free_tiers || []} later={form.later_free_days} errors={e1}
+              onChange={(list) => setForm((f) => ({ ...f, free_tiers: list }))} onLater={setF('later_free_days')} />
+          ) : hasTiers ? (
             <div className="space-y-2.5" data-testid="tiers">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: T.textSecondary }}>The first</p>

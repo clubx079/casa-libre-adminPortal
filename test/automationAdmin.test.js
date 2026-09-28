@@ -113,3 +113,27 @@ describe('validateSettings — free-highlight tiers (migration 009)', () => {
     expect(validateSettings({ remind_days_before: 6 }, cur).ok).toBe(true);
   });
 });
+
+describe('validateSettings — tier list (migration 010)', () => {
+  const cur = { free_days: 30, later_free_days: 7, remind_days_before: 1, first_tier_count: 25, free_tiers: [{ sellers: 25, days: 30 }] };
+  it('accepts 30→30, 20→20, 10→10 and mirrors the first tier', () => {
+    const v = validateSettings({ free_tiers: [{ sellers: 30, days: 30 }, { sellers: 20, days: 20 }, { sellers: 10, days: '10' }] }, cur);
+    expect(v.ok).toBe(true);
+    expect(v.value.free_tiers).toEqual([{ sellers: 30, days: 30 }, { sellers: 20, days: 20 }, { sellers: 10, days: 10 }]);
+    expect(v.value).toMatchObject({ first_tier_count: 30, free_days: 30 });
+  });
+  it('flags the exact bad row', () => {
+    const v = validateSettings({ free_tiers: [{ sellers: 30, days: 30 }, { sellers: 0, days: 400 }] }, cur);
+    expect(v.errors.tier_1_sellers).toMatch(/sellers/);
+    expect(v.errors.tier_1_days).toMatch(/days/);
+    expect(v.value.free_tiers).toBeUndefined();
+  });
+  it('needs 1–10 tiers', () => {
+    expect(validateSettings({ free_tiers: [] }, cur).errors.free_tiers).toMatch(/at least one/);
+    expect(validateSettings({ free_tiers: Array.from({ length: 11 }, () => ({ sellers: 1, days: 5 })) }, cur).errors.free_tiers).toMatch(/10/);
+  });
+  it('the reminder must fit inside the shortest tier too', () => {
+    const v = validateSettings({ free_tiers: [{ sellers: 5, days: 30 }, { sellers: 5, days: 2 }], remind_days_before: 2 }, cur);
+    expect(v.errors.remind_days_before).toMatch(/less than 2/);
+  });
+});

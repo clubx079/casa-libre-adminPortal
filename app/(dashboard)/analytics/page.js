@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
-  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home,
+  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail,
 } from 'lucide-react';
 
 // Casa Libre palette (neo-brutalist: ink accent on warm paper).
@@ -57,6 +57,9 @@ const EVENT_LABELS = {
   photo_gallery_opened: 'Opened photos',
   property_share_opened: 'Opened share',
   contact_seller_clicked: 'Contacted a seller',
+  contact_whatsapp_click: 'Contacted a seller (WhatsApp)',
+  contact_call_click: 'Contacted a seller (call)',
+  contact_copy_click: 'Copied a seller\'s number',
   whatsapp_contact_clicked: 'Opened WhatsApp',
   contact_whatsapp_click: 'Tapped WhatsApp',
   contact_call_click: 'Tapped call',
@@ -73,7 +76,7 @@ const EVENT_LABELS = {
 // Events that represent real user intent (vs PostHog's automatic system events).
 const PRODUCT_EVENTS = new Set([
   'property_viewed', 'property_saved', 'property_unsaved', 'search_applied', 'filter_applied',
-  'contact_seller_clicked', 'whatsapp_contact_clicked', 'phone_revealed', 'listing_created',
+  'contact_seller_clicked', 'contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'whatsapp_contact_clicked', 'phone_revealed', 'listing_created',
   'contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'report_unresponsive',
   'publish_started', 'user_logged_in', 'user_signed_up', 'sort_changed', 'map_pin_clicked',
   'photo_gallery_opened', 'property_share_opened', 'saved_viewed', 'oauth_login_clicked',
@@ -84,7 +87,7 @@ const STAGES = [
   { key: 'search_applied', label: 'Searched' },
   { key: 'property_viewed', label: 'Viewed a property' },
   { key: 'property_saved', label: 'Saved a property' },
-  { key: 'contact_seller_clicked', label: 'Contacted a seller' },
+  { key: 'contact_seller_clicked', label: 'Contacted a seller', events: ['contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'contact_seller_clicked'] },
   { key: 'listing_created', label: 'Listed a property' },
 ];
 const prettyEvent = (name) =>
@@ -167,6 +170,221 @@ async function loadAnalytics(url, { onBusy, isCancelled } = {}) {
 
 const BUSY_MESSAGE = 'High traffic right now — this can take a moment. Still loading your analytics…';
 
+// Readable names for the first-visit source (SOURCE_EXPR in the PostHog route).
+const SOURCE_LABELS = {
+  direct: 'Direct · typed the address or an untagged link',
+  google: 'Google search', bing: 'Bing search', duckduckgo: 'DuckDuckGo search', search: 'Search engine',
+  chatgpt: 'ChatGPT', perplexity: 'Perplexity', gemini: 'Gemini', claude: 'Claude', copilot: 'Copilot', 'other ai': 'Other AI assistant',
+  email: 'Email', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', reddit: 'Reddit',
+};
+const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
+const fmtMoney = (price, currency) => (price == null ? '' : `${currency === 'USD' ? 'US$' : currency === 'PYG' ? '₲' : currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
+
+// Every email this person was sent (Resend + our automation log), newest first,
+// with its latest status and their open / click rates.
+const EMAIL_STATUS_COLOR = (s) => (s === 'opened' || s === 'clicked' ? T.success
+  : s === 'delivered' ? T.info
+  : ['bounced', 'complained', 'failed', 'suppressed'].includes(s) ? T.danger
+  : T.textMuted);
+const UserEmails = ({ email }) => {
+  const [res, setRes] = useState(null); // API body, or { error } — null while loading
+  useEffect(() => {
+    if (!email) return undefined;
+    let cancelled = false;
+    setRes(null);
+    fetch(`/api/users/emails?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setRes(j); })
+      .catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
+    return () => { cancelled = true; };
+  }, [email]);
+
+  const s = res?.summary;
+  const pct = (v) => (v == null ? '—' : `${v}%`);
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center gap-2 mb-3">
+        <Mail className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Emails</h2>
+        {s ? <span className="text-xs" style={{ color: T.textMuted }}>{s.total}</span> : null}
+      </div>
+
+      {res === null ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+      ) : res.error ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their emails.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            {[
+              ['Emails sent', s.total, s.codes ? `${s.codes} sign-in / reset code${s.codes === 1 ? '' : 's'}` : ''],
+              ['Delivered', s.listed ? `${s.delivered} of ${s.listed}` : '—', ''],
+              ['Open rate', pct(s.openRate), s.measured ? `${s.opened} of ${s.measured} opened` : 'none tracked yet'],
+              ['Click rate', pct(s.clickRate), s.measured ? `${s.clicked} of ${s.measured} clicked` : 'none tracked yet'],
+            ].map(([label, value, sub]) => (
+              <div key={label}>
+                <p className="text-lg font-bold" style={{ color: T.textPrimary }}>{value}</p>
+                <p className="text-[10px]" style={{ color: T.textMuted }}>{label}{sub ? ` · ${sub}` : ''}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] mb-3" style={{ color: T.textMuted }}>
+            Rates leave out sign-in / password-reset codes and test sends.
+            {res.emails.some((e) => e.untracked === 'before') && res.trackingSince
+              ? ` Opens and clicks are only recorded since open tracking was switched on in Resend (${fmtDateOnly(res.trackingSince)}): earlier emails can only show Delivered.` : ''}
+            {res.emails.some((e) => e.untracked === 'off') ? ' Open and click tracking is off for this country’s email domain in Resend.' : ''}
+            {res.tracking === 'no_key' ? ' Opens and clicks need a full-access Resend key (RESEND_READ_API_KEY) in the admin env: only automation emails from our own log are shown.' : ''}
+            {res.tracking === 'error' ? ` Resend couldn't be read right now (${res.trackingError}): only automation emails from our own log are shown.` : ''}
+            {res.truncated ? ' Resend history was cut at 4,000 emails.' : ''}
+          </p>
+
+          {res.emails.length === 0 ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>No emails sent to this person in the last {Math.round(res.days / 30)} months.</p>
+          ) : (
+            <div className="overflow-x-auto cl-scroll">
+              <table className="w-full text-xs min-w-[560px]">
+                <thead>
+                  <tr style={{ color: T.textMuted }}>
+                    {['Sent', 'Email', 'Subject', 'Status'].map((h, i) => (
+                      <th key={h} className={`py-1.5 font-semibold ${i === 3 ? 'text-right' : 'text-left'}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {res.emails.map((e) => (
+                    <tr key={e.id} className="border-t" style={{ borderColor: T.borderLight }}>
+                      <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(e.at)} · {fmtTime(e.at)}</td>
+                      <td className="py-2 pr-3 align-top" style={{ color: T.textPrimary }}>
+                        <span className="whitespace-nowrap">
+                          {e.type_en || e.type}
+                          {e.automation ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
+                        </span>
+                        {e.type_en && e.type_en !== e.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{e.type}</span> : null}
+                      </td>
+                      <td className="py-2 pr-3 max-w-[320px] align-top" style={{ color: T.textBody }}>
+                        <span className="block truncate" title={e.subject}>{e.subject}</span>
+                        {e.subject_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={e.subject_en}>EN · {e.subject_en}</span> : null}
+                      </td>
+                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap align-top" style={{ color: EMAIL_STATUS_COLOR(e.status) }}>
+                        {e.status}
+                        {e.untracked ? (
+                          <span className="block text-[10px] font-normal normal-case" style={{ color: T.textMuted }}>
+                            {e.untracked === 'before' ? 'before open tracking' : e.untracked === 'off' ? 'not tracked' : 'from our log'}
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+// Who this is: where their first visit came from, IP + location, and — for
+// signed-up people — their account and the properties they listed (from the DB).
+const UserFacts = ({ user, profile, loading }) => {
+  const email = user.email || profile?.email || '';
+  const [acct, setAcct] = useState(null); // { found, user, listings } — null while loading
+  useEffect(() => {
+    if (user.is_anon || (!email && !user.db_id)) { setAcct({ found: false, listings: [] }); return undefined; }
+    let cancelled = false;
+    setAcct(null);
+    const qs = new URLSearchParams();
+    if (user.db_id) qs.set('userId', user.db_id);
+    if (email) qs.set('email', email);
+    fetch(`/api/users/listings?${qs}`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setAcct(j && !j.error ? j : { found: false, listings: [], error: true }); })
+      .catch(() => { if (!cancelled) setAcct({ found: false, listings: [], error: true }); });
+    return () => { cancelled = true; };
+  }, [user.is_anon, user.db_id, email]);
+
+  const dash = loading ? '…' : '—';
+  const source = profile?.source || user.source || '';
+  const campaign = profile?.campaign || user.campaign || '';
+  const ip = profile?.ip || user.ip || acct?.user?.last_ip || '';
+  const location = profile?.location || user.location || '';
+  const facts = [
+    ['Came from', source ? sourceLabel(source) : dash, [campaign && `campaign ${campaign}`, profile?.referrer && `via ${profile.referrer}`].filter(Boolean).join(' · ')],
+    ['IP address', ip || dash, acct?.user?.signup_ip && acct.user.signup_ip !== ip ? `signed up from ${acct.user.signup_ip}` : ''],
+    ['Location', location || dash, ''],
+    ['First visit', profile?.first_seen ? fmtDateOnly(profile.first_seen) : dash, profile?.first_seen ? fmtTime(profile.first_seen) : ''],
+  ];
+  if (acct?.found) facts.push(['Account', `Signed up ${fmtDateOnly(acct.user.joined)}`, [acct.user.method, acct.user.phone].filter(Boolean).join(' · ')]);
+
+  return (
+    <>
+      <div className="bg-white p-5" style={CARD}>
+        <div className="flex items-center gap-2 mb-3">
+          <Radio className="w-4 h-4" style={{ color: T.primary }} />
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Who they are</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+          {facts.map(([label, value, sub]) => (
+            <div key={label} className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: T.textMuted }}>{label}</p>
+              <p className="text-[13px] font-medium break-words" style={{ color: T.textPrimary }}>{value}</p>
+              {sub ? <p className="text-[11px] break-words" style={{ color: T.textMuted }}>{sub}</p> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {!user.is_anon && (
+        <div className="bg-white p-5" style={CARD}>
+          <div className="flex items-center gap-2 mb-3">
+            <Home className="w-4 h-4" style={{ color: T.primary }} />
+            <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Listed properties</h2>
+            {acct?.found ? <span className="text-xs" style={{ color: T.textMuted }}>{acct.listings.length}</span> : null}
+          </div>
+          {acct === null ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+          ) : acct.error ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their listings.</p>
+          ) : !acct.found ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>No account found for this person, so no listings to show.</p>
+          ) : acct.listings.length === 0 ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>No listings yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {acct.listings.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 p-2" style={{ border: `1px solid ${T.borderLight}`, borderRadius: '10px' }}>
+                  <div className="w-14 h-14 shrink-0 overflow-hidden" style={{ background: T.bgSurface, borderRadius: '8px' }}>
+                    {l.image ? (/* eslint-disable-next-line @next/next/no-img-element */ <img src={l.image} alt="" className="w-full h-full object-cover" />) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }}>{l.title}</p>
+                    <p className="text-[11px] truncate" style={{ color: T.textMuted }}>
+                      {[l.place !== l.title ? l.place : '', [l.type, l.operation].filter(Boolean).join(' · '), fmtMoney(l.price, l.currency)].filter(Boolean).join(' · ')}
+                    </p>
+                    <p className="text-[11px]" style={{ color: T.textMuted }}>
+                      <span className="font-semibold" style={{ color: l.live ? T.success : T.textSecondary }}>{l.live ? 'Live' : 'Inactive'}</span>
+                      {l.created_at ? ` · listed ${fmtDateOnly(l.created_at)}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a href={`/preview/${l.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border" style={{ borderColor: T.borderLight, color: T.textBody }}>
+                      <ExternalLink className="w-3 h-3" /> View
+                    </a>
+                    <a href={`/properties/${l.id}/edit`} className="text-[11px] font-medium px-2.5 py-1.5 rounded-full" style={{ background: T.textPrimary, color: T.bgWhite }}>Edit</a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {acct?.found ? <UserEmails email={acct.user.email} /> : null}
+    </>
+  );
+};
+
 // Drill-down: a single user's PostHog event timeline.
 const UserActivityDetail = ({ user, onBack }) => {
   const [data, setData] = useState(null);
@@ -199,10 +417,10 @@ const UserActivityDetail = ({ user, onBack }) => {
     return () => { cancelled = true; };
   }, [user.person_id, user.ip, user.is_anon]);
 
-  const label = user.name || user.email || (user.ip ? `Visitor · ${user.ip}` : 'Anonymous visitor');
+  const label = user.name || data?.profile?.name || user.email || data?.profile?.email || (user.ip ? `Visitor · ${user.ip}` : 'Anonymous visitor');
 
   const acts = data?.activity || [];
-  const reached = STAGES.map((s) => acts.some((a) => a.event === s.key));
+  const reached = STAGES.map((s) => acts.some((a) => (s.events || [s.key]).includes(a.event)));
   const lastReachedIdx = reached.lastIndexOf(true);
   const completedAll = reached[STAGES.length - 1];
   const dropIdx = completedAll ? -1 : lastReachedIdx >= 0 ? Math.min(lastReachedIdx + 1, STAGES.length - 1) : 0;
@@ -221,7 +439,7 @@ const UserActivityDetail = ({ user, onBack }) => {
     const times = events.map((e) => new Date(e.timestamp).getTime());
     const start = Math.min(...times);
     const end = Math.max(...times);
-    const sReached = STAGES.map((s) => events.some((e) => e.event === s.key));
+    const sReached = STAGES.map((s) => events.some((e) => (s.events || [s.key]).includes(e.event)));
     const sLast = sReached.lastIndexOf(true);
     const sCompleted = sReached[STAGES.length - 1];
     const sDrop = sCompleted ? -1 : sLast >= 0 ? Math.min(sLast + 1, STAGES.length - 1) : 0;
@@ -284,6 +502,8 @@ const UserActivityDetail = ({ user, onBack }) => {
           ))}
         </div>
       </div>
+
+      <UserFacts user={user} profile={data?.profile} loading={loading} />
 
       {!loading && !error && data && (
         <div className="bg-white p-5" style={CARD}>
@@ -767,7 +987,8 @@ const UsersAnalytics = () => {
         const qs = uid ? `distinctId=${encodeURIComponent(uid)}` : `email=${encodeURIComponent(email)}`;
         const res = await fetch(`/api/analytics/posthog?type=resolve&${qs}`);
         const json = await res.json();
-        if (json.found && json.user) setSelected(json.user);
+        // keep the DB id so the user page can load their account + listings by id
+        if (json.found && json.user) setSelected({ ...json.user, db_id: uid || '' });
         else setResolveNote('This user has no tracked PostHog activity yet.');
       } catch { /* ignore */ }
     })();
@@ -1100,7 +1321,8 @@ const EmailAnalytics = () => {
           </select>
         </div>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
-          {data ? `from ${data.domain} · ` : ''}each email counted once, by its latest status · opens need open tracking on in Resend
+          {data ? `from ${data.domain} · ` : ''}each email counted once, by its latest status
+          {data?.hidden ? ` · ${data.hidden} team / test email${data.hidden === 1 ? '' : 's'} left out` : ''}
         </p>
 
         {loading ? (
@@ -1117,19 +1339,23 @@ const EmailAnalytics = () => {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
               {[
                 ['Sent', t.sent, null],
-                ['Delivered', t.delivered, pct(t.delivered, t.sent)],
-                ['Opened', t.opened, pct(t.opened, t.sent)],
-                ['Clicked', t.clicked, pct(t.clicked, t.sent)],
-                ['Bounced / failed', t.failed, pct(t.failed, t.sent)],
+                ['Delivered', t.delivered, t.sent ? `${pct(t.delivered, t.sent)} of sent` : null],
+                ['Opened', t.opened, t.openRate != null ? `open rate ${t.openRate}%` : null],
+                ['Clicked', t.clicked, t.clickRate != null ? `click rate ${t.clickRate}%` : null],
+                ['Bounced / failed', t.failed, t.sent ? `${pct(t.failed, t.sent)} of sent` : null],
               ].map(([k, v, sub]) => (
                 <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
                   <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
                   <div className="text-xl font-bold mt-0.5" style={{ color: T.textPrimary }}>{v.toLocaleString('en-US')}</div>
-                  {sub ? <div className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{sub} of sent</div> : null}
+                  {sub ? <div className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{sub}</div> : null}
                 </div>
               ))}
             </div>
-            {data.truncated ? <p className="text-[10px] mb-3" style={{ color: T.warning }}>Showing the most recent 4,000 emails only — pick a shorter period for exact totals.</p> : null}
+            <p className="text-[10px] mb-3" style={{ color: T.textMuted }}>
+              Open and click rates are over the {t.measured} emails that could record an open: sent after open tracking was switched on in Resend
+              {data.trackingSince ? ` (${new Date(data.trackingSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})` : ''}, not counting sign-in codes.
+            </p>
+            {data.truncated ? <p className="text-[10px] mb-3" style={{ color: T.warning }}>Resend&apos;s history doesn&apos;t reach back this far — the oldest emails in this period are missing.</p> : null}
 
             <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>By email type</h3>
             {data.byType.length === 0 ? (
@@ -1153,7 +1379,7 @@ const EmailAnalytics = () => {
                         <td className="py-1.5 text-right">{r.opened}</td>
                         <td className="py-1.5 text-right">{r.clicked}</td>
                         <td className="py-1.5 text-right">{r.failed}</td>
-                        <td className="py-1.5 text-right font-semibold">{r.openRate}%</td>
+                        <td className="py-1.5 text-right font-semibold">{r.openRate != null ? `${r.openRate}%` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

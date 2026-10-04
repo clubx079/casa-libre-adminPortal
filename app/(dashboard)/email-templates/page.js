@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail } from 'lucide-react';
-import { T, CARD, PageHeader, Pill, Banner, PendingMigration, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
+import { T, CARD, PageHeader, Pill, Banner, PendingMigration, btnPrimary, btnSecondary } from '@/components/automations/ui';
 
 export default function EmailTemplatesPage() {
   const router = useRouter();
@@ -70,16 +70,16 @@ export default function EmailTemplatesPage() {
             <table className="w-full min-w-[860px]">
               <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
                 <tr>
-                  {['Template', 'Subject', 'Used by', 'Sent', 'Status', ''].map((h, i) => (
-                    <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 5 ? 'text-right' : 'text-left'}`} style={{ color: T.textMuted }}>{h}</th>
+                  {['Template', 'Subject', 'Used by', 'Status', ''].map((h, i) => (
+                    <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 4 ? 'text-right' : 'text-left'}`} style={{ color: T.textMuted }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading…</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-12 text-center">
+                  <tr><td colSpan={5} className="px-6 py-12 text-center">
                     <Mail className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>No templates yet</p>
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>Create one with “New template”.</p>
@@ -92,10 +92,6 @@ export default function EmailTemplatesPage() {
                     </td>
                     <td className="px-4 py-3 text-xs max-w-[280px] truncate" style={{ color: T.textBody }} title={t.subject}>{t.subject}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{t.usedBy.length ? t.usedBy.join(', ') : <span style={{ color: T.textMuted }}>—</span>}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textBody }}>
-                      {t.sentCount.toLocaleString('en-US')}
-                      {t.lastSentAt && <span className="block text-[11px]" style={{ color: T.textMuted }}>last {fmtDate(t.lastSentAt)}</span>}
-                    </td>
                     <td className="px-4 py-3">{t.is_active ? <Pill tone="success">Active</Pill> : <Pill>Off</Pill>}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">

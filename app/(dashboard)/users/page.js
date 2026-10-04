@@ -365,7 +365,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <p className="text-[11px]" style={{ color: T.textMuted }}>Showing up to 500 most recent users. Activity opens their PostHog session timeline.</p>
+      <p className="text-[11px]" style={{ color: T.textMuted }}>Showing up to 500 most recent users. Deleted accounts are hidden. Activity opens their PostHog session timeline.</p>
 
       {/* Delete confirmation modal — replaces the browser's native confirm(). */}
       {confirmUser && (

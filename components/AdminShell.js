@@ -10,11 +10,11 @@ const NAV = [
   ['/', 'Overview', 'dash'],
   ['/users', 'Users', 'users'],
   ['/analytics', 'Analytics', 'chart'],
+  ['/utm-links', 'UTM Links', 'link'],
   ['/scrape', 'Scrapers', 'scrape'],
   ['/scraper-status', 'Scraper Status', 'scrape'],
   ['/quarantine', 'Quarantine', 'shield'],
   ['/reports', 'Reports', 'runs'],
-  ['/contacts', 'Contacts', 'chart'],
   ['/feedbacks', 'Feedback', 'shield'],
   ['/partners', 'Partners', 'users'],
   ['/leads', 'Leads', 'users'],
@@ -36,6 +36,13 @@ function Icon({ name }) {
         <rect x="14" y="3" width="7" height="7" rx="1.5" />
         <rect x="3" y="14" width="7" height="7" rx="1.5" />
         <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </svg>
+    );
+  if (name === 'link')
+    return (
+      <svg {...p}>
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </svg>
     );
   if (name === 'users')

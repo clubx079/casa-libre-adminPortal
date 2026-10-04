@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { activeCountry } from '@/lib/adminCountry';
+import { countryInfo } from '@/lib/automationAdmin';
+import { hogql } from '@/lib/posthogHogql';
+import { isInternalEmail } from '@/lib/internalTraffic';
+import { internalEmails } from '@/lib/internalAudience';
+import { CAMPAIGNS, ALIASES } from '@/lib/campaigns';
+import { buildLinksReport, clickSlugSql, landingChannelSql, LEGACY_CAMPAIGNS } from '@/lib/linksReport';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -15,6 +21,7 @@ import { activeCountry } from '@/lib/adminCountry';
 //   users      one row per identified user with activity counts
 //   activity   a single user's event timeline (&personId=<uuid>)
 //   resolve    map a DB user (distinctId/email) → a PostHog person
+//   links      one UTM link per channel: times opened + people landed (UTM Links page)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -22,19 +29,7 @@ const POSTHOG_HOST = process.env.POSTHOG_HOST || 'https://us.posthog.com';
 const POSTHOG_KEY = process.env.POSTHOG_PERSONAL_API_KEY;
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
 
-async function hogql(query) {
-  const res = await fetch(`${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${POSTHOG_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: { kind: 'HogQLQuery', query } }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`PostHog ${res.status}: ${text.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  return data.results || [];
-}
+// hogql() reads people's CURRENT properties (joined mode) — see lib/posthogHogql.js.
 
 // Unique-visitor key: an identified user counts by their person_id; an
 // anonymous visitor counts by their IP address, so many browser sessions from
@@ -107,10 +102,17 @@ const currentSite = () => { try { return activeCountry(); } catch { return ''; }
 // scopes the whole page — totals, funnel, trend, map, sources, AI and users.
 const geoFilter = () => `${GEO_BASE}${siteClause(currentSite())}`;
 
+// "Contacted a seller": the property page's WhatsApp / call / copy-number buttons
+// (contact_*_click). contact_seller_clicked is the old button, kept for history.
+const CONTACT_EVENTS = ['contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'contact_seller_clicked'];
+const CONTACT_IN = `event IN (${CONTACT_EVENTS.map((e) => `'${e}'`).join(', ')})`;
+
+// event: one event name, or a list (any of them counts).
 const stepQuery = (event) => `
   SELECT count(DISTINCT ${UKEY}) AS c
   FROM events
-  WHERE event = '${event}' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
+  WHERE ${Array.isArray(event) ? `event IN (${event.map((e) => `'${e}'`).join(', ')})` : `event = '${event}'`}
+    AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
 `;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
@@ -135,7 +137,7 @@ async function usersList() {
       count() AS events,
       countIf(event = 'property_viewed') AS views,
       countIf(event = 'property_saved') AS saves,
-      countIf(event = 'contact_seller_clicked') AS contacts,
+      countIf(${CONTACT_IN}) AS contacts,
       countIf(event = 'listing_created') AS listings,
       min(timestamp) AS first_seen,
       max(timestamp) AS last_seen
@@ -168,7 +170,10 @@ async function usersList() {
       last_seen: r[17],
     };
   });
-  return NextResponse.json({ configured: true, users });
+  // Pakistan events are already filtered out (geoFilter); this also drops team / test
+  // accounts that browsed from elsewhere (e.g. the store-review login used from the US).
+  const extra = await internalEmails(currentSite() || 'py').catch(() => null);
+  return NextResponse.json({ configured: true, users: users.filter((u) => !u.email || !isInternalEmail(u.email, extra)) });
 }
 
 // Resolve a DB user → their PostHog person + counts. The buyer portal calls
@@ -194,7 +199,7 @@ async function resolveUser({ distinctId, email }) {
       count() AS events,
       countIf(event = 'property_viewed') AS views,
       countIf(event = 'property_saved') AS saves,
-      countIf(event = 'contact_seller_clicked') AS contacts,
+      countIf(${CONTACT_IN}) AS contacts,
       max(timestamp) AS last_seen
     FROM events WHERE person_id = '${q(pid)}' AND timestamp >= now() - INTERVAL 90 DAY
     GROUP BY person_id LIMIT 1`);
@@ -214,7 +219,8 @@ async function userActivity({ personId, ip }) {
   let scope;
   if (ip) {
     if (!/^[0-9a-fA-F:.]{3,45}$/.test(ip)) return NextResponse.json({ error: 'Invalid ip' }, { status: 400 });
-    scope = `properties.$ip = '${ip.replace(/'/g, "''")}'`;
+    // Same rows as the list's anonymous IP row: that IP's visits by nobody signed in.
+    scope = `properties.$ip = '${ip.replace(/'/g, "''")}' AND coalesce(person.properties.email, '') = ''`;
   } else {
     if (!/^[0-9a-f-]{16,40}$/i.test(personId)) return NextResponse.json({ error: 'Invalid personId' }, { status: 400 });
     scope = `person_id = '${personId}'`;
@@ -231,7 +237,10 @@ async function userActivity({ personId, ip }) {
         argMax(properties.$geoip_city_name, timestamp) AS city,
         argMax(properties.$geoip_country_name, timestamp) AS country,
         min(timestamp) AS first_seen,
-        max(timestamp) AS last_seen
+        max(timestamp) AS last_seen,
+        argMin(${SOURCE_EXPR}, timestamp) AS source,
+        argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+        argMin(coalesce(properties.$referring_domain, ''), timestamp) AS referrer
       FROM events
       WHERE ${scope} AND timestamp >= now() - INTERVAL 90 DAY
     `),
@@ -262,6 +271,10 @@ async function userActivity({ personId, ip }) {
     location: [p[6], p[7]].filter(Boolean).join(', '),
     first_seen: p[8],
     last_seen: p[9],
+    // where the FIRST visit came from (google, chatgpt, direct, an /r/ campaign tag…)
+    source: p[10] || 'direct',
+    campaign: p[11] || '',
+    referrer: p[12] && p[12] !== '$direct' ? p[12] : '',
   };
   const pathOf = (url) => {
     if (!url) return '';
@@ -376,6 +389,11 @@ async function aiBreakdown(days, site) {
 // redirect. This is deliberately a different number from the visitors the
 // sources card shows: a click counts even when the person never reaches the page
 // (left early, JavaScript blocked, in-app browser). clicks − landings = the leak.
+// A real click on an /r/ link comes from a public IP that PostHog can place on the
+// map. Clicks with no IP, or a local one (::1, 127.0.0.1 — a developer's own
+// machine), have no country: those were tests (curl, probes, localhost).
+const REAL_CLICK = "coalesce(properties.$geoip_country_name, '') != ''";
+
 async function linkClicks(days) {
   const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
   const rows = flat(await hogql(`
@@ -386,12 +404,38 @@ async function linkClicks(days) {
            count(DISTINCT coalesce(nullIf(properties.$ip, ''), distinct_id)) AS people
     FROM events
     WHERE event = 'link_click' AND timestamp >= now() - INTERVAL ${d} DAY
-      ${siteClause(currentSite())}
+      AND ${geoFilter()} AND ${REAL_CLICK}
     GROUP BY source, slug, thread ORDER BY clicks DESC LIMIT 30`));
   return NextResponse.json({
     configured: true, days: d,
     rows: rows.map((r) => ({ source: r[0], slug: r[1], thread: r[2], clicks: Number(r[3] || 0), people: Number(r[4] || 0) })),
   });
+}
+
+// ── UTM Links page: one link per channel — times opened + people who landed ──
+// opened = link_click events from the /r/ redirect (old links like /r/rda count under
+// their channel); landed = distinct visitors whose page views carried the channel's
+// utm tags. Same country + dev-team filters as the rest of Analytics (geoFilter).
+async function linksData(days) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const where = `timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`;
+  const clicks = flat(await hogql(`
+    SELECT ${clickSlugSql(ALIASES)} AS slug, count() AS opened, max(timestamp) AS last
+    FROM events WHERE event = 'link_click' AND ${where} AND ${REAL_CLICK}
+    GROUP BY slug`));
+  const channel = landingChannelSql(CAMPAIGNS, LEGACY_CAMPAIGNS);
+  const landings = flat(await hogql(`
+    SELECT ${channel} AS slug, count(DISTINCT ${UKEY}) AS people, max(timestamp) AS last
+    FROM events WHERE event = '$pageview' AND coalesce(properties.utm_source, '') != '' AND ${where}
+    GROUP BY slug HAVING slug != ''`));
+  // The link inside a buyer's WhatsApp message to a seller (property page button):
+  // its own tags, not a channel link. People who arrived through one of those.
+  const [[contactLanded = 0] = []] = flat(await hogql(`
+    SELECT count(DISTINCT ${UKEY}) FROM events
+    WHERE event = '$pageview' AND lower(coalesce(properties.utm_source, '')) = 'whatsapp'
+      AND coalesce(properties.utm_campaign, '') = 'property_share' AND ${where}`));
+  const site = countryInfo(currentSite() || 'py').site;
+  return NextResponse.json({ configured: true, days: d, links: buildLinksReport({ campaigns: CAMPAIGNS, site, clicks, landings }), contactLanded: Number(contactLanded) || 0 });
 }
 
 // What people browse with. "From Google" is a source (above); "from Safari" is a
@@ -547,6 +591,7 @@ export async function GET(request) {
     if (type === 'usage') return await usage();
     if (type === 'ai') return await aiBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'clicks') return await linkClicks(searchParams.get('days') || '');
+    if (type === 'links') return await linksData(searchParams.get('days') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '');
 
@@ -568,7 +613,7 @@ export async function GET(request) {
       hogql(stepQuery('search_applied')),
       hogql(stepQuery('property_viewed')),
       hogql(stepQuery('property_saved')),
-      hogql(stepQuery('contact_seller_clicked')),
+      hogql(stepQuery(CONTACT_EVENTS)),
       hogql(stepQuery('listing_created')),
       hogql(`SELECT event, count() AS c
              FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}

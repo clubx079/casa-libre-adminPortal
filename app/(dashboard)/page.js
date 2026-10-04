@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
+import { HIDE_DELETED_USERS } from '@/lib/userInsights';
+import { isInternalEmail } from '@/lib/internalTraffic';
+import { internalEmails } from '@/lib/internalAudience';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +17,17 @@ const T = {
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 async function getStats() {
-  const { selectWithCount, select } = dbFor(activeCountry());
+  const country = activeCountry();
+  const { select } = dbFor(country);
   try {
-    const [{ count: total }, verified, recent] = await Promise.all([
-      selectWithCount('users', 'select=id&limit=1'),
-      selectWithCount('users', 'select=id&verified=eq.true&limit=1'),
-      select('users', 'select=id,email,full_name,created_at,auth_provider&order=created_at.desc&limit=6'),
+    // Deleted accounts ("Delete account") and the team's own / Pakistan accounts are
+    // not real users: left out of every count (lib/internalTraffic + internalAudience).
+    const [all, extra] = await Promise.all([
+      select('users', `select=id,email,full_name,created_at,auth_provider,verified&${HIDE_DELETED_USERS}&order=created_at.desc&limit=5000`),
+      internalEmails(country),
     ]);
-    return { total, verified: verified.count, recent, ok: true };
+    const real = all.filter((u) => !isInternalEmail(u.email, extra));
+    return { total: real.length, verified: real.filter((u) => u.verified).length, recent: real.slice(0, 6), ok: true };
   } catch {
     return { total: 0, verified: 0, recent: [], ok: false };
   }

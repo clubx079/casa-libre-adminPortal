@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 // lib/ingest.js is guarded by 'server-only' (a Next build-time check).
 vi.mock('server-only', () => ({}));
-import { looseFor, splitReasons, canGoLive, persistedPriceUsd, reasonValue, notVerifiedLabel, contactLine, FIXABLE_CODES } from '../lib/unverified';
+import { looseFor, splitReasons, canGoLive, persistedPriceUsd, reasonValue, notVerifiedLabel, contactLine, FIXABLE_CODES, quarantineState } from '../lib/unverified';
 import { validateListing } from '../lib/ingest';
 
 const row = (o = {}) => ({
@@ -65,5 +65,22 @@ describe('looser quarantine rule (Paraguay first)', () => {
     expect(notVerifiedLabel('area', 'es')).toBe('Superficie sin verificar');
     expect(contactLine('price', 'en')).toBe('Contact seller for price');
     expect(contactLine('bedrooms', 'es')).toBe('Consultá los dormitorios con el vendedor');
+  });
+});
+
+describe('quarantine record state', () => {
+  it('already in properties → live (old record)', () => {
+    expect(quarantineState({ reasons: ['price_below_floor'], onSite: true, cc: 'py' })).toBe('live');
+    expect(quarantineState({ reasons: ['no_contact'], onSite: true, cc: 'py' })).toBe('live');
+  });
+  it('fixable fields only, not on the site, no live twin → ready', () => {
+    expect(quarantineState({ reasons: ['price_below_floor', 'area_out_of_range'], cc: 'py' })).toBe('ready');
+  });
+  it('same property as a live listing → blocked, even with only fixable fields', () => {
+    expect(quarantineState({ reasons: ['price_below_floor'], duplicateOfLive: true, cc: 'py' })).toBe('blocked');
+  });
+  it('blocking reasons, or a strict country → blocked', () => {
+    expect(quarantineState({ reasons: ['no_contact'], cc: 'py' })).toBe('blocked');
+    expect(quarantineState({ reasons: ['price_below_floor'], cc: 'bo' })).toBe('blocked');
   });
 });

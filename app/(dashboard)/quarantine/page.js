@@ -24,7 +24,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
 // Paraguay (lib/unverified.js): records whose only problems are fields the site can
 // show as "Contact seller for …" can go live; the rest stay blocked.
-const VIEWS = [['all', 'All'], ['ready', 'Can go live'], ['blocked', 'Blocked']];
+const VIEWS = [['all', 'All'], ['ready', 'Can go live'], ['live', 'Already live'], ['blocked', 'Blocked']];
 const ON_SITE = {
   active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
   inactive: { label: 'On the site but inactive', style: { background: '#FAF7F1', color: '#6B6862' } },
@@ -172,7 +172,7 @@ export default function QuarantinePage() {
           {VIEWS.map(([k, label]) => {
             const on = view === k;
             const n = k === 'all' ? counts[tab] : viewCounts[k];
-            const tone = k === 'ready' ? { background: T.successSurface, color: T.success, borderColor: T.success } : k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
+            const tone = k === 'ready' ? { background: T.successSurface, color: T.success, borderColor: T.success } : k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'live' ? { background: T.bgSurface, color: T.textSecondary, borderColor: T.borderLight } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
             return (
               <button key={k} onClick={() => selectView(k)}
                 className="inline-flex items-center gap-2 text-[12.5px] font-semibold px-3 py-1.5 rounded-full border transition-colors"
@@ -283,16 +283,24 @@ export default function QuarantinePage() {
                           );
                         })}
                       </div>
-                      {tab === 'pending' && loose && (
-                        r.can_go_live ? (
-                          <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
-                            <b>Can go live.</b> The site will show: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
-                          </p>
-                        ) : (
-                          <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
-                            <b>Stays blocked:</b> {(r.blocking || []).map((c) => reasonLabel(c, lang)).join(' · ')}
-                          </p>
-                        )
+                      {tab === 'pending' && r.state === 'live' && (
+                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.textSecondary }} data-testid="q-live">
+                          <b>Already live.</b> The listing is on the site; this is an old record. Clear it.
+                        </p>
+                      )}
+                      {tab === 'pending' && r.state === 'ready' && (
+                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
+                          <b>Can go live.</b> The site will show: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
+                        </p>
+                      )}
+                      {tab === 'pending' && r.state === 'blocked' && (loose || r.duplicate_of) && (
+                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
+                          <b>Stays blocked:</b>{' '}
+                          {[
+                            ...(r.blocking || []).map((c) => reasonLabel(c, lang)),
+                            ...(r.duplicate_of ? [`Same property as a live listing${r.duplicate_of.source ? ` from ${r.duplicate_of.source}` : ''}${r.duplicate_of.address ? ` (${r.duplicate_of.address})` : ''}`] : []),
+                          ].join(' · ')}
+                        </p>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
@@ -307,10 +315,10 @@ export default function QuarantinePage() {
                       {tab === 'pending' ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <button onClick={() => act(r, 'release')} disabled={busyId === r.id}
-                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.can_go_live ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish anyway (admin override)'}
+                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.duplicate_of ? 'Same property as a live listing: publishing would create a duplicate' : r.can_go_live ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish anyway (admin override)'}
                             className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
                             style={{ borderColor: T.success, color: T.success, background: T.successSurface }}>
-                            {busyId === r.id ? '…' : r.on_site ? 'Clear' : r.can_go_live ? 'Publish' : 'Release'}
+                            {busyId === r.id ? '…' : r.on_site ? 'Clear' : r.can_go_live ? 'Publish' : r.duplicate_of ? 'Publish duplicate' : 'Release'}
                           </button>
                           <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
                             className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"

@@ -25,9 +25,10 @@ describe('emailType', () => {
 });
 
 describe('trackingFor', () => {
-  it('Paraguay records opens and clicks since Sep 24, 2026; the other domains have it off', () => {
+  it('Paraguay records opens and clicks since Sep 24, 2026, Bolivia since Oct 6; the other domains not yet', () => {
     expect(trackingFor('py')).toEqual({ on: true, since: '2026-09-24T23:38:00Z' });
-    expect(trackingFor('bo')).toEqual({ on: false, since: null });
+    expect(trackingFor('bo')).toEqual({ on: true, since: '2026-10-06T23:35:00Z' });
+    expect(trackingFor('uy')).toEqual({ on: false, since: null });
     expect(trackingFor('xx')).toEqual({ on: false, since: null });
   });
 });

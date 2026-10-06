@@ -178,7 +178,7 @@ const SOURCE_LABELS = {
   email: 'Email', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', reddit: 'Reddit',
 };
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
-const fmtMoney = (price, currency) => (price == null ? '' : `${currency === 'USD' ? 'US$' : currency === 'PYG' ? '₲' : currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
+const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
 
 // Every email this person was sent (Resend + our automation log), newest first,
 // with its latest status and their open / click rates.

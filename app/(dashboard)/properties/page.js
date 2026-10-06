@@ -2,7 +2,7 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
-import { getUsdToPyg } from '@/lib/fx';
+import { getUsdRate } from '@/lib/fx';
 import { buildingsParts, landOrGroup } from '@/lib/land';
 import { validateListing } from '@/lib/ingest';
 import { looseFor, splitReasons } from '@/lib/unverified';
@@ -77,7 +77,8 @@ export default async function PropertiesPage({ searchParams }) {
     error = e.message;
   }
 
-  const rate = await getUsdToPyg(); // guaraníes per 1 USD (live, cached)
+  const cc = activeCountry();
+  const rate = await getUsdRate(cc); // this country's currency per 1 USD (live, cached)
 
   // For USER-listed properties (self-published, no scraper source) the "source"
   // column should show WHO listed it — the user's email — not a blank. There is no
@@ -101,7 +102,7 @@ export default async function PropertiesPage({ searchParams }) {
   // checks are listed in _unverified and the buyer site shows "Contact seller for …".
   const loose = looseFor(activeCountry());
   const annotated = all.map((r) => {
-    const v = validateListing(r, rate);
+    const v = validateListing(r, rate, cc);
     const { blocking, unverified } = splitReasons(v.reasons);
     const complete = v.ok || (loose && blocking.length === 0);
     const listerEmail = (r.origin === 'user' || (r.created_by && !r.scrape_sources?.name))
@@ -146,6 +147,7 @@ export default async function PropertiesPage({ searchParams }) {
           view={view}
           lang={lang}
           rate={rate}
+          country={cc}
           sources={kind === 'originals' ? [] : sources}
           source={kind === 'originals' ? '' : source}
           cls={cls}

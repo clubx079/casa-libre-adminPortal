@@ -3,7 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { makeT, locale } from '@/lib/i18n';
-import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
+import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
+import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
 import { reasonLabel } from '@/lib/ingestLabels';
 import { notVerifiedLabel, contactLine } from '@/lib/unverified';
@@ -42,7 +43,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 const LIST_MAX_HEIGHT = 640;
 
-export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false }) {
+export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py' }) {
   const t = makeT(lang);
   const loc = locale(lang);
   const router = useRouter();
@@ -70,7 +71,10 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
   };
 
   const rentSfx = (r) => (r.listing_type === 'rent' ? t('preview.perMonth') : '');
-  const money = (r) => dualPrice(r.price, r.currency, rate);
+  // Prices in this country's own currency (Gs. / Bs / $U; US$ only in Venezuela).
+  const localCode = currencyFor(country).code;
+  const money = (r) => dualPrice(r.price, r.currency, rate, localCode);
+  const localLine = (r) => { const v = money(r).pyg; return v == null ? '' : fmtLocal(v, country, loc) + rentSfx(r); };
   const typeOf = (r) => typeLabel(r.property_type, lang) || '—';
   const specs = (r) =>
     [r.bedrooms != null && `${r.bedrooms} ${t('prop.beds')}`, r.bathrooms != null && `${r.bathrooms} ${t('prop.baths')}`, r.floor_area != null && `${r.floor_area} m²`].filter(Boolean).join(' · ');
@@ -205,7 +209,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
                     <div className="text-[17px] font-bold tracking-head" style={{ color: T.textPrimary }}>{fmtUsd(money(r).usd, loc)}{rentSfx(r)}</div>
-                    <div className="text-[12.5px] font-semibold" style={{ color: T.textSecondary }}>{fmtPyg(money(r).pyg, loc)}{rentSfx(r)}</div>
+                    <div className="text-[12.5px] font-semibold" style={{ color: T.textSecondary }}>{localLine(r)}</div>
                     <div className="text-[13px] font-medium mt-0.5 line-clamp-1" style={{ color: T.textPrimary }}>{r.city || '—'}</div>
                     {incomplete && <div className="text-[11px] mt-1" style={{ color: '#8A5A12' }}>{incompleteHint}</div>}
                     <UnverifiedChips r={r} lang={lang} />
@@ -250,7 +254,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSource')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thCity')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thUsd')}</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thLocal')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{currencyFor(country).prefix ? `Local (${currencyFor(country).prefix.trim()})` : ''}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSpecs')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thStatus')}</th>
                   <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thActions')}</th>
@@ -284,7 +288,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                         </td>
                         <td className="px-3 py-2 text-xs" style={{ color: T.textBody }}>{r.city || '—'}</td>
                         <td className="px-3 py-2 text-xs font-bold tracking-head whitespace-nowrap" style={{ color: T.textPrimary }}>{fmtUsd(money(r).usd, loc)}{rentSfx(r)}</td>
-                        <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtPyg(money(r).pyg, loc)}{rentSfx(r)}</td>
+                        <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap" style={{ color: T.textSecondary }}>{localLine(r)}</td>
                         <td className="px-3 py-2 text-[11px] whitespace-nowrap" style={{ color: T.textMuted }}>{specs(r) || '—'}</td>
                         <td className="px-3 py-2">
                           {incomplete ? (

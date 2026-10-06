@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { getUsdToPyg } from '@/lib/fx';
+import { getUsdRate } from '@/lib/fx';
+import { currencyFor } from '@/lib/currency';
 import { looseFor, splitReasons, canGoLive, FIXABLE_CODES, quarantineState } from '@/lib/unverified';
 
 export const runtime = 'nodejs';
@@ -62,7 +63,8 @@ export async function GET(req) {
 
   try {
     const countsP = Promise.all(STATUSES.map((st) => count(`status=eq.${st}`).then((n) => [st, n])));
-    const rate = await getUsdToPyg().catch(() => Number(process.env.PYG_PER_USD) || 7300);
+    // This country's currency per USD (prices shown in Gs. / Bs / $U; US$ only in VE).
+    const rate = await getUsdRate(cc).catch(() => currencyFor(cc).fallbackRate);
 
     if (status !== 'pending') {
       // Released / discarded: plain list (no states), exact counts from the DB.
@@ -74,7 +76,7 @@ export async function GET(req) {
       ]);
       return NextResponse.json({
         rows, total, page, pageSize, counts: Object.fromEntries(countsArr),
-        reasonCounts: Object.fromEntries(reasonArr.filter(([, n]) => n > 0)), viewCounts: {}, rate, loose, view,
+        reasonCounts: Object.fromEntries(reasonArr.filter(([, n]) => n > 0)), viewCounts: {}, rate, country: cc, loose, view,
       });
     }
 
@@ -117,7 +119,7 @@ export async function GET(req) {
     });
 
     const countsArr = await countsP;
-    return NextResponse.json({ rows, total: matched.length, page, pageSize, counts: Object.fromEntries(countsArr), viewCounts, reasonCounts, rate, loose, view });
+    return NextResponse.json({ rows, total: matched.length, page, pageSize, counts: Object.fromEntries(countsArr), viewCounts, reasonCounts, rate, country: cc, loose, view });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }

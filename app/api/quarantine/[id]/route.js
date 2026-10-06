@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { getUsdToPyg } from '@/lib/fx';
+import { getUsdRate } from '@/lib/fx';
+import { currencyFor } from '@/lib/currency';
 import { looseFor, splitReasons, persistedPriceUsd } from '@/lib/unverified';
 import { genShortCode } from '@/lib/shortcode';
 
@@ -59,14 +60,14 @@ export async function PATCH(req, { params }) {
     const { unverified } = splitReasons(reasons);
     const shown = !reasons.includes('no_contact') && !reasons.includes('no_location')
       && (unverified.length === 0 || looseFor(cc));
-    const rate = await getUsdToPyg().catch(() => Number(process.env.PYG_PER_USD) || 7300);
+    const rate = await getUsdRate(cc).catch(() => currencyFor(cc).fallbackRate);
     await insert('properties', [{
       ...payload,
       source_id: row.source_id,
       external_id: row.external_id,
       source_hash: null,
       is_complete: shown,
-      price_usd: persistedPriceUsd(payload, rate, looseFor(cc) ? unverified : []),
+      price_usd: persistedPriceUsd(payload, rate, looseFor(cc) ? unverified : [], cc),
       admin_status: 'active',
       is_delisted: false,
       first_scraped_at: ts,

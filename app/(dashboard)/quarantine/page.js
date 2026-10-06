@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { ShieldAlert, ExternalLink, ChevronDown } from 'lucide-react';
 import { reasonLabel } from '@/lib/ingestLabels';
-import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
+import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
+import { currencyFor } from '@/lib/currency';
 import { FIXABLE, reasonValue, contactLine } from '@/lib/unverified';
 
 const T = {
@@ -36,11 +37,13 @@ const fmtDate = (v) => {
   catch { return '—'; }
 };
 const shortId = (v) => (v ? String(v).slice(0, 8) : '—');
-// Standardized: USD main, local ₲ sub, converted via the live rate (open.er-api.com).
-const money = (p, rate) => {
+// Standardized: USD main, the country's own currency as the sub (Gs. / Bs / $U; none
+// in Venezuela), converted via that currency's live rate (open.er-api.com).
+const money = (p, rate, country) => {
   if (p == null || !Number.isFinite(Number(p.price))) return { usd: '—', pyg: '' };
-  const d = dualPrice(p.price, p.currency, rate || 7300);
-  return { usd: fmtUsd(d.usd), pyg: fmtPyg(d.pyg) };
+  const c = currencyFor(country);
+  const d = dualPrice(p.price, p.currency, rate || c.fallbackRate, c.code);
+  return { usd: fmtUsd(d.usd), pyg: d.pyg == null ? '' : fmtLocal(d.pyg, country) };
 };
 
 export default function QuarantinePage() {
@@ -51,6 +54,7 @@ export default function QuarantinePage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [rate, setRate] = useState(null);
+  const [country, setCountry] = useState('py');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -82,6 +86,7 @@ export default function QuarantinePage() {
         setLoose(!!json.loose);
         setTotal(json.total || 0);
         if (json.rate) setRate(json.rate);
+        if (json.country) setCountry(json.country);
       } else setError(true);
     } catch { setError(true); }
     finally { setLoading(false); }
@@ -266,14 +271,14 @@ export default function QuarantinePage() {
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{p.zone_canonical || p.city || p.neighborhood || '—'}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
-                      <div className="font-semibold" style={{ color: T.textPrimary }}>{money(p, rate).usd}</div>
-                      {money(p, rate).pyg && <div className="text-[11px]" style={{ color: T.textMuted }}>{money(p, rate).pyg}</div>}
+                      <div className="font-semibold" style={{ color: T.textPrimary }}>{money(p, rate, country).usd}</div>
+                      {money(p, rate, country).pyg && <div className="text-[11px]" style={{ color: T.textMuted }}>{money(p, rate, country).pyg}</div>}
                     </td>
                     <td className="px-4 py-3 text-xs max-w-[360px]">
                       <div className="flex flex-wrap gap-1">
                         {(r.reasons || []).map((code) => {
                           const fixable = loose && FIXABLE[code];
-                          const val = reasonValue(code, p, rate);
+                          const val = reasonValue(code, p, rate, country);
                           return (
                             <span key={code} className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full"
                               style={fixable ? { background: T.warnSurface, color: T.warn } : code === 'duplicate' ? { background: T.bgSurface, color: T.textSecondary } : { background: T.dangerSurface, color: T.danger }}

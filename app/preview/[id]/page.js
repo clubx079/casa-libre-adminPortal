@@ -4,8 +4,9 @@ import { activeCountry } from '@/lib/adminCountry';
 import { getSession } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
 import { makeT, locale } from '@/lib/i18n';
-import { getUsdToPyg } from '@/lib/fx';
-import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
+import { getUsdRate } from '@/lib/fx';
+import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
+import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
 
 export const dynamic = 'force-dynamic';
@@ -48,8 +49,8 @@ export default async function PreviewPage({ params }) {
   const imgs = (p.property_images || []).sort((a, b) => (b.is_feature - a.is_feature) || (a.position - b.position));
   const feature = imgs[0];
   const rest = imgs.slice(1, 5);
-  const rate = await getUsdToPyg(); // guaraníes per 1 USD (live, cached)
-  const m = dualPrice(p.price, p.currency, rate);
+  const rate = await getUsdRate(cc); // this country's currency per 1 USD (live, cached)
+  const m = dualPrice(p.price, p.currency, rate, currencyFor(cc).code);
   const rentSfx = p.listing_type === 'rent' ? t('preview.perMonth') : '';
   const specs = [
     p.bedrooms != null && [p.bedrooms, t('preview.bedrooms')],
@@ -121,7 +122,7 @@ export default async function PreviewPage({ params }) {
               </span>
             )}
             <div className="text-[clamp(30px,5vw,46px)] font-bold tracking-display">{fmtUsd(m.usd, loc)}{rentSfx}</div>
-            <div className="text-[18px] font-semibold text-ink/55 mt-0.5">{fmtPyg(m.pyg, loc)}{rentSfx}</div>
+            <div className="text-[18px] font-semibold text-ink/55 mt-0.5">{m.pyg != null ? <>{fmtLocal(m.pyg, cc, loc)}{rentSfx}</> : null}</div>
             <h1 className="text-[22px] font-semibold mt-2 mb-1 tracking-head">{p.city || ''}{p.neighborhood ? ` · ${p.neighborhood}` : ''}</h1>
             <p className="text-ink/60 text-[15px] m-0">{p.address}</p>
             {p.external_url && (
@@ -184,7 +185,7 @@ export default async function PreviewPage({ params }) {
             <div className="bg-ink text-paper rounded-card p-6 md:sticky md:top-6">
               <div className="font-mono text-[10px] uppercase tracking-label text-paper/50 mb-2">{p.listing_type === 'rent' ? t('preview.forRent') : t('preview.forSale')}</div>
               <div className="text-[28px] font-bold tracking-head">{fmtUsd(m.usd, loc)}{rentSfx}</div>
-              <div className="text-[15px] font-semibold text-paper/60">{fmtPyg(m.pyg, loc)}{rentSfx}</div>
+              <div className="text-[15px] font-semibold text-paper/60">{m.pyg != null ? <>{fmtLocal(m.pyg, cc, loc)}{rentSfx}</> : null}</div>
               <div className="text-paper/60 text-[13px] mt-1 mb-5">{p.city}</div>
               <button className="w-full px-6 py-3.5 bg-paper text-ink font-semibold rounded-pill">{t('preview.contact')}</button>
               {(p.contact_name || p.contact_phone) && (

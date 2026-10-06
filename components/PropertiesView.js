@@ -5,6 +5,29 @@ import { useRouter } from 'next/navigation';
 import { makeT, locale } from '@/lib/i18n';
 import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
 import { typeLabel } from '@/lib/propertyType';
+import { reasonLabel } from '@/lib/ingestLabels';
+import { notVerifiedLabel, contactLine } from '@/lib/unverified';
+
+// Fields we couldn't verify (lib/unverified.js): live, but the buyer site shows
+// "Contact seller for …" in their place. Shown on active AND inactive listings.
+function UnverifiedChips({ r, lang }) {
+  if (!r._unverified || !r._unverified.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1" data-testid="prop-unverified">
+      {r._unverified.map((f) => (
+        <span key={f} title={`${lang === 'es' ? 'El sitio muestra' : 'The site shows'}: ${contactLine(f, lang)}`}
+          className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: '#F5EAD5', color: '#8A5A12' }}>
+          {notVerifiedLabel(f, lang)}
+        </span>
+      ))}
+    </div>
+  );
+}
+// Why a listing is hidden from the site, in plain words.
+const hiddenHint = (r, lang) => {
+  const why = (r._problems || []).map((c) => reasonLabel(c, lang)).join(' · ');
+  return (lang === 'es' ? 'Oculto en el sitio' : 'Hidden from the site') + (why ? `: ${why}` : '');
+};
 
 const T = {
   textPrimary: '#111111',
@@ -19,7 +42,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 const LIST_MAX_HEIGHT = 640;
 
-export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped' }) {
+export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false }) {
   const t = makeT(lang);
   const loc = locale(lang);
   const router = useRouter();
@@ -102,14 +125,15 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
           />
         </form>
         <div className="flex gap-2">
-          {['all', 'active', 'inactive'].map((s) => (
+          {['all', 'active', 'inactive', ...(loose ? ['unverified'] : [])].map((s) => (
             <button
               key={s}
               onClick={() => go({ status: s, page: 1 })}
               className="px-3.5 py-1.5 text-[12px] font-semibold"
               style={pillBtn(status === s)}
+              title={s === 'unverified' ? (lang === 'es' ? 'Publicadas con datos sin verificar (el sitio muestra "Consultá … con el vendedor")' : 'Live with data we couldn\'t verify (the site shows "Contact seller for …")') : undefined}
             >
-              {t(s === 'all' ? 'prop.all' : s === 'active' ? 'prop.active' : 'prop.inactive')}
+              {s === 'unverified' ? (lang === 'es' ? 'Datos sin verificar' : 'Data not verified') : t(s === 'all' ? 'prop.all' : s === 'active' ? 'prop.active' : 'prop.inactive')}
             </button>
           ))}
         </div>
@@ -166,7 +190,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
               const inactive = r.admin_status !== 'active';
               const incomplete = !!r._incomplete;
               const notLive = inactive || incomplete;
-              const incompleteHint = lang === 'es' ? 'Datos incompletos — oculto en el sitio' : 'Incomplete data — hidden from the site';
+              const incompleteHint = hiddenHint(r, lang);
               return (
                 <div key={r.id} className={`bg-white overflow-hidden flex flex-col ${notLive ? 'opacity-70' : ''}`} style={CARD}>
                   <div className="h-40 relative" style={{ background: T.bgSurface }}>
@@ -183,6 +207,8 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                     <div className="text-[17px] font-bold tracking-head" style={{ color: T.textPrimary }}>{fmtUsd(money(r).usd, loc)}{rentSfx(r)}</div>
                     <div className="text-[12.5px] font-semibold" style={{ color: T.textSecondary }}>{fmtPyg(money(r).pyg, loc)}{rentSfx(r)}</div>
                     <div className="text-[13px] font-medium mt-0.5 line-clamp-1" style={{ color: T.textPrimary }}>{r.city || '—'}</div>
+                    {incomplete && <div className="text-[11px] mt-1" style={{ color: '#8A5A12' }}>{incompleteHint}</div>}
+                    <UnverifiedChips r={r} lang={lang} />
                     <div className="text-[12px] line-clamp-2 mt-0.5 flex-1" style={{ color: T.textSecondary }}>{r.address}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {typeLabel(r.property_type, lang) && (
@@ -235,7 +261,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                     const inactive = r.admin_status !== 'active';
                     const incomplete = !!r._incomplete;
                     const notLive = inactive || incomplete;
-                    const incompleteHint = lang === 'es' ? 'Datos incompletos — oculto en el sitio' : 'Incomplete data — hidden from the site';
+                    const incompleteHint = hiddenHint(r, lang);
                     return (
                       <tr key={r.id} className={`border-b transition-colors ${notLive ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
@@ -270,6 +296,8 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                               {inactive ? t('prop.statusInactive') : t('prop.statusActive')}
                             </button>
                           )}
+                          {incomplete && <div className="text-[10.5px] mt-1 max-w-[200px] leading-snug" style={{ color: '#8A5A12' }}>{incompleteHint}</div>}
+                          <UnverifiedChips r={r} lang={lang} />
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex gap-1.5 justify-end">

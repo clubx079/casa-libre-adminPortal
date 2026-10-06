@@ -5,6 +5,7 @@ import { makeT } from '@/lib/i18n';
 import { getUsdToPyg } from '@/lib/fx';
 import { buildingsParts, landOrGroup } from '@/lib/land';
 import { validateListing } from '@/lib/ingest';
+import { looseFor, splitReasons } from '@/lib/unverified';
 import PropertiesView from '@/components/PropertiesView';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ export default async function PropertiesPage({ searchParams }) {
 
   const page = Math.max(1, parseInt(searchParams?.page || '1', 10) || 1);
   const q = (searchParams?.q || '').trim();
-  const status = searchParams?.status || 'all'; // all | active | inactive
+  const status = searchParams?.status || 'all'; // all | active | inactive | unverified
   const view = searchParams?.view === 'cards' ? 'cards' : 'table'; // default table
   const source = (searchParams?.source || '').trim(); // scrape_sources.key filter
   const cls = ['buildings', 'land', 'all'].includes(searchParams?.class) ? searchParams.class : 'buildings';
@@ -95,16 +96,26 @@ export default async function PropertiesPage({ searchParams }) {
 
   // A property is LIVE on the buyer portal only when it is admin-active AND passes
   // the completeness gate. Compute it once so the Active/Inactive filter and the
-  // status badge both reflect exactly what buyers see.
+  // status badge both reflect exactly what buyers see. Paraguay (lib/unverified.js):
+  // only missing contact or location hide a listing; fields that fail the other
+  // checks are listed in _unverified and the buyer site shows "Contact seller for …".
+  const loose = looseFor(activeCountry());
   const annotated = all.map((r) => {
-    const complete = validateListing(r, rate).ok;
+    const v = validateListing(r, rate);
+    const { blocking, unverified } = splitReasons(v.reasons);
+    const complete = v.ok || (loose && blocking.length === 0);
     const listerEmail = (r.origin === 'user' || (r.created_by && !r.scrape_sources?.name))
       ? (listerMap[r.created_by] || null)
       : null;
-    return { ...r, _listerEmail: listerEmail, _incomplete: !complete, _live: r.admin_status === 'active' && complete };
+    return {
+      ...r, _listerEmail: listerEmail, _incomplete: !complete, _live: r.admin_status === 'active' && complete,
+      _problems: complete ? [] : (loose ? blocking : v.reasons),   // why it's hidden from the site
+      _unverified: loose ? unverified : [],                          // shown as "Contact seller for …"
+    };
   });
   const matched = status === 'active' ? annotated.filter((r) => r._live)
     : status === 'inactive' ? annotated.filter((r) => !r._live)
+    : status === 'unverified' ? annotated.filter((r) => r._unverified.length > 0)
     : annotated;
   const count = matched.length;
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
@@ -131,6 +142,7 @@ export default async function PropertiesPage({ searchParams }) {
           totalPages={totalPages}
           q={q}
           status={status}
+          loose={loose}
           view={view}
           lang={lang}
           rate={rate}

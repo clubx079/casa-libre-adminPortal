@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
+import { getUsdToPyg } from '@/lib/fx';
+import { looseFor, splitReasons, persistedPriceUsd } from '@/lib/unverified';
+import { genShortCode } from '@/lib/shortcode';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +17,8 @@ const ACTIONS = ['release', 'discard'];
 export async function PATCH(req, { params }) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  const { select, insert, update } = dbFor(activeCountry());
+  const cc = activeCountry();
+  const { select, insert, update } = dbFor(cc);
 
   let body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }); }
@@ -34,19 +37,42 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ ok: true, row: u });
     }
 
-    // release: promote the payload into properties (idempotent per source+external)
+    // release: promote the payload into properties (idempotent per source+external).
+    // Searchable straight away when the buyer site would show it: it has a contact
+    // and a location, and any other problem is a field the site shows as "Contact
+    // seller for …" (Paraguay, lib/unverified.js). A price we couldn't verify gets no
+    // price_usd. source_hash stays empty so the next scrape of the source sees the
+    // listing as changed and adds its photos (quarantined records carry none).
     const payload = row.payload || {};
-    const hash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    const reasons = row.reasons || [];
+
+    // Already in properties (a later scrape published it, or it was released before)?
+    // That row is current — never overwrite it with this older payload; just close
+    // the quarantine record.
+    const [existing] = await select('properties', `select=id,admin_status&source_id=eq.${row.source_id}&external_id=eq.${encodeURIComponent(row.external_id)}&limit=1`);
+    if (existing) {
+      const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,
+        { status: 'released', reviewed_at: ts, reviewed_by: reviewer }, { returning: 'representation' });
+      return NextResponse.json({ ok: true, row: u, alreadyListed: existing.admin_status });
+    }
+
+    const { unverified } = splitReasons(reasons);
+    const shown = !reasons.includes('no_contact') && !reasons.includes('no_location')
+      && (unverified.length === 0 || looseFor(cc));
+    const rate = await getUsdToPyg().catch(() => Number(process.env.PYG_PER_USD) || 7300);
     await insert('properties', [{
       ...payload,
       source_id: row.source_id,
       external_id: row.external_id,
-      source_hash: hash,
+      source_hash: null,
+      is_complete: shown,
+      price_usd: persistedPriceUsd(payload, rate, looseFor(cc) ? unverified : []),
       admin_status: 'active',
       is_delisted: false,
       first_scraped_at: ts,
       last_scraped_at: ts,
       last_seen_at: ts,
+      ...(cc === 'py' && !payload.short_code ? { short_code: genShortCode() } : {}),
     }], { upsert: true, onConflict: 'source_id,external_id', returning: 'minimal' });
 
     const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,

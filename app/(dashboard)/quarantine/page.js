@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ShieldAlert, ExternalLink, ChevronDown } from 'lucide-react';
 import { reasonLabel } from '@/lib/ingestLabels';
 import { dualPrice, fmtUsd, fmtPyg } from '@/lib/money';
+import { FIXABLE, reasonValue, contactLine } from '@/lib/unverified';
 
 const T = {
   textPrimary: '#111111',
@@ -16,9 +17,18 @@ const T = {
   dangerSurface: '#F6E4E1',
   success: '#0F6E56',
   successSurface: '#E4F1E9',
+  warn: '#8A5A12',
+  warnSurface: '#F5EAD5',
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
+// Paraguay (lib/unverified.js): records whose only problems are fields the site can
+// show as "Contact seller for …" can go live; the rest stay blocked.
+const VIEWS = [['all', 'All'], ['ready', 'Can go live'], ['blocked', 'Blocked']];
+const ON_SITE = {
+  active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
+  inactive: { label: 'On the site but inactive', style: { background: '#FAF7F1', color: '#6B6862' } },
+};
 
 const fmtDate = (v) => {
   if (!v) return '—';
@@ -46,6 +56,9 @@ export default function QuarantinePage() {
   const [busyId, setBusyId] = useState(null);
   const [actErr, setActErr] = useState('');
   const [reason, setReason] = useState(null); // active reason filter (null = all)
+  const [view, setView] = useState('all');     // all | ready | blocked (Paraguay)
+  const [viewCounts, setViewCounts] = useState({});
+  const [loose, setLoose] = useState(false);
   const PAGE_SIZE = 50;
   // Language for reason labels — read from the admin's cl_lang cookie (client-side).
   const [lang, setLang] = useState('es');
@@ -54,10 +67,10 @@ export default function QuarantinePage() {
     if (m && m[1] === 'en') setLang('en');
   }, []);
 
-  async function fetchRows(status, reasonCode, pg) {
+  async function fetchRows(status, reasonCode, pg, v) {
     setLoading(true); setError(false);
     try {
-      const params = new URLSearchParams({ status, page: String(pg), pageSize: String(PAGE_SIZE) });
+      const params = new URLSearchParams({ status, page: String(pg), pageSize: String(PAGE_SIZE), view: v || 'all' });
       if (reasonCode) params.set('reason', reasonCode);
       const res = await fetch(`/api/quarantine?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
@@ -65,6 +78,8 @@ export default function QuarantinePage() {
         setRows(json.rows || []);
         setCounts(json.counts || {});
         setReasonCounts(json.reasonCounts || {});
+        setViewCounts(json.viewCounts || {});
+        setLoose(!!json.loose);
         setTotal(json.total || 0);
         if (json.rate) setRate(json.rate);
       } else setError(true);
@@ -73,9 +88,10 @@ export default function QuarantinePage() {
   }
 
   // One effect drives every fetch — tab, reason, or page change all refetch.
-  useEffect(() => { fetchRows(tab, reason, page); }, [tab, reason, page]);
+  useEffect(() => { fetchRows(tab, reason, page, view); }, [tab, reason, page, view]);
 
-  const selectTab = (k) => { setTab(k); setReason(null); setPage(1); };
+  const selectTab = (k) => { setTab(k); setReason(null); setView('all'); setPage(1); };
+  const selectView = (k) => { setView(k); setReason(null); setPage(1); };
   const selectReason = (code) => { setReason(code || null); setPage(1); };
 
   async function act(row, action) {
@@ -92,7 +108,7 @@ export default function QuarantinePage() {
       // stay exact. Step back a page if we just emptied the last one.
       const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
       if (nextPage !== page) setPage(nextPage);
-      else fetchRows(tab, reason, page);
+      else fetchRows(tab, reason, page, view);
     } catch (e) {
       // Surface the failure instead of silently leaving the row in place.
       setActErr(`${action === 'release' ? 'Release' : 'Discard'} failed: ${e.message || 'unknown error'}`);
@@ -112,7 +128,8 @@ export default function QuarantinePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Quarantine</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
-            Suspect or duplicate scraped records held before they reach the live site. Release to publish, or discard.
+            Scraped records held back before they reach the live site, with what is wrong with each one.
+            {loose ? ' Records whose only problems are price, area, bedrooms, bathrooms or parking can go live: the site shows “Contact seller for …” for those fields. No contact, no location, duplicates and unverified sellers stay blocked.' : ' Release to publish, or discard.'}
           </p>
         </div>
       </div>
@@ -149,6 +166,25 @@ export default function QuarantinePage() {
         })}
       </div>
 
+      {/* Can go live / Blocked (Paraguay) */}
+      {loose && tab === 'pending' && (
+        <div className="flex items-center gap-1.5" data-testid="quarantine-views">
+          {VIEWS.map(([k, label]) => {
+            const on = view === k;
+            const n = k === 'all' ? counts[tab] : viewCounts[k];
+            const tone = k === 'ready' ? { background: T.successSurface, color: T.success, borderColor: T.success } : k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
+            return (
+              <button key={k} onClick={() => selectView(k)}
+                className="inline-flex items-center gap-2 text-[12.5px] font-semibold px-3 py-1.5 rounded-full border transition-colors"
+                style={on ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary } : tone}>
+                {label}
+                {n != null && <span className="text-[11px] font-mono">{n}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Reason filter (dropdown) */}
       {reasonList.length > 0 && (
         <div className="flex items-center gap-2">
@@ -162,7 +198,7 @@ export default function QuarantinePage() {
                 ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
                 : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
             >
-              <option value="">All reasons ({counts[tab] ?? 0})</option>
+              <option value="">All reasons ({(view === 'all' ? counts[tab] : viewCounts[view]) ?? 0})</option>
               {reasonList.map(([code, n]) => (
                 <option key={code} value={code}>{reasonLabel(code, lang)} ({n})</option>
               ))}
@@ -183,9 +219,9 @@ export default function QuarantinePage() {
           <table className="w-full min-w-[1080px]">
             <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['Listing', 'Zone', 'Price', 'Reasons', 'When', tab === 'pending' ? 'Action' : 'Status'].map((h, i) => (
+                {['Listing', 'Zone', 'Price', 'What is wrong', 'On the site', 'When', tab === 'pending' ? 'Action' : 'Status'].map((h, i) => (
                   <th key={i}
-                    className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 5 ? 'text-right' : 'text-left'}`}
+                    className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 6 ? 'text-right' : 'text-left'}`}
                     style={{ color: T.textSecondary, background: T.bgSurface }}>
                     {h}
                   </th>
@@ -196,16 +232,16 @@ export default function QuarantinePage() {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="border-b animate-pulse" style={{ borderColor: T.borderLight }}>
-                    {[...Array(6)].map((__, j) => (
+                    {[...Array(7)].map((__, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '140px' : '80px', background: T.bgSurface }} /></td>
                     ))}
                   </tr>
                 ))
               ) : error ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load the quarantine queue. Check the DB connection.</td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load the quarantine queue. Check the DB connection.</td></tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center">
+                  <td colSpan={7} className="px-6 py-12 text-center">
                     <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>
                       {reason ? `No ${tab} records for “${reasonLabel(reason, lang)}”` : `Nothing ${tab}`}
@@ -233,25 +269,48 @@ export default function QuarantinePage() {
                       <div className="font-semibold" style={{ color: T.textPrimary }}>{money(p, rate).usd}</div>
                       {money(p, rate).pyg && <div className="text-[11px]" style={{ color: T.textMuted }}>{money(p, rate).pyg}</div>}
                     </td>
-                    <td className="px-4 py-3 text-xs max-w-[320px]">
+                    <td className="px-4 py-3 text-xs max-w-[360px]">
                       <div className="flex flex-wrap gap-1">
-                        {(r.reasons || []).map((code) => (
-                          <span key={code} className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full"
-                            style={code === 'duplicate' ? { background: T.bgSurface, color: T.textSecondary } : { background: T.dangerSurface, color: T.danger }}
-                            title={code}>
-                            {reasonLabel(code, lang)}
-                          </span>
-                        ))}
+                        {(r.reasons || []).map((code) => {
+                          const fixable = loose && FIXABLE[code];
+                          const val = reasonValue(code, p, rate);
+                          return (
+                            <span key={code} className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full"
+                              style={fixable ? { background: T.warnSurface, color: T.warn } : code === 'duplicate' ? { background: T.bgSurface, color: T.textSecondary } : { background: T.dangerSurface, color: T.danger }}
+                              title={code}>
+                              {reasonLabel(code, lang)}{val ? `: ${val}` : ''}
+                            </span>
+                          );
+                        })}
                       </div>
+                      {tab === 'pending' && loose && (
+                        r.can_go_live ? (
+                          <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
+                            <b>Can go live.</b> The site will show: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
+                          </p>
+                        ) : (
+                          <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
+                            <b>Stays blocked:</b> {(r.blocking || []).map((c) => reasonLabel(c, lang)).join(' · ')}
+                          </p>
+                        )
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      {r.on_site ? (
+                        <span className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full" style={ON_SITE[r.on_site].style}>{ON_SITE[r.on_site].label}</span>
+                      ) : (
+                        <span className="text-[11px]" style={{ color: T.textMuted }}>Not on the site</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textMuted }}>{fmtDate(r.created_at)}</td>
                     <td className="px-4 py-3 text-right">
                       {tab === 'pending' ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <button onClick={() => act(r, 'release')} disabled={busyId === r.id}
+                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.can_go_live ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish anyway (admin override)'}
                             className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
                             style={{ borderColor: T.success, color: T.success, background: T.successSurface }}>
-                            {busyId === r.id ? '…' : 'Release'}
+                            {busyId === r.id ? '…' : r.on_site ? 'Clear' : r.can_go_live ? 'Publish' : 'Release'}
                           </button>
                           <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
                             className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"

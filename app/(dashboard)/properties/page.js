@@ -97,7 +97,7 @@ export default async function PropertiesPage({ searchParams }) {
 
   // A property is LIVE on the buyer portal only when it is admin-active AND passes
   // the completeness gate. Compute it once so the Active/Inactive filter and the
-  // status badge both reflect exactly what buyers see. Paraguay (lib/unverified.js):
+  // status badge both reflect exactly what buyers see. Looser rule (lib/unverified.js):
   // only missing contact or location hide a listing; fields that fail the other
   // checks are listed in _unverified and the buyer site shows "Contact seller for …".
   const loose = looseFor(activeCountry());

@@ -23,7 +23,7 @@ const T = {
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
-// Paraguay (lib/unverified.js): records whose only problems are fields the site can
+// Looser rule (lib/unverified.js): records whose only problems are fields the site can
 // show as "Contact seller for …" can go live; the rest stay blocked.
 const VIEWS = [['all', 'All'], ['ready', 'Can go live'], ['live', 'Already live'], ['blocked', 'Blocked']];
 const ON_SITE = {

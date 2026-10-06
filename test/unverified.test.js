@@ -14,7 +14,8 @@ const row = (o = {}) => ({
 describe('looser quarantine rule (Paraguay first)', () => {
   it('applies to Paraguay only', () => {
     expect(looseFor('py')).toBe(true);
-    for (const cc of ['bo', 'uy', 've', '', undefined]) expect(looseFor(cc)).toBe(false);
+    for (const cc of ['bo', 'uy', 've']) expect(looseFor(cc)).toBe(true);
+    for (const cc of ['ar', '', undefined]) expect(looseFor(cc)).toBe(false);
   });
 
   it('splits reasons into blocking ones and fields to show as "Contact seller for …"', () => {
@@ -27,7 +28,8 @@ describe('looser quarantine rule (Paraguay first)', () => {
 
   it('only fixable-field records can go live, and only in Paraguay', () => {
     expect(canGoLive(['price_below_floor', 'baths_over_cap'], 'py')).toBe(true);
-    expect(canGoLive(['price_below_floor'], 'bo')).toBe(false);
+    expect(canGoLive(['price_below_floor'], 'bo')).toBe(true);
+    expect(canGoLive(['price_below_floor'], 'ar')).toBe(false);
     for (const blocked of [['no_contact'], ['no_location'], ['duplicate'], ['unverified_seller'], ['no_contact', 'no_price']]) {
       expect(canGoLive(blocked, 'py')).toBe(false);
     }
@@ -81,6 +83,6 @@ describe('quarantine record state', () => {
   });
   it('blocking reasons, or a strict country → blocked', () => {
     expect(quarantineState({ reasons: ['no_contact'], cc: 'py' })).toBe('blocked');
-    expect(quarantineState({ reasons: ['price_below_floor'], cc: 'bo' })).toBe('blocked');
+    expect(quarantineState({ reasons: ['price_below_floor'], cc: 'ar' })).toBe('blocked');
   });
 });

@@ -26,7 +26,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 // unverified seller hold a listing back (Blocked). A bad price, area, bedrooms, bathrooms
 // or parking never does: the listing goes live with "Contact seller for …" — those live
 // listings are under "Active but incomplete" (not quarantine records).
-const VIEWS = [['all', 'All'], ['blocked', 'Blocked'], ['incomplete', 'Active but incomplete']];
+const VIEWS = [['blocked', 'Blocked'], ['incomplete', 'Active but incomplete']];
 const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
 const ON_SITE = {
   active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
@@ -53,7 +53,6 @@ export default function QuarantinePage() {
   // listings go live through the scraper, records can only be discarded here).
   const tab = 'pending';
   const [rows, setRows] = useState([]);
-  const [counts, setCounts] = useState({});
   const [reasonCounts, setReasonCounts] = useState({});
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -64,7 +63,7 @@ export default function QuarantinePage() {
   const [busyId, setBusyId] = useState(null);
   const [actErr, setActErr] = useState('');
   const [reason, setReason] = useState(null); // active reason filter (null = all)
-  const [view, setView] = useState('all');     // all | blocked | incomplete
+  const [view, setView] = useState('blocked'); // blocked | incomplete
   const [viewCounts, setViewCounts] = useState({});
   const [loose, setLoose] = useState(false);
   const PAGE_SIZE = 50;
@@ -78,13 +77,12 @@ export default function QuarantinePage() {
   async function fetchRows(status, reasonCode, pg, v) {
     setLoading(true); setError(false);
     try {
-      const params = new URLSearchParams({ status, page: String(pg), pageSize: String(PAGE_SIZE), view: v || 'all' });
+      const params = new URLSearchParams({ status, page: String(pg), pageSize: String(PAGE_SIZE), view: v || 'blocked' });
       if (reasonCode) params.set('reason', reasonCode);
       const res = await fetch(`/api/quarantine?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (res.ok) {
         setRows(json.rows || []);
-        setCounts(json.counts || {});
         setReasonCounts(json.reasonCounts || {});
         setViewCounts(json.viewCounts || {});
         setLoose(!!json.loose);
@@ -154,7 +152,7 @@ export default function QuarantinePage() {
         <div className="flex items-center gap-1.5" data-testid="quarantine-views">
           {VIEWS.map(([k, label]) => {
             const on = view === k;
-            const n = k === 'all' ? counts[tab] : viewCounts[k];
+            const n = viewCounts[k];
             const tone = k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'incomplete' ? { background: T.warnSurface, color: T.warn, borderColor: T.warn } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
             return (
               <button key={k} onClick={() => selectView(k)}
@@ -181,7 +179,7 @@ export default function QuarantinePage() {
                 ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
                 : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
             >
-              <option value="">All reasons ({(view === 'all' ? counts[tab] : viewCounts[view]) ?? 0})</option>
+              <option value="">All reasons ({viewCounts[view] ?? 0})</option>
               {reasonList.map(([code, n]) => (
                 <option key={code} value={code}>{reasonLabel(code, lang)} ({n})</option>
               ))}

@@ -22,10 +22,12 @@ const REASON_CODES = [
 // The three things that hold a listing back — the only reasons the Reason filter offers
 // for pending records. A record's other problems still show on its row.
 const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
-// Pending views: all records, the blocked ones, or 'incomplete' — not quarantine records
-// but LIVE listings with a field the site shows as "Contact seller for …" (bad price,
-// area, bedrooms, bathrooms or parking), so it's clear those don't hold a listing back.
-const VIEWS = ['all', 'blocked', 'incomplete'];
+// Pending views: 'blocked' — every record still held back (normally all are blocked; one
+// that is already live or could go live says so on its row), or 'incomplete' — not
+// quarantine records but LIVE listings with a field the site shows as "Contact seller
+// for …" (bad price, area, bedrooms, bathrooms or parking), so it's clear those don't
+// hold a listing back.
+const VIEWS = ['blocked', 'incomplete'];
 const DEFAULT_PAGE_SIZE = 50;
 const CHUNK = 150;
 const INCOMPLETE_CACHE_MS = 60 * 1000;
@@ -86,7 +88,7 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const status = STATUSES.includes(searchParams.get('status')) ? searchParams.get('status') : 'pending';
   const reason = REASON_CODES.includes(searchParams.get('reason')) ? searchParams.get('reason') : null;
-  const view = status === 'pending' && VIEWS.includes(searchParams.get('view')) ? searchParams.get('view') : 'all';
+  const view = status === 'pending' && VIEWS.includes(searchParams.get('view')) ? searchParams.get('view') : 'blocked';
   const page = Math.max(1, parseInt(searchParams.get('page'), 10) || 1);
   const pageSize = Math.min(200, Math.max(10, parseInt(searchParams.get('pageSize'), 10) || DEFAULT_PAGE_SIZE));
   const offset = (page - 1) * pageSize;
@@ -141,8 +143,7 @@ export async function GET(req) {
 
     // Live listings shown with "Contact seller for …" (null if they couldn't be read)
     const incomplete = loose ? await activeIncomplete(select, cc, rate).catch(() => null) : [];
-    const viewCounts = { ready: 0, live: 0, blocked: 0, incomplete: incomplete ? incomplete.length : null };
-    for (const v of info.values()) viewCounts[v.state]++;
+    const viewCounts = { blocked: all.length, incomplete: incomplete ? incomplete.length : null };
 
     if (view === 'incomplete') {
       if (!incomplete) throw new Error('Could not read the live listings');
@@ -153,7 +154,7 @@ export async function GET(req) {
       return NextResponse.json({ rows: matched.slice(offset, offset + pageSize), total: matched.length, page, pageSize, counts: Object.fromEntries(countsArr), viewCounts, reasonCounts, rate, country: cc, loose, view });
     }
 
-    const inView = all.filter((r) => view === 'all' || info.get(r.id).state === view);
+    const inView = all;
     const reasonCounts = {};
     for (const r of inView) for (const c of info.get(r.id).reasons_now) if (BLOCK_FILTER.includes(c)) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
     const matched = reason ? inView.filter((r) => info.get(r.id).reasons_now.includes(reason)) : inView;

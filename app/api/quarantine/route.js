@@ -17,11 +17,11 @@ const STATUSES = ['pending', 'released', 'discarded'];
 const REASON_CODES = [
   'no_price', 'no_contact', 'price_below_floor', 'price_above_ceiling', 'sale_price_as_rent',
   'duplicate', 'area_out_of_range', 'beds_over_cap', 'baths_over_cap', 'no_location', 'parking_over_cap',
-  'unverified_seller',
+  'unverified_seller', 'no_images',
 ];
-// The three things that hold a listing back — the only reasons the Reason filter offers
+// The four things that hold a listing back — the only reasons the Reason filter offers
 // for pending records. A record's other problems still show on its row.
-const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
+const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller', 'no_images'];
 // Pending views: 'blocked' — every record still held back (a record whose listing is
 // already on the site is left out; one that could go live says so on its row), or 'incomplete' — not
 // quarantine records but LIVE listings with a field the site shows as "Contact seller
@@ -118,19 +118,24 @@ export async function GET(req) {
     const ext = [...new Set(all.map((r) => r.external_id).filter(Boolean))];
     const props = await selectIn(select, 'properties', 'id,source_id,external_id,admin_status,is_delisted', 'external_id', ext);
     const listed = new Map(props.map((p) => [`${p.source_id}|${p.external_id}`, p]));
+    // A record's own listing counts as on the site only while it's active: one switched
+    // off by the scraper (e.g. "No images") is still held back.
+    const isLive = (p) => !!p && p.admin_status === 'active' && !p.is_delisted;
+    const liveOwn = (r) => isLive(listed.get(`${r.source_id}|${r.external_id}`));
     // live listings that are the same property (dedupe_key) as a record that could go live,
     // or that a "duplicate" record was held for (a duplicate only blocks while that's live)
     const isDup = (r) => (r.reasons || []).includes('duplicate');
-    const keys = [...new Set(all.filter((r) => !listed.has(`${r.source_id}|${r.external_id}`) && (isDup(r) || canGoLive(r.reasons, cc)) && r.dedupe_key).map((r) => r.dedupe_key))];
+    const keys = [...new Set(all.filter((r) => !liveOwn(r) && (isDup(r) || canGoLive(r.reasons, cc)) && r.dedupe_key).map((r) => r.dedupe_key))];
     const twins = await selectIn(select, 'properties', 'id,dedupe_key,address,city,external_id,source_id,scrape_sources(name)', 'dedupe_key', keys, '&admin_status=eq.active&is_delisted=eq.false');
     const twinByKey = new Map(twins.map((t) => [t.dedupe_key, t]));
 
     const info = new Map();
     for (const r of all) {
       const p = listed.get(`${r.source_id}|${r.external_id}`);
-      const twin = !p && r.dedupe_key ? twinByKey.get(r.dedupe_key) : null;
-      const twinGone = !p && !twin && !!r.dedupe_key && isDup(r);
-      const st = quarantineState({ reasons: r.reasons, onSite: !!p, duplicateOfLive: !!twin, twinGone, cc });
+      const onSite = isLive(p);
+      const twin = !onSite && r.dedupe_key ? twinByKey.get(r.dedupe_key) : null;
+      const twinGone = !onSite && !twin && !!r.dedupe_key && isDup(r);
+      const st = quarantineState({ reasons: r.reasons, onSite, duplicateOfLive: !!twin, twinGone, cc });
       info.set(r.id, {
         state: st,
         twin_gone: twinGone,
@@ -141,9 +146,9 @@ export async function GET(req) {
       });
     }
 
-    // Only what is really held back: a record whose own listing is already a property
-    // (e.g. a scrape that published a listing and also held it as a duplicate of itself)
-    // isn't blocked, so it's left out.
+    // Only what is really held back: a record whose own listing is already live on the
+    // site (e.g. a scrape that published a listing and also held it as a duplicate of
+    // itself) isn't blocked, so it's left out.
     const held = all.filter((r) => info.get(r.id).state !== 'live');
     // Live listings shown with "Contact seller for …" (null if they couldn't be read)
     const incomplete = loose ? await activeIncomplete(select, cc, rate).catch(() => null) : [];

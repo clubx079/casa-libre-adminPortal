@@ -27,7 +27,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 // or parking never does: the listing goes live with "Contact seller for …" — those live
 // listings are under "Active but incomplete" (not quarantine records).
 const VIEWS = [['blocked', 'Blocked'], ['incomplete', 'Active but incomplete']];
-const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
+const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller', 'no_images'];
 const ON_SITE = {
   active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
   inactive: { label: 'On the site but inactive', style: { background: '#FAF7F1', color: '#6B6862' } },
@@ -135,7 +135,7 @@ export default function QuarantinePage() {
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Quarantine</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
             Listings held back before they reach the live site, with what is wrong with each one.
-            {loose ? ' A listing is held back (Blocked) for no contact phone, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Discard a record to remove it from this list.'}
+            {loose ? ' A listing is held back (Blocked) for no contact phone, no photos, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Discard a record to remove it from this list.'}
           </p>
         </div>
       </div>
@@ -280,7 +280,7 @@ export default function QuarantinePage() {
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
                           <b>Stays blocked:</b>{' '}
                           {[
-                            // the three reasons that block a listing; anything else only if none of them applies
+                            // the four reasons that block a listing; anything else only if none of them applies
                             ...((r.blocking || []).some((c) => BLOCK_FILTER.includes(c)) ? r.blocking.filter((c) => BLOCK_FILTER.includes(c)) : (r.blocking || [])).map((c) => reasonLabel(c, lang)),
                             ...(r.duplicate_of ? [`Same property as a live listing${r.duplicate_of.source ? ` from ${r.duplicate_of.source}` : ''}${r.duplicate_of.address ? ` (${r.duplicate_of.address})` : ''}`] : []),
                           ].join(' · ')}

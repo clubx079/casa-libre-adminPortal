@@ -132,7 +132,7 @@ describe('a listing is never quarantined as a duplicate of its own row', () => {
     const out = await runJob({ runId: addRun(tables), country: 'py' });
 
     expect(tables.properties.filter((p) => p.external_id === '52500001')).toHaveLength(1);
-    expect(tables.ingest_quarantine).toEqual([]);
+    expect(tables.ingest_quarantine.filter((q) => q.reasons.includes('duplicate'))).toEqual([]);
     expect(out).toMatchObject({ inserted: 1, duplicates: 0, skipped: 1, quarantined: 0 });
   });
 
@@ -150,7 +150,7 @@ describe('a listing is never quarantined as a duplicate of its own row', () => {
     const out = await runJob({ runId: addRun(tables), country: 'py' });
 
     expect(tables.properties.filter((p) => p.external_id === '52500002')).toHaveLength(1);
-    expect(tables.ingest_quarantine).toEqual([]);
+    expect(tables.ingest_quarantine.filter((q) => q.reasons.includes('duplicate'))).toEqual([]);
     expect(out).toMatchObject({ inserted: 0, updated: 1, duplicates: 0 });
   });
 
@@ -181,5 +181,30 @@ describe('a listing is never quarantined as a duplicate of its own row', () => {
     expect(out).toMatchObject({ runId: live, attached: true });
     expect(h.fetchPage).not.toHaveBeenCalled();
     expect(tables.scrape_runs).toHaveLength(1);
+  });
+});
+
+describe('a listing with no photo is not published', () => {
+  it('is switched off and held in Quarantine as "No images"', async () => {
+    const tables = seed();
+    h.page = [{ id: '52500010' }];   // the stubbed adapter returns no images
+
+    await runJob({ runId: addRun(tables), country: 'py' });
+
+    const [p] = tables.properties.filter((x) => x.external_id === '52500010');
+    expect(p.admin_status).toBe('inactive');
+    expect(tables.ingest_quarantine).toMatchObject([{ source_id: SRC, external_id: '52500010', reasons: ['no_images'], status: 'pending' }]);
+  });
+
+  it('a listing that kept a photo from an earlier scrape stays live', async () => {
+    const tables = seed();
+    const row = listingRow(SRC, '52500011');
+    tables.properties.push({ ...row, id: 'prop-with-photo', dedupe_key: keyOf(row), is_delisted: false, source_hash: 'older', feature_image_url: 'https://cdn.example/x.webp' });
+    h.page = [{ id: '52500011' }];
+
+    await runJob({ runId: addRun(tables), country: 'py' });
+
+    expect(tables.properties.find((x) => x.id === 'prop-with-photo').admin_status).toBe('active');
+    expect(tables.ingest_quarantine).toEqual([]);
   });
 });

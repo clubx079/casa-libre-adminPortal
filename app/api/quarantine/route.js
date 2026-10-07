@@ -5,6 +5,9 @@ import { activeCountry } from '@/lib/adminCountry';
 import { getUsdRate } from '@/lib/fx';
 import { currencyFor } from '@/lib/currency';
 import { looseFor, splitReasons, canGoLive, FIXABLE_CODES, quarantineState, reasonsNow } from '@/lib/unverified';
+import { validateListing } from '@/lib/ingest';
+import { buildingsParts } from '@/lib/land';
+import { listingUrl } from '@/lib/buyerSite';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,12 +19,40 @@ const REASON_CODES = [
   'duplicate', 'area_out_of_range', 'beds_over_cap', 'baths_over_cap', 'no_location', 'parking_over_cap',
   'unverified_seller',
 ];
-// Pending records by state (lib/unverified.quarantineState): ready = can be published,
-// live = the listing is already on the site (old record, clear it), blocked = held back
-// (a blocking reason, or the same property as a live listing).
-const VIEWS = ['all', 'ready', 'live', 'blocked'];
+// The three things that hold a listing back — the only reasons the Reason filter offers
+// for pending records. A record's other problems still show on its row.
+const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
+// Pending views: all records, the blocked ones, or 'incomplete' — not quarantine records
+// but LIVE listings with a field the site shows as "Contact seller for …" (bad price,
+// area, bedrooms, bathrooms or parking), so it's clear those don't hold a listing back.
+const VIEWS = ['all', 'blocked', 'incomplete'];
 const DEFAULT_PAGE_SIZE = 50;
 const CHUNK = 150;
+const INCOMPLETE_CACHE_MS = 60 * 1000;
+const incompleteCache = (globalThis.__clIncompleteCache ||= new Map());
+
+// Live listings (active, not delisted, buildings) whose only problems are fields the site
+// shows as "Contact seller for …". Same check as the Properties page. Cached 60s per
+// country: the page refetches on every filter change.
+async function activeIncomplete(select, cc, rate) {
+  const hit = incompleteCache.get(cc);
+  if (hit && Date.now() - hit.at < INCOMPLETE_CACHE_MS) return hit.rows;
+  const cols = 'id,address,city,neighborhood,zone_canonical,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,external_id,external_url,created_at';
+  const props = await selectAll(select, 'properties', `select=${cols}&admin_status=eq.active&is_delisted=eq.false&${buildingsParts().join('&')}&order=created_at.desc`);
+  const rows = [];
+  for (const p of props) {
+    const { reasons } = validateListing(p, rate, cc);
+    const { blocking, unverified } = splitReasons(reasons);
+    if (blocking.length || !unverified.length) continue;   // hidden from the site, or complete
+    rows.push({
+      id: p.id, property_id: p.id, external_id: p.external_id, created_at: p.created_at,
+      payload: p, reasons: reasons.filter((r) => FIXABLE_CODES.includes(r)), unverified,
+      state: 'incomplete', on_site: 'active', public_url: listingUrl(cc, p.id),
+    });
+  }
+  incompleteCache.set(cc, { at: Date.now(), rows });
+  return rows;
+}
 
 // Fetch every row of a query (PostgREST pages with limit/offset).
 async function selectAll(select, table, query) {
@@ -42,7 +73,7 @@ async function selectIn(select, table, cols, col, vals, extra = '') {
   return out;
 }
 
-// GET /api/quarantine?status=pending&view=ready&reason=no_price&page=1&pageSize=50
+// GET /api/quarantine?status=pending&view=blocked&reason=no_contact&page=1&pageSize=50
 // Each row says in plain terms where it stands: can it be published, is the listing
 // already on the site (active / inactive), or what holds it back — including being the
 // same property as a live listing (records held for a bad field never had the scraper's
@@ -108,11 +139,23 @@ export async function GET(req) {
       });
     }
 
-    const viewCounts = { ready: 0, live: 0, blocked: 0 };
+    // Live listings shown with "Contact seller for …" (null if they couldn't be read)
+    const incomplete = loose ? await activeIncomplete(select, cc, rate).catch(() => null) : [];
+    const viewCounts = { ready: 0, live: 0, blocked: 0, incomplete: incomplete ? incomplete.length : null };
     for (const v of info.values()) viewCounts[v.state]++;
+
+    if (view === 'incomplete') {
+      if (!incomplete) throw new Error('Could not read the live listings');
+      const reasonCounts = {};
+      for (const r of incomplete) for (const c of r.reasons) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
+      const matched = reason ? incomplete.filter((r) => r.reasons.includes(reason)) : incomplete;
+      const countsArr = await countsP;
+      return NextResponse.json({ rows: matched.slice(offset, offset + pageSize), total: matched.length, page, pageSize, counts: Object.fromEntries(countsArr), viewCounts, reasonCounts, rate, country: cc, loose, view });
+    }
+
     const inView = all.filter((r) => view === 'all' || info.get(r.id).state === view);
     const reasonCounts = {};
-    for (const r of inView) for (const c of info.get(r.id).reasons_now) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
+    for (const r of inView) for (const c of info.get(r.id).reasons_now) if (BLOCK_FILTER.includes(c)) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
     const matched = reason ? inView.filter((r) => info.get(r.id).reasons_now.includes(reason)) : inView;
     const pageIds = matched.slice(offset, offset + pageSize).map((r) => r.id);
     const full = pageIds.length ? await selectIn(select, 'ingest_quarantine', '*', 'id', pageIds) : [];

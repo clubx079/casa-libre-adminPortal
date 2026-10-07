@@ -23,10 +23,12 @@ const T = {
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
-// Looser rule (lib/unverified.js): records whose only problems are fields the site can
-// show as "Contact seller for …" can go live; the rest stay blocked. (No "Can go live"
-// filter: the scraper publishes those as they arrive, so it was normally empty.)
-const VIEWS = [['all', 'All'], ['live', 'Already live'], ['blocked', 'Blocked']];
+// Looser rule (lib/unverified.js): only no contact, a duplicate of a live listing or an
+// unverified seller hold a listing back (Blocked). A bad price, area, bedrooms, bathrooms
+// or parking never does: the listing goes live with "Contact seller for …" — those live
+// listings are under "Active but incomplete" (not quarantine records).
+const VIEWS = [['all', 'All'], ['blocked', 'Blocked'], ['incomplete', 'Active but incomplete']];
+const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
 const ON_SITE = {
   active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
   inactive: { label: 'On the site but inactive', style: { background: '#FAF7F1', color: '#6B6862' } },
@@ -61,7 +63,7 @@ export default function QuarantinePage() {
   const [busyId, setBusyId] = useState(null);
   const [actErr, setActErr] = useState('');
   const [reason, setReason] = useState(null); // active reason filter (null = all)
-  const [view, setView] = useState('all');     // all | ready | blocked (Paraguay)
+  const [view, setView] = useState('all');     // all | blocked | incomplete
   const [viewCounts, setViewCounts] = useState({});
   const [loose, setLoose] = useState(false);
   const PAGE_SIZE = 50;
@@ -134,8 +136,8 @@ export default function QuarantinePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Quarantine</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
-            Scraped records held back before they reach the live site, with what is wrong with each one.
-            {loose ? ' Records whose only problems are price, area, bedrooms, bathrooms or parking can go live: the site shows “Contact seller for …” for those fields. No contact, no location, duplicates and unverified sellers stay blocked.' : ' Release to publish, or discard.'}
+            Listings held back before they reach the live site, with what is wrong with each one.
+            {loose ? ' A listing is held back (Blocked) for no contact phone, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Release to publish, or discard.'}
           </p>
         </div>
       </div>
@@ -172,13 +174,13 @@ export default function QuarantinePage() {
         })}
       </div>
 
-      {/* Already live / Blocked */}
+      {/* All / Blocked / Active but incomplete */}
       {loose && tab === 'pending' && (
         <div className="flex items-center gap-1.5" data-testid="quarantine-views">
           {VIEWS.map(([k, label]) => {
             const on = view === k;
             const n = k === 'all' ? counts[tab] : viewCounts[k];
-            const tone = k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'live' ? { background: T.bgSurface, color: T.textSecondary, borderColor: T.borderLight } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
+            const tone = k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'incomplete' ? { background: T.warnSurface, color: T.warn, borderColor: T.warn } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
             return (
               <button key={k} onClick={() => selectView(k)}
                 className="inline-flex items-center gap-2 text-[12.5px] font-semibold px-3 py-1.5 rounded-full border transition-colors"
@@ -225,7 +227,7 @@ export default function QuarantinePage() {
           <table className="w-full min-w-[1080px]">
             <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['Listing', 'Zone', 'Price', 'What is wrong', 'On the site', 'When', tab === 'pending' ? 'Action' : 'Status'].map((h, i) => (
+                {['Listing', 'Zone', 'Price', view === 'incomplete' ? 'What is incomplete' : 'What is wrong', 'On the site', view === 'incomplete' ? 'Listed' : 'When', tab === 'pending' ? 'Action' : 'Status'].map((h, i) => (
                   <th key={i}
                     className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 6 ? 'text-right' : 'text-left'}`}
                     style={{ color: T.textSecondary, background: T.bgSurface }}>
@@ -250,9 +252,9 @@ export default function QuarantinePage() {
                   <td colSpan={7} className="px-6 py-12 text-center">
                     <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>
-                      {reason ? `No ${tab} records for “${reasonLabel(reason, lang)}”` : `Nothing ${tab}`}
+                      {view === 'incomplete' ? (reason ? `No live listings with “${reasonLabel(reason, lang)}”` : 'Every live listing is complete') : reason ? `No ${tab} records for “${reasonLabel(reason, lang)}”` : `Nothing ${tab}`}
                     </p>
-                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>Records the ingest pipeline holds back will appear here.</p>
+                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>{view === 'incomplete' ? 'Live listings showing “Contact seller for …” will appear here.' : 'Records the ingest pipeline holds back will appear here.'}</p>
                   </td>
                 </tr>
               ) : rows.map((r) => {
@@ -301,11 +303,17 @@ export default function QuarantinePage() {
                           {(r.unverified || []).length ? `The site will show: ${r.unverified.map((f) => contactLine(f, lang)).join(' · ')}` : 'Nothing else is wrong with it.'}
                         </p>
                       )}
+                      {tab === 'pending' && r.state === 'incomplete' && (
+                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.warn }} data-testid="q-incomplete">
+                          <b>Live.</b> The site shows: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
+                        </p>
+                      )}
                       {tab === 'pending' && r.state === 'blocked' && (loose || r.duplicate_of) && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
                           <b>Stays blocked:</b>{' '}
                           {[
-                            ...(r.blocking || []).map((c) => reasonLabel(c, lang)),
+                            // the three reasons that block a listing; anything else only if none of them applies
+                            ...((r.blocking || []).some((c) => BLOCK_FILTER.includes(c)) ? r.blocking.filter((c) => BLOCK_FILTER.includes(c)) : (r.blocking || [])).map((c) => reasonLabel(c, lang)),
                             ...(r.duplicate_of ? [`Same property as a live listing${r.duplicate_of.source ? ` from ${r.duplicate_of.source}` : ''}${r.duplicate_of.address ? ` (${r.duplicate_of.address})` : ''}`] : []),
                           ].join(' · ')}
                         </p>
@@ -320,7 +328,13 @@ export default function QuarantinePage() {
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textMuted }}>{fmtDate(r.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      {tab === 'pending' ? (
+                      {r.state === 'incomplete' ? (
+                        <a href={r.public_url} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors"
+                          style={{ borderColor: T.borderLight, color: T.textBody }}>
+                          View on site <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : tab === 'pending' ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <button onClick={() => act(r, 'release')} disabled={busyId === r.id}
                             title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.duplicate_of ? 'Same property as a live listing: publishing would create a duplicate' : r.can_go_live ? ((r.unverified || []).length ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish this listing') : 'Publish anyway (admin override)'}

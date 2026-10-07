@@ -8,18 +8,9 @@ import { getUsdRate } from '@/lib/fx';
 import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
 import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
+import { listingUrl } from '@/lib/buyerSite';
 
 export const dynamic = 'force-dynamic';
-
-// The public buyer-portal origin per country (the live sites — UY runs on a
-// subdomain, VE on its ccTLD). Used for the "Preview on buyer portal" link so it
-// opens the REAL public listing, not the in-admin preview.
-const BUYER_ORIGIN = {
-  py: 'https://casa-libre.com.py',
-  bo: 'https://casa-libre.com.bo',
-  uy: 'https://uy.casa-libre.com',
-  ve: 'https://casa-libre.com.ve',
-};
 
 // Standalone marketplace-style preview (no admin sidebar) — how the listing
 // would look on the public Casa Libre site. Auth-gated (uses the secret key).
@@ -43,8 +34,9 @@ export default async function PreviewPage({ params }) {
   }
   if (!p) notFound();
 
-  // The real public listing URL on the country's buyer portal.
-  const publicUrl = `${BUYER_ORIGIN[cc] || BUYER_ORIGIN.py}/propiedad/${p.id}`;
+  // The real public listing URL on the country's buyer portal (opens the REAL public
+  // listing, not this in-admin preview).
+  const publicUrl = listingUrl(cc, p.id);
 
   const imgs = (p.property_images || []).sort((a, b) => (b.is_feature - a.is_feature) || (a.position - b.position));
   const feature = imgs[0];

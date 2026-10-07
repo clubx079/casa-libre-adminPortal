@@ -22,7 +22,6 @@ const T = {
   warnSurface: '#F5EAD5',
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
-const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
 // Looser rule (lib/unverified.js): only no contact, a duplicate of a live listing or an
 // unverified seller hold a listing back (Blocked). A bad price, area, bedrooms, bathrooms
 // or parking never does: the listing goes live with "Contact seller for …" — those live
@@ -50,7 +49,9 @@ const money = (p, rate, country) => {
 };
 
 export default function QuarantinePage() {
-  const [tab, setTab] = useState('pending');
+  // Only records still held back are shown (no Released / Discarded lists, no Release:
+  // listings go live through the scraper, records can only be discarded here).
+  const tab = 'pending';
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
   const [reasonCounts, setReasonCounts] = useState({});
@@ -95,10 +96,9 @@ export default function QuarantinePage() {
     finally { setLoading(false); }
   }
 
-  // One effect drives every fetch — tab, reason, or page change all refetch.
-  useEffect(() => { fetchRows(tab, reason, page, view); }, [tab, reason, page, view]);
+  // One effect drives every fetch — view, reason, or page change all refetch.
+  useEffect(() => { fetchRows(tab, reason, page, view); }, [reason, page, view]);
 
-  const selectTab = (k) => { setTab(k); setReason(null); setView('all'); setPage(1); };
   const selectView = (k) => { setView(k); setReason(null); setPage(1); };
   const selectReason = (code) => { setReason(code || null); setPage(1); };
 
@@ -119,7 +119,7 @@ export default function QuarantinePage() {
       else fetchRows(tab, reason, page, view);
     } catch (e) {
       // Surface the failure instead of silently leaving the row in place.
-      setActErr(`${action === 'release' ? 'Release' : 'Discard'} failed: ${e.message || 'unknown error'}`);
+      setActErr(`Discard failed: ${e.message || 'unknown error'}`);
     } finally { setBusyId(null); }
   }
 
@@ -137,7 +137,7 @@ export default function QuarantinePage() {
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Quarantine</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
             Listings held back before they reach the live site, with what is wrong with each one.
-            {loose ? ' A listing is held back (Blocked) for no contact phone, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Release to publish, or discard.'}
+            {loose ? ' A listing is held back (Blocked) for no contact phone, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Discard a record to remove it from this list.'}
           </p>
         </div>
       </div>
@@ -149,33 +149,8 @@ export default function QuarantinePage() {
         </div>
       ) : null}
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1.5">
-        {TABS.map(([k, label]) => {
-          const on = tab === k;
-          return (
-            <button
-              key={k}
-              onClick={() => selectTab(k)}
-              className="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-1.5 rounded-full border transition-colors"
-              style={on
-                ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary }
-                : { background: '#fff', color: T.textBody, borderColor: T.borderLight }}
-            >
-              {label}
-              {counts[k] != null && (
-                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-full"
-                  style={on ? { background: 'rgba(255,255,255,0.2)' } : { background: T.bgSurface, color: T.textMuted }}>
-                  {counts[k]}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
       {/* All / Blocked / Active but incomplete */}
-      {loose && tab === 'pending' && (
+      {loose && (
         <div className="flex items-center gap-1.5" data-testid="quarantine-views">
           {VIEWS.map(([k, label]) => {
             const on = view === k;
@@ -227,7 +202,7 @@ export default function QuarantinePage() {
           <table className="w-full min-w-[1080px]">
             <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['Listing', 'Zone', 'Price', view === 'incomplete' ? 'What is incomplete' : 'What is wrong', 'On the site', view === 'incomplete' ? 'Listed' : 'When', tab === 'pending' ? 'Action' : 'Status'].map((h, i) => (
+                {['Listing', 'Zone', 'Price', view === 'incomplete' ? 'What is incomplete' : 'What is wrong', 'On the site', view === 'incomplete' ? 'Listed' : 'When', 'Action'].map((h, i) => (
                   <th key={i}
                     className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i === 6 ? 'text-right' : 'text-left'}`}
                     style={{ color: T.textSecondary, background: T.bgSurface }}>
@@ -252,7 +227,7 @@ export default function QuarantinePage() {
                   <td colSpan={7} className="px-6 py-12 text-center">
                     <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>
-                      {view === 'incomplete' ? (reason ? `No live listings with “${reasonLabel(reason, lang)}”` : 'Every live listing is complete') : reason ? `No ${tab} records for “${reasonLabel(reason, lang)}”` : `Nothing ${tab}`}
+                      {view === 'incomplete' ? (reason ? `No live listings with “${reasonLabel(reason, lang)}”` : 'Every live listing is complete') : reason ? `No held-back records for “${reasonLabel(reason, lang)}”` : 'Nothing held back'}
                     </p>
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>{view === 'incomplete' ? 'Live listings showing “Contact seller for …” will appear here.' : 'Records the ingest pipeline holds back will appear here.'}</p>
                   </td>
@@ -291,24 +266,24 @@ export default function QuarantinePage() {
                           );
                         })}
                       </div>
-                      {tab === 'pending' && r.state === 'live' && (
+                      {r.state === 'live' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.textSecondary }} data-testid="q-live">
-                          <b>Already live.</b> The listing is on the site; this is an old record. Clear it.
+                          <b>Already live.</b> The listing is on the site; this is an old record. Discard it.
                         </p>
                       )}
-                      {tab === 'pending' && r.state === 'ready' && (
+                      {r.state === 'ready' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
                           <b>Can go live.</b>{' '}
                           {r.twin_gone ? 'It was held as a duplicate of a listing that is no longer on the site. ' : ''}
                           {(r.unverified || []).length ? `The site will show: ${r.unverified.map((f) => contactLine(f, lang)).join(' · ')}` : 'Nothing else is wrong with it.'}
                         </p>
                       )}
-                      {tab === 'pending' && r.state === 'incomplete' && (
+                      {r.state === 'incomplete' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.warn }} data-testid="q-incomplete">
                           <b>Live.</b> The site shows: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
                         </p>
                       )}
-                      {tab === 'pending' && r.state === 'blocked' && (loose || r.duplicate_of) && (
+                      {r.state === 'blocked' && (loose || r.duplicate_of) && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.danger }} data-testid="q-blocked">
                           <b>Stays blocked:</b>{' '}
                           {[
@@ -334,25 +309,12 @@ export default function QuarantinePage() {
                           style={{ borderColor: T.borderLight, color: T.textBody }}>
                           View on site <ExternalLink className="w-3 h-3" />
                         </a>
-                      ) : tab === 'pending' ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => act(r, 'release')} disabled={busyId === r.id}
-                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.duplicate_of ? 'Same property as a live listing: publishing would create a duplicate' : r.can_go_live ? ((r.unverified || []).length ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish this listing') : 'Publish anyway (admin override)'}
-                            className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
-                            style={{ borderColor: T.success, color: T.success, background: T.successSurface }}>
-                            {busyId === r.id ? '…' : r.on_site ? 'Clear' : r.can_go_live ? 'Publish' : r.duplicate_of ? 'Publish duplicate' : 'Release'}
-                          </button>
-                          <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
-                            className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
-                            style={{ borderColor: T.borderLight, color: T.textBody }}>
-                            {busyId === r.id ? '…' : 'Discard'}
-                          </button>
-                        </div>
                       ) : (
-                        <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full capitalize"
-                          style={r.status === 'released' ? { background: T.successSurface, color: T.success } : { background: T.bgSurface, color: T.textSecondary }}>
-                          {r.status}
-                        </span>
+                        <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
+                          className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
+                          style={{ borderColor: T.borderLight, color: T.textBody }}>
+                          {busyId === r.id ? '…' : 'Discard'}
+                        </button>
                       )}
                     </td>
                   </tr>

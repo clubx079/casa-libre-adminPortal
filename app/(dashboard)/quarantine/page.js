@@ -24,8 +24,9 @@ const T = {
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const TABS = [['pending', 'Pending'], ['released', 'Released'], ['discarded', 'Discarded']];
 // Looser rule (lib/unverified.js): records whose only problems are fields the site can
-// show as "Contact seller for …" can go live; the rest stay blocked.
-const VIEWS = [['all', 'All'], ['ready', 'Can go live'], ['live', 'Already live'], ['blocked', 'Blocked']];
+// show as "Contact seller for …" can go live; the rest stay blocked. (No "Can go live"
+// filter: the scraper publishes those as they arrive, so it was normally empty.)
+const VIEWS = [['all', 'All'], ['live', 'Already live'], ['blocked', 'Blocked']];
 const ON_SITE = {
   active: { label: 'Live on the site (active)', style: { background: '#E4F1E9', color: '#0F6E56' } },
   inactive: { label: 'On the site but inactive', style: { background: '#FAF7F1', color: '#6B6862' } },
@@ -171,13 +172,13 @@ export default function QuarantinePage() {
         })}
       </div>
 
-      {/* Can go live / Blocked (Paraguay) */}
+      {/* Already live / Blocked */}
       {loose && tab === 'pending' && (
         <div className="flex items-center gap-1.5" data-testid="quarantine-views">
           {VIEWS.map(([k, label]) => {
             const on = view === k;
             const n = k === 'all' ? counts[tab] : viewCounts[k];
-            const tone = k === 'ready' ? { background: T.successSurface, color: T.success, borderColor: T.success } : k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'live' ? { background: T.bgSurface, color: T.textSecondary, borderColor: T.borderLight } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
+            const tone = k === 'blocked' ? { background: T.dangerSurface, color: T.danger, borderColor: T.danger } : k === 'live' ? { background: T.bgSurface, color: T.textSecondary, borderColor: T.borderLight } : { background: '#fff', color: T.textBody, borderColor: T.borderLight };
             return (
               <button key={k} onClick={() => selectView(k)}
                 className="inline-flex items-center gap-2 text-[12.5px] font-semibold px-3 py-1.5 rounded-full border transition-colors"

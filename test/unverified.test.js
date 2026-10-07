@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 // lib/ingest.js is guarded by 'server-only' (a Next build-time check).
 vi.mock('server-only', () => ({}));
-import { looseFor, splitReasons, canGoLive, persistedPriceUsd, reasonValue, notVerifiedLabel, contactLine, FIXABLE_CODES, quarantineState } from '../lib/unverified';
+import { looseFor, splitReasons, canGoLive, persistedPriceUsd, reasonValue, notVerifiedLabel, contactLine, FIXABLE_CODES, quarantineState, reasonsNow } from '../lib/unverified';
 import { validateListing } from '../lib/ingest';
 
 const row = (o = {}) => ({
@@ -80,6 +80,14 @@ describe('quarantine record state', () => {
   });
   it('same property as a live listing → blocked, even with only fixable fields', () => {
     expect(quarantineState({ reasons: ['price_below_floor'], duplicateOfLive: true, cc: 'py' })).toBe('blocked');
+  });
+  it('a duplicate whose twin left the site is judged on its other problems', () => {
+    expect(quarantineState({ reasons: ['duplicate'], twinGone: true, cc: 'py' })).toBe('ready');
+    expect(quarantineState({ reasons: ['duplicate', 'price_below_floor'], twinGone: true, cc: 'py' })).toBe('ready');
+    expect(quarantineState({ reasons: ['duplicate', 'no_contact'], twinGone: true, cc: 'py' })).toBe('blocked');
+    expect(quarantineState({ reasons: ['duplicate'], cc: 'py' })).toBe('blocked');
+    expect(reasonsNow(['duplicate', 'area_out_of_range'], false)).toEqual(['area_out_of_range']);
+    expect(reasonsNow(['duplicate'], true)).toEqual(['duplicate']);
   });
   it('blocking reasons, or a strict country → blocked', () => {
     expect(quarantineState({ reasons: ['no_contact'], cc: 'py' })).toBe('blocked');

@@ -296,7 +296,9 @@ export default function QuarantinePage() {
                       )}
                       {tab === 'pending' && r.state === 'ready' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
-                          <b>Can go live.</b> The site will show: {(r.unverified || []).map((f) => contactLine(f, lang)).join(' · ')}
+                          <b>Can go live.</b>{' '}
+                          {r.twin_gone ? 'It was held as a duplicate of a listing that is no longer on the site. ' : ''}
+                          {(r.unverified || []).length ? `The site will show: ${r.unverified.map((f) => contactLine(f, lang)).join(' · ')}` : 'Nothing else is wrong with it.'}
                         </p>
                       )}
                       {tab === 'pending' && r.state === 'blocked' && (loose || r.duplicate_of) && (
@@ -321,7 +323,7 @@ export default function QuarantinePage() {
                       {tab === 'pending' ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <button onClick={() => act(r, 'release')} disabled={busyId === r.id}
-                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.duplicate_of ? 'Same property as a live listing: publishing would create a duplicate' : r.can_go_live ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish anyway (admin override)'}
+                            title={r.on_site ? 'Already on the site: closes this record without changing the listing' : r.duplicate_of ? 'Same property as a live listing: publishing would create a duplicate' : r.can_go_live ? ((r.unverified || []).length ? 'Publish with “Contact seller for …” in place of the fields above' : 'Publish this listing') : 'Publish anyway (admin override)'}
                             className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
                             style={{ borderColor: T.success, color: T.success, background: T.successSurface }}>
                             {busyId === r.id ? '…' : r.on_site ? 'Clear' : r.can_go_live ? 'Publish' : r.duplicate_of ? 'Publish duplicate' : 'Release'}

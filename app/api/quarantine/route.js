@@ -4,7 +4,7 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { getUsdRate } from '@/lib/fx';
 import { currencyFor } from '@/lib/currency';
-import { looseFor, splitReasons, canGoLive, FIXABLE_CODES, quarantineState } from '@/lib/unverified';
+import { looseFor, splitReasons, canGoLive, FIXABLE_CODES, quarantineState, reasonsNow } from '@/lib/unverified';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,8 +85,10 @@ export async function GET(req) {
     const ext = [...new Set(all.map((r) => r.external_id).filter(Boolean))];
     const props = await selectIn(select, 'properties', 'id,source_id,external_id,admin_status,is_delisted', 'external_id', ext);
     const listed = new Map(props.map((p) => [`${p.source_id}|${p.external_id}`, p]));
-    // live listings that are the same property (dedupe_key) as a record that could go live
-    const keys = [...new Set(all.filter((r) => !listed.has(`${r.source_id}|${r.external_id}`) && canGoLive(r.reasons, cc) && r.dedupe_key).map((r) => r.dedupe_key))];
+    // live listings that are the same property (dedupe_key) as a record that could go live,
+    // or that a "duplicate" record was held for (a duplicate only blocks while that's live)
+    const isDup = (r) => (r.reasons || []).includes('duplicate');
+    const keys = [...new Set(all.filter((r) => !listed.has(`${r.source_id}|${r.external_id}`) && (isDup(r) || canGoLive(r.reasons, cc)) && r.dedupe_key).map((r) => r.dedupe_key))];
     const twins = await selectIn(select, 'properties', 'id,dedupe_key,address,city,external_id,source_id,scrape_sources(name)', 'dedupe_key', keys, '&admin_status=eq.active&is_delisted=eq.false');
     const twinByKey = new Map(twins.map((t) => [t.dedupe_key, t]));
 
@@ -94,9 +96,12 @@ export async function GET(req) {
     for (const r of all) {
       const p = listed.get(`${r.source_id}|${r.external_id}`);
       const twin = !p && r.dedupe_key ? twinByKey.get(r.dedupe_key) : null;
-      const st = quarantineState({ reasons: r.reasons, onSite: !!p, duplicateOfLive: !!twin, cc });
+      const twinGone = !p && !twin && !!r.dedupe_key && isDup(r);
+      const st = quarantineState({ reasons: r.reasons, onSite: !!p, duplicateOfLive: !!twin, twinGone, cc });
       info.set(r.id, {
         state: st,
+        twin_gone: twinGone,
+        reasons_now: twinGone ? reasonsNow(r.reasons, false) : r.reasons || [],
         on_site: p ? (p.admin_status === 'active' && !p.is_delisted ? 'active' : 'inactive') : null,
         property_id: p?.id || null,
         duplicate_of: twin ? { id: twin.id, source: twin.scrape_sources?.name || null, address: twin.address || twin.city || null } : null,
@@ -107,14 +112,14 @@ export async function GET(req) {
     for (const v of info.values()) viewCounts[v.state]++;
     const inView = all.filter((r) => view === 'all' || info.get(r.id).state === view);
     const reasonCounts = {};
-    for (const r of inView) for (const c of r.reasons || []) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
-    const matched = reason ? inView.filter((r) => (r.reasons || []).includes(reason)) : inView;
+    for (const r of inView) for (const c of info.get(r.id).reasons_now) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
+    const matched = reason ? inView.filter((r) => info.get(r.id).reasons_now.includes(reason)) : inView;
     const pageIds = matched.slice(offset, offset + pageSize).map((r) => r.id);
     const full = pageIds.length ? await selectIn(select, 'ingest_quarantine', '*', 'id', pageIds) : [];
     const byId = new Map(full.map((r) => [r.id, r]));
     const rows = pageIds.map((id) => byId.get(id)).filter(Boolean).map((r) => {
-      const { blocking, unverified } = splitReasons(r.reasons);
       const i = info.get(r.id);
+      const { blocking, unverified } = splitReasons(i.reasons_now);
       return { ...r, ...i, can_go_live: i.state === 'ready', blocking, unverified: loose ? unverified : [] };
     });
 

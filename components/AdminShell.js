@@ -9,6 +9,7 @@ import CountrySwitcher from '@/components/CountrySwitcher';
 const NAV = [
   ['/', 'Overview', 'dash'],
   ['/users', 'Users', 'users'],
+  ['/properties', 'Properties', 'home'],
   ['/analytics', 'Analytics', 'chart'],
   ['/utm-links', 'UTM Links', 'link'],
   ['/scrape', 'Scrapers', 'scrape'],
@@ -20,7 +21,6 @@ const NAV = [
   ['/leads', 'Leads', 'users'],
   ['/automations', 'Automations', 'bolt'],
   ['/email-templates', 'Email templates', 'mail'],
-  ['/properties', 'Properties', 'home'],
   ['/runs', 'Runs', 'runs'],
 ];
 

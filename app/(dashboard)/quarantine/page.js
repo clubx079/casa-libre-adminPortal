@@ -264,11 +264,6 @@ export default function QuarantinePage() {
                           );
                         })}
                       </div>
-                      {r.state === 'live' && (
-                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.textSecondary }} data-testid="q-live">
-                          <b>Already live.</b> The listing is on the site; this is an old record. Discard it.
-                        </p>
-                      )}
                       {r.state === 'ready' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
                           <b>Can go live.</b>{' '}

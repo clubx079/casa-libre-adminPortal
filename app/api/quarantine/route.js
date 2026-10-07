@@ -22,8 +22,8 @@ const REASON_CODES = [
 // The three things that hold a listing back — the only reasons the Reason filter offers
 // for pending records. A record's other problems still show on its row.
 const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller'];
-// Pending views: 'blocked' — every record still held back (normally all are blocked; one
-// that is already live or could go live says so on its row), or 'incomplete' — not
+// Pending views: 'blocked' — every record still held back (a record whose listing is
+// already on the site is left out; one that could go live says so on its row), or 'incomplete' — not
 // quarantine records but LIVE listings with a field the site shows as "Contact seller
 // for …" (bad price, area, bedrooms, bathrooms or parking), so it's clear those don't
 // hold a listing back.
@@ -141,9 +141,13 @@ export async function GET(req) {
       });
     }
 
+    // Only what is really held back: a record whose own listing is already a property
+    // (e.g. a scrape that published a listing and also held it as a duplicate of itself)
+    // isn't blocked, so it's left out.
+    const held = all.filter((r) => info.get(r.id).state !== 'live');
     // Live listings shown with "Contact seller for …" (null if they couldn't be read)
     const incomplete = loose ? await activeIncomplete(select, cc, rate).catch(() => null) : [];
-    const viewCounts = { blocked: all.length, incomplete: incomplete ? incomplete.length : null };
+    const viewCounts = { blocked: held.length, incomplete: incomplete ? incomplete.length : null };
 
     if (view === 'incomplete') {
       if (!incomplete) throw new Error('Could not read the live listings');
@@ -154,7 +158,7 @@ export async function GET(req) {
       return NextResponse.json({ rows: matched.slice(offset, offset + pageSize), total: matched.length, page, pageSize, counts: Object.fromEntries(countsArr), viewCounts, reasonCounts, rate, country: cc, loose, view });
     }
 
-    const inView = all;
+    const inView = held;
     const reasonCounts = {};
     for (const r of inView) for (const c of info.get(r.id).reasons_now) if (BLOCK_FILTER.includes(c)) reasonCounts[c] = (reasonCounts[c] || 0) + 1;
     const matched = reason ? inView.filter((r) => info.get(r.id).reasons_now.includes(reason)) : inView;

@@ -17,11 +17,11 @@ const STATUSES = ['pending', 'released', 'discarded'];
 const REASON_CODES = [
   'no_price', 'no_contact', 'price_below_floor', 'price_above_ceiling', 'sale_price_as_rent',
   'duplicate', 'area_out_of_range', 'beds_over_cap', 'baths_over_cap', 'no_location', 'parking_over_cap',
-  'unverified_seller', 'no_images',
+  'unverified_seller', 'no_images', 'images_rejected',
 ];
 // The four things that hold a listing back — the only reasons the Reason filter offers
 // for pending records. A record's other problems still show on its row.
-const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller', 'no_images'];
+const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller', 'no_images', 'images_rejected'];
 // Pending views: 'blocked' — every record still held back (a record whose listing is
 // already on the site is left out; one that could go live says so on its row), or 'incomplete' — not
 // quarantine records but LIVE listings with a field the site shows as "Contact seller
@@ -118,6 +118,12 @@ export async function GET(req) {
     const ext = [...new Set(all.map((r) => r.external_id).filter(Boolean))];
     const props = await selectIn(select, 'properties', 'id,source_id,external_id,admin_status,is_delisted', 'external_id', ext);
     const listed = new Map(props.map((p) => [`${p.source_id}|${p.external_id}`, p]));
+    // Listings whose photos the AI check rejected are held as external_id "listing:<id>":
+    // their own listing is that property (it already exists, switched off).
+    const ownIds = [...new Set(all.filter((r) => String(r.external_id || '').startsWith('listing:')).map((r) => r.external_id.slice(8)))];
+    for (const p of await selectIn(select, 'properties', 'id,admin_status,is_delisted', 'id', ownIds)) {
+      for (const r of all) if (r.external_id === `listing:${p.id}`) listed.set(`${r.source_id}|${r.external_id}`, p);
+    }
     // A record's own listing counts as on the site only while it's active: one switched
     // off by the scraper (e.g. "No images") is still held back.
     const isLive = (p) => !!p && p.admin_status === 'active' && !p.is_delisted;

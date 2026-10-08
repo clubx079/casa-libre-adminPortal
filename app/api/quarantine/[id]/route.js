@@ -10,11 +10,14 @@ import { genShortCode } from '@/lib/shortcode';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const ACTIONS = ['release', 'discard'];
+const ACTIONS = ['release', 'discard', 'approve'];
 
-// PATCH /api/quarantine/:id  { action: 'release' | 'discard' }
+// PATCH /api/quarantine/:id  { action: 'release' | 'discard' | 'approve' }
 // release -> promote the held payload into `properties` (active) + mark released.
 // discard -> mark discarded (payload stays for the record, never published).
+// approve -> a user's listing whose photos the AI check rejected ("images_rejected",
+//            external_id listing:<id>): the admin looked and it's fine → publish that
+//            listing as it is + mark released.
 export async function PATCH(req, { params }) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -31,6 +34,19 @@ export async function PATCH(req, { params }) {
 
     const ts = new Date().toISOString();
     const reviewer = session.email || 'admin';
+
+    if (body.action === 'approve') {
+      const propertyId = row.payload?.property_id;
+      if (!(row.reasons || []).includes('images_rejected') || !propertyId) return NextResponse.json({ error: 'Only listings with rejected photos can be approved' }, { status: 400 });
+      const [prop] = await select('properties', `select=id,raw_data&id=eq.${encodeURIComponent(propertyId)}&limit=1`);
+      if (!prop) return NextResponse.json({ error: 'Listing not found (deleted by its owner?)' }, { status: 404 });
+      const moderation = { ...(prop.raw_data?.moderation || {}), state: 'approved', approved_by: reviewer, approved_at: ts };
+      await update('properties', `id=eq.${encodeURIComponent(propertyId)}`,
+        { status: 'published', admin_status: 'active', rejection_reason: null, raw_data: { ...(prop.raw_data || {}), moderation } }, { returning: 'minimal' });
+      const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,
+        { status: 'released', reviewed_at: ts, reviewed_by: reviewer }, { returning: 'representation' });
+      return NextResponse.json({ ok: true, row: u, approved: propertyId });
+    }
 
     if (body.action === 'discard') {
       const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,

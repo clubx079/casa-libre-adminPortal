@@ -48,6 +48,9 @@ const money = (p, rate, country) => {
   return { usd: fmtUsd(d.usd), pyg: d.pyg == null ? '' : fmtLocal(d.pyg, country) };
 };
 
+// Why the AI check rejected a photo (buyer portal lib/scanVerdict.js categories).
+const PHOTO_FAIL = { adult: '18+', violence: 'Violence', hate: 'Hateful / abusive', unrelated: 'Not the property' };
+
 export default function QuarantinePage() {
   // Only records still held back are shown (no Released / Discarded lists, no Release:
   // listings go live through the scraper, records can only be discarded here).
@@ -117,7 +120,7 @@ export default function QuarantinePage() {
       else fetchRows(tab, reason, page, view);
     } catch (e) {
       // Surface the failure instead of silently leaving the row in place.
-      setActErr(`Discard failed: ${e.message || 'unknown error'}`);
+      setActErr(`${action === 'approve' ? 'Approve' : 'Discard'} failed: ${e.message || 'unknown error'}`);
     } finally { setBusyId(null); }
   }
 
@@ -135,7 +138,7 @@ export default function QuarantinePage() {
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Quarantine</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
             Listings held back before they reach the live site, with what is wrong with each one.
-            {loose ? ' A listing is held back (Blocked) for no contact phone, no photos, a duplicate of a live listing, or an unverified seller. A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Discard a record to remove it from this list.'}
+            {loose ? ' A listing is held back (Blocked) for no contact phone, no photos, a duplicate of a live listing, an unverified seller, or photos the AI check rejected (a user’s listing — approve it if the photos are fine). A bad price, area, bedrooms, bathrooms or parking never holds it back: it goes live and the site shows “Contact seller for …” for that field. Those live listings are under Active but incomplete.' : ' Discard a record to remove it from this list.'}
           </p>
         </div>
       </div>
@@ -264,6 +267,21 @@ export default function QuarantinePage() {
                           );
                         })}
                       </div>
+                      {(r.reasons || []).includes('images_rejected') && (
+                        <div className="mt-2" data-testid="q-rejected-photos">
+                          <div className="flex gap-1.5 flex-wrap">
+                            {(p.raw_data?.failed_photos || []).slice(0, 8).map((ph) => (
+                              <a key={ph.url || ph.position} href={ph.url} target="_blank" rel="noreferrer" title={PHOTO_FAIL[ph.category] || ph.category}
+                                className="relative block w-14 h-14 rounded-[8px] overflow-hidden" style={{ outline: `2px solid ${T.danger}` }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={ph.url} alt="" className="w-full h-full object-cover" />
+                                <span className="absolute bottom-0 inset-x-0 text-[8.5px] font-semibold text-white text-center leading-tight py-0.5" style={{ background: 'rgba(140,30,20,.85)' }}>{PHOTO_FAIL[ph.category] || ph.category}</span>
+                              </a>
+                            ))}
+                          </div>
+                          {p.raw_data?.user_email && <p className="mt-1 text-[11px]" style={{ color: T.textMuted }}>Seller: {p.raw_data.user_email}</p>}
+                        </div>
+                      )}
                       {r.state === 'ready' && (
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
                           <b>Can go live.</b>{' '}
@@ -303,11 +321,21 @@ export default function QuarantinePage() {
                           View on site <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (
-                        <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
-                          className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
-                          style={{ borderColor: T.borderLight, color: T.textBody }}>
-                          {busyId === r.id ? '…' : 'Discard'}
-                        </button>
+                        <div className="inline-flex gap-1.5">
+                          {(r.reasons || []).includes('images_rejected') && (
+                            <button onClick={() => act(r, 'approve')} disabled={busyId === r.id} data-testid="q-approve"
+                              title="The photos are fine: publish this listing as it is"
+                              className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full transition-colors disabled:opacity-60 whitespace-nowrap"
+                              style={{ background: T.textPrimary, color: '#fff' }}>
+                              {busyId === r.id ? '…' : 'Approve anyway'}
+                            </button>
+                          )}
+                          <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}
+                            className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
+                            style={{ borderColor: T.borderLight, color: T.textBody }}>
+                            {busyId === r.id ? '…' : 'Discard'}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

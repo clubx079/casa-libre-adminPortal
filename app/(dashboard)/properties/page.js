@@ -3,7 +3,8 @@ import { activeCountry } from '@/lib/adminCountry';
 import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import { getUsdRate } from '@/lib/fx';
-import { buildingsParts, landOrGroup } from '@/lib/land';
+import { buildingsParts, landOrGroup, isLandType } from '@/lib/land';
+import { heldListings } from '@/lib/heldListings';
 import { validateListing } from '@/lib/ingest';
 import { looseFor, splitReasons } from '@/lib/unverified';
 import PropertiesView from '@/components/PropertiesView';
@@ -16,9 +17,10 @@ const T = {
 };
 
 const PAGE_SIZE = 24;
+const COLS = 'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,created_at,scrape_sources(name)';
 
 export default async function PropertiesPage({ searchParams }) {
-  const { select } = dbFor(activeCountry());
+  const { select, selectWithCount } = dbFor(activeCountry());
   const lang = getLang();
   const t = makeT(lang);
 
@@ -35,56 +37,123 @@ export default async function PropertiesPage({ searchParams }) {
 
   // source templates for the filter dropdown — exclude the "User submissions" virtual
   // row: user-published listings now live under the Originals sub-tab.
-  let sources = [];
+  let allSources = [];
   try {
-    sources = await select('scrape_sources', 'select=id,key,name&order=name.asc');
-  } catch { sources = []; }
-  sources = sources.filter((s) => s.key !== 'user_submissions');
+    allSources = await select('scrape_sources', 'select=id,key,name&order=name.asc');
+  } catch { allSources = []; }
+  const sources = allSources.filter((s) => s.key !== 'user_submissions');
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
 
-  const parts = [
-    'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,scrape_sources(name)',
-    'order=created_at.desc',
-    // "live" is admin-active AND complete (a code check), so we can't filter it at
-    // the DB — fetch the full matching set and filter/paginate in code below.
-    'limit=5000',
-  ];
+  // The filters every query below shares (sub-tab, source, buildings/land, search).
   // Originals = user self-published (no scraper source_id). Scraped = anything with a
   // scraper source, optionally narrowed to one source.
+  const filters = [];
   if (kind === 'originals') {
-    parts.push('origin=eq.user');
+    filters.push('origin=eq.user');
   } else {
-    parts.push('source_id=not.is.null');
-    if (sourceId) parts.push(`source_id=eq.${sourceId}`);
+    filters.push('source_id=not.is.null');
+    if (sourceId) filters.push(`source_id=eq.${sourceId}`);
   }
-
   // class + text search. 'buildings' (default) hides land; 'land' shows only land;
   // 'all' shows both. land + search needs a nested and() to avoid two top-level or=.
   const qEnc = q ? encodeURIComponent(`%${q}%`) : null;
-  if (cls === 'buildings') parts.push(...buildingsParts());
+  if (cls === 'buildings') filters.push(...buildingsParts());
   if (cls === 'land') {
-    if (qEnc) parts.push(`and=(or(${landOrGroup()}),or(address.ilike.${qEnc},city.ilike.${qEnc}))`);
-    else parts.push(`or=(${landOrGroup()})`);
+    if (qEnc) filters.push(`and=(or(${landOrGroup()}),or(address.ilike.${qEnc},city.ilike.${qEnc}))`);
+    else filters.push(`or=(${landOrGroup()})`);
   } else if (qEnc) {
-    parts.push(`or=(address.ilike.${qEnc},city.ilike.${qEnc})`);
+    filters.push(`or=(address.ilike.${qEnc},city.ilike.${qEnc})`);
   }
-
-  let all = [];
-  let error = null;
-  try {
-    all = await select('properties', parts.join('&'));
-  } catch (e) {
-    error = e.message;
-  }
+  const query = (...extra) => [COLS, ...filters, ...extra].join('&');
+  const countOf = async (...extra) => (await selectWithCount('properties', ['select=id', ...filters, ...extra, 'limit=1'].join('&'))).count;
 
   const cc = activeCountry();
   const rate = await getUsdRate(cc); // this country's currency per 1 USD (live, cached)
+
+  // A property is LIVE on the buyer portal only when it is admin-active AND passes
+  // the completeness gate. Compute it per row so the Active/Inactive filter and the
+  // status badge both reflect exactly what buyers see. Looser rule (lib/unverified.js):
+  // only missing contact or location hide a listing; fields that fail the other
+  // checks are listed in _unverified and the buyer site shows "Contact seller for …".
+  const loose = looseFor(cc);
+  const annotate = (r) => {
+    const v = validateListing(r, rate, cc);
+    const { blocking, unverified } = splitReasons(v.reasons);
+    const complete = v.ok || (loose && blocking.length === 0);
+    return {
+      ...r, _incomplete: !complete, _live: r.admin_status === 'active' && complete,
+      _problems: complete ? [] : (loose ? blocking : v.reasons),   // why it's hidden from the site
+      _unverified: loose ? unverified : [],                          // shown as "Contact seller for …"
+    };
+  };
+
+  // Counted at the database. (It used to load the newest 5,000 rows and count those, so
+  // "All" read 5000 and "Active" was only the live ones among the newest 5,000.)
+  //  • Active   = live: every admin-active row is loaded (a few thousand) and checked
+  //  • All      = every matching property (exact count) + listings held in Quarantine
+  //  • Inactive = admin-inactive (exact count) + admin-active but incomplete + held
+  //  • Data not verified = live rows the site shows with "Contact seller for …"
+  let rows = [];
+  let count = 0;
+  let tabCounts = null;
+  let error = null;
+  try {
+    const activeRaw = [];
+    for (let off = 0; ; off += 1000) {
+      const part = await select('properties', query('admin_status=eq.active', 'order=created_at.desc', 'limit=1000', `offset=${off}`));
+      activeRaw.push(...part);
+      if (part.length < 1000) break;
+    }
+    const [total, inactiveDb] = await Promise.all([countOf(), countOf('admin_status=neq.active')]);
+    const active = activeRaw.map(annotate);
+    const live = active.filter((r) => r._live);
+    const activeIncomplete = active.filter((r) => !r._live);
+    const unverifiedLive = live.filter((r) => r._unverified.length > 0);
+
+    // Listings held in Quarantine are inactive too: scraped, not on the site, they just
+    // never became properties (lib/heldListings.js). Scraped tab = scraper sources;
+    // Originals = the sell wizard's held addresses (user_submissions). Same filters.
+    const userSrc = allSources.find((s) => s.key === 'user_submissions')?.id;
+    const nameOf = new Map(allSources.map((s) => [s.id, s.name]));
+    const needle = q.toLowerCase();
+    const held = (await heldListings(select, cc).catch(() => []))
+      .filter((r) => (kind === 'originals' ? r.source_id === userSrc : r.source_id !== userSrc))
+      .filter((r) => !sourceId || r.source_id === sourceId)
+      .filter((r) => cls === 'all' || (cls === 'land') === isLandType(r.property_type))
+      .filter((r) => !needle || `${r.address || ''} ${r.city || ''}`.toLowerCase().includes(needle))
+      .map((r) => ({ ...r, scrape_sources: { name: nameOf.get(r.source_id) || null } }));
+
+    tabCounts = {
+      all: total + held.length,
+      active: live.length,
+      inactive: inactiveDb + activeIncomplete.length + held.length,
+      unverified: unverifiedLive.length,
+    };
+    count = tabCounts[status] ?? tabCounts.all;
+
+    // One page of: the rows already in memory first (newest first), then the database
+    // rows, continuing at the right offset.
+    const newestFirst = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    const pageOf = async (mem, ...dbFilter) => {
+      const fromMem = mem.slice(offset, offset + PAGE_SIZE);
+      const need = PAGE_SIZE - fromMem.length;
+      if (need <= 0) return fromMem;
+      const dbRows = await select('properties', query(...dbFilter, 'order=created_at.desc', `limit=${need}`, `offset=${Math.max(0, offset - mem.length)}`));
+      return [...fromMem, ...dbRows.map(annotate)];
+    };
+    rows = status === 'active' ? live.slice(offset, offset + PAGE_SIZE)
+      : status === 'unverified' ? unverifiedLive.slice(offset, offset + PAGE_SIZE)
+      : status === 'inactive' ? await pageOf([...activeIncomplete, ...held].sort(newestFirst), 'admin_status=neq.active')
+      : await pageOf([...held].sort(newestFirst));
+  } catch (e) {
+    error = e.message;
+  }
 
   // For USER-listed properties (self-published, no scraper source) the "source"
   // column should show WHO listed it — the user's email — not a blank. There is no
   // FK properties.created_by → users, so resolve it with a manual lookup.
   const listerIds = [...new Set(
-    all.filter((r) => r.created_by && !r.scrape_sources?.name).map((r) => r.created_by),
+    rows.filter((r) => r.created_by && !r.scrape_sources?.name).map((r) => r.created_by),
   )];
   let listerMap = {};
   if (listerIds.length) {
@@ -94,33 +163,11 @@ export default async function PropertiesPage({ searchParams }) {
       listerMap = Object.fromEntries(us.map((u) => [u.id, u.email || u.full_name || null]));
     } catch { listerMap = {}; }
   }
-
-  // A property is LIVE on the buyer portal only when it is admin-active AND passes
-  // the completeness gate. Compute it once so the Active/Inactive filter and the
-  // status badge both reflect exactly what buyers see. Looser rule (lib/unverified.js):
-  // only missing contact or location hide a listing; fields that fail the other
-  // checks are listed in _unverified and the buyer site shows "Contact seller for …".
-  const loose = looseFor(activeCountry());
-  const annotated = all.map((r) => {
-    const v = validateListing(r, rate, cc);
-    const { blocking, unverified } = splitReasons(v.reasons);
-    const complete = v.ok || (loose && blocking.length === 0);
-    const listerEmail = (r.origin === 'user' || (r.created_by && !r.scrape_sources?.name))
-      ? (listerMap[r.created_by] || null)
-      : null;
-    return {
-      ...r, _listerEmail: listerEmail, _incomplete: !complete, _live: r.admin_status === 'active' && complete,
-      _problems: complete ? [] : (loose ? blocking : v.reasons),   // why it's hidden from the site
-      _unverified: loose ? unverified : [],                          // shown as "Contact seller for …"
-    };
-  });
-  const matched = status === 'active' ? annotated.filter((r) => r._live)
-    : status === 'inactive' ? annotated.filter((r) => !r._live)
-    : status === 'unverified' ? annotated.filter((r) => r._unverified.length > 0)
-    : annotated;
-  const count = matched.length;
+  rows = rows.map((r) => ({
+    ...r,
+    _listerEmail: (r.origin === 'user' || (r.created_by && !r.scrape_sources?.name)) ? (listerMap[r.created_by] || null) : null,
+  }));
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-  const rows = matched.slice(offset, offset + PAGE_SIZE);
 
   return (
     <div className="space-y-5">
@@ -139,6 +186,7 @@ export default async function PropertiesPage({ searchParams }) {
         <PropertiesView
           rows={rows}
           count={count}
+          tabCounts={tabCounts}
           page={page}
           totalPages={totalPages}
           q={q}

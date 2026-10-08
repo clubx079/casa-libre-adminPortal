@@ -27,8 +27,12 @@ function UnverifiedChips({ r, lang }) {
 // Why a listing is hidden from the site, in plain words.
 const hiddenHint = (r, lang) => {
   const why = (r._problems || []).map((c) => reasonLabel(c, lang)).join(' · ');
+  if (r._held) return (lang === 'es' ? 'Retenida en Cuarentena' : 'Held in Quarantine') + (why ? `: ${why}` : '');
   return (lang === 'es' ? 'Oculto en el sitio' : 'Hidden from the site') + (why ? `: ${why}` : '');
 };
+// Listings held in Quarantine (lib/heldListings.js) never became properties: no view /
+// edit / delete here, they're handled on the Quarantine page.
+const heldLabel = (lang) => (lang === 'es' ? 'En cuarentena' : 'In quarantine');
 
 const T = {
   textPrimary: '#111111',
@@ -43,7 +47,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 const LIST_MAX_HEIGHT = 640;
 
-export default function PropertiesView({ rows, count, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py' }) {
+export default function PropertiesView({ rows, count, tabCounts = null, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py' }) {
   const t = makeT(lang);
   const loc = locale(lang);
   const router = useRouter();
@@ -110,6 +114,9 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
   const EditBtn = ({ r, cls }) => (
     <Link href={`/properties/${r.id}/edit`} className={cls} style={{ borderRadius: '999px', background: T.textPrimary, color: T.bgWhite }}>{t('prop.edit')}</Link>
   );
+  const QuarantineBtn = ({ cls }) => (
+    <Link href="/quarantine" className={cls} style={{ borderRadius: '999px', border: `1px solid ${T.borderLight}`, color: T.textBody }}>{lang === 'es' ? 'Ver en Cuarentena' : 'Open in Quarantine'}</Link>
+  );
 
   return (
     <div className="space-y-5">
@@ -138,6 +145,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
               title={s === 'unverified' ? (lang === 'es' ? 'Publicadas con datos sin verificar (el sitio muestra "Consultá … con el vendedor")' : 'Live with data we couldn\'t verify (the site shows "Contact seller for …")') : undefined}
             >
               {s === 'unverified' ? (lang === 'es' ? 'Datos sin verificar' : 'Data not verified') : t(s === 'all' ? 'prop.all' : s === 'active' ? 'prop.active' : 'prop.inactive')}
+              {tabCounts?.[s] != null && <span className="ml-1.5 font-normal opacity-60">{tabCounts[s].toLocaleString(loc)}</span>}
             </button>
           ))}
         </div>
@@ -181,7 +189,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
             </button>
           ))}
         </div>
-        <span className="text-[11px] w-full sm:w-auto sm:ml-auto" style={{ color: T.textMuted }}>{count} {t('prop.count')}</span>
+        <span className="text-[11px] w-full sm:w-auto sm:ml-auto" style={{ color: T.textMuted }}>{Number(count).toLocaleString(loc)} {t('prop.count')}</span>
       </div>
 
       {rows.length === 0 ? (
@@ -204,7 +212,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                       className="absolute top-2 left-2 text-[10px] font-semibold px-2 py-0.5 rounded-full"
                       style={incomplete ? { background: '#F5EAD5', color: '#8A5A12' } : inactive ? { background: T.bgWhite, color: T.textSecondary } : { background: T.textPrimary, color: T.bgWhite }}
                     >
-                      {notLive ? t('prop.statusInactive') : t('prop.statusActive')}
+                      {r._held ? heldLabel(lang) : notLive ? t('prop.statusInactive') : t('prop.statusActive')}
                     </span>
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
@@ -227,14 +235,22 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                       )}
                     </div>
                     <div className="text-[11px] mt-2" style={{ color: T.textMuted }}>{specs(r)}</div>
-                    <div className="flex gap-2 mt-3">
-                      <ViewBtn r={r} cls="px-3 py-2 text-[13px] font-semibold" />
-                      <EditBtn r={r} cls="flex-1 text-center px-3 py-2 text-[13px] font-semibold" />
-                      <button onClick={() => del(r)} disabled={busyId === r.id} className="px-3 py-2 text-[13px] font-semibold rounded-full disabled:opacity-50" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }} title={t('prop.delete')}>✕</button>
-                    </div>
-                    <button onClick={() => toggleActive(r)} disabled={busyId === r.id} className="mt-2 px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50" style={{ color: T.textSecondary }}>
-                      {inactive ? t('prop.activate') : t('prop.deactivate')}
-                    </button>
+                    {r._held ? (
+                      <div className="flex gap-2 mt-3">
+                        <QuarantineBtn cls="flex-1 text-center px-3 py-2 text-[13px] font-semibold" />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex gap-2 mt-3">
+                          <ViewBtn r={r} cls="px-3 py-2 text-[13px] font-semibold" />
+                          <EditBtn r={r} cls="flex-1 text-center px-3 py-2 text-[13px] font-semibold" />
+                          <button onClick={() => del(r)} disabled={busyId === r.id} className="px-3 py-2 text-[13px] font-semibold rounded-full disabled:opacity-50" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }} title={t('prop.delete')}>✕</button>
+                        </div>
+                        <button onClick={() => toggleActive(r)} disabled={busyId === r.id} className="mt-2 px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50" style={{ color: T.textSecondary }}>
+                          {inactive ? t('prop.activate') : t('prop.deactivate')}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -293,7 +309,7 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                         <td className="px-3 py-2">
                           {incomplete ? (
                             <span title={incompleteHint} className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: '#F5EAD5', color: '#8A5A12' }}>
-                              {t('prop.statusInactive')}
+                              {r._held ? heldLabel(lang) : t('prop.statusInactive')}
                             </span>
                           ) : (
                             <button onClick={() => toggleActive(r)} disabled={busyId === r.id} className="text-[11px] font-semibold px-2.5 py-1 rounded-full disabled:opacity-50" style={inactive ? { border: `1px solid ${T.borderLight}`, color: T.textBody, background: 'transparent' } : { background: T.textPrimary, color: T.bgWhite }}>
@@ -305,9 +321,15 @@ export default function PropertiesView({ rows, count, page, totalPages, q, statu
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex gap-1.5 justify-end">
-                            <ViewBtn r={r} cls="px-3 py-1.5 text-[12px] font-semibold" />
-                            <EditBtn r={r} cls="px-3 py-1.5 text-[12px] font-semibold" />
-                            <button onClick={() => del(r)} disabled={busyId === r.id} className="px-3 py-1.5 text-[12px] font-semibold rounded-full disabled:opacity-50" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }}>{t('prop.delete')}</button>
+                            {r._held ? (
+                              <QuarantineBtn cls="px-3 py-1.5 text-[12px] font-semibold whitespace-nowrap" />
+                            ) : (
+                              <>
+                                <ViewBtn r={r} cls="px-3 py-1.5 text-[12px] font-semibold" />
+                                <EditBtn r={r} cls="px-3 py-1.5 text-[12px] font-semibold" />
+                                <button onClick={() => del(r)} disabled={busyId === r.id} className="px-3 py-1.5 text-[12px] font-semibold rounded-full disabled:opacity-50" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }}>{t('prop.delete')}</button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>

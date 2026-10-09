@@ -17,6 +17,10 @@ describe('emailType', () => {
     expect(emailType('Casa · Mburucuyá ya tiene 110 visitas')).toBe('Listing views');
     expect(emailType('Book a call — Roland Lallier')).toBe('Book a call');
   });
+  it('names the unfinished draft reminder (and its test send as a test)', () => {
+    expect(emailType('Te falta poco para publicar tu propiedad')).toBe('Draft reminder');
+    expect(emailType('[TEST] Te falta poco para publicar tu propiedad')).toBe('Test send');
+  });
   it('marks admin test sends as tests', () => {
     for (const s of ['[TEST] Ana, tu propiedad está en la portada de Casa Libre', 'Sender test casa-libre.com.py', 'Casa Libre — prueba de entrega (registro)', 'New investor inquiry — ENV TEST']) {
       expect(emailType(s)).toBe('Test send');

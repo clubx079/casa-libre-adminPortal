@@ -64,6 +64,7 @@ describe('englishTemplateName', () => {
     expect(englishTemplateName('first-listing-gift')).toBe('First listing — free home display gift');
     expect(englishTemplateName('first-listing-ending')).toBe('First listing — free home display ending');
     expect(englishTemplateName('listing-views')).toBe('Listing views milestone');
+    expect(englishTemplateName('draft-reminder')).toBe('Unfinished draft reminder');
   });
   it('returns null for a template it does not know (the UI then translates or skips)', () => {
     expect(englishTemplateName('custom-thing')).toBe(null);

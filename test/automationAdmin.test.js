@@ -137,3 +137,74 @@ describe('validateSettings — tier list (migration 010)', () => {
     expect(v.errors.remind_days_before).toMatch(/less than 2/);
   });
 });
+
+import { validateDraftSettings, stepsFromHours, stepFromHours, stepLabel, draftStepCounts, DRAFTS_AUTOMATION_ID } from '../lib/automationAdmin.js';
+import { renderTemplate, templateVars } from '../lib/emailTemplateRender.js';
+import { validateTemplate as vt } from '../lib/automationAdmin.js';
+import fs from 'node:fs';
+
+describe('unfinished draft reminders settings', () => {
+  it('shows hours as days when they are whole days', () => {
+    expect(stepsFromHours([168, 24, 72])).toEqual([{ value: 1, unit: 'days' }, { value: 3, unit: 'days' }, { value: 7, unit: 'days' }]);
+    expect(stepFromHours(6)).toEqual({ value: 6, unit: 'hours' });
+    expect(stepFromHours(36)).toEqual({ value: 36, unit: 'hours' });
+    expect(stepLabel(24)).toBe('1 day');
+    expect(stepLabel(1)).toBe('1 hour');
+    expect(stepLabel(168)).toBe('7 days');
+  });
+  it('turns hours / days rows into sorted hours', () => {
+    const r = validateDraftSettings({ steps: [{ value: 3, unit: 'days' }, { value: 2, unit: 'hours' }, { value: 1, unit: 'days' }] });
+    expect(r.ok).toBe(true);
+    expect(r.value.milestones).toEqual([2, 24, 72]);
+  });
+  it('1–5 reminders, each a whole number from 1 hour to 60 days, no two at the same time', () => {
+    expect(validateDraftSettings({ steps: [] }).errors.steps).toBeTruthy();
+    expect(validateDraftSettings({ steps: Array.from({ length: 6 }, (_, i) => ({ value: i + 1, unit: 'days' })) }).errors.steps).toMatch(/5/);
+    expect(validateDraftSettings({ steps: [{ value: 0, unit: 'hours' }] }).errors.step_0).toBeTruthy();
+    expect(validateDraftSettings({ steps: [{ value: 1.5, unit: 'days' }] }).errors.step_0).toBeTruthy();
+    expect(validateDraftSettings({ steps: [{ value: 61, unit: 'days' }] }).errors.step_0).toMatch(/60 days/);
+    expect(validateDraftSettings({ steps: [{ value: 1441, unit: 'hours' }] }).errors.step_0).toMatch(/60 days/);
+    expect(validateDraftSettings({ steps: [{ value: 3, unit: 'weeks' }] }).errors.step_0).toBeTruthy();
+    expect(validateDraftSettings({ steps: [{ value: 24, unit: 'hours' }, { value: 1, unit: 'days' }] }).errors.steps).toBeTruthy();
+    expect(validateDraftSettings({ steps: [{ value: 1, unit: 'hours' }, { value: 60, unit: 'days' }] }).value.milestones).toEqual([1, 1440]);
+  });
+  it('switching on needs steps and a template, and stamps enabled_at once', () => {
+    const now = '2026-10-09T00:00:00.000Z';
+    expect(validateDraftSettings({ enabled: true }, { enabled: false, milestones: [24], template_id: null }, now).errors.enabled).toBeTruthy();
+    expect(validateDraftSettings({ enabled: true }, { enabled: false, milestones: [], template_id: 't' }, now).errors.enabled).toBeTruthy();
+    const on = validateDraftSettings({ enabled: true }, { enabled: false, milestones: [24, 72], template_id: 't' }, now);
+    expect(on.ok).toBe(true);
+    expect(on.value).toEqual({ enabled: true, enabled_at: now });
+    expect(validateDraftSettings({ enabled: true }, { enabled: true, enabled_at: 'x', milestones: [24], template_id: 't' }, now).value.enabled_at).toBeUndefined();
+    expect(validateDraftSettings({ enabled: false }, { enabled: true, milestones: [24], template_id: 't' }, now).value).toEqual({ enabled: false });
+  });
+  it('counts sent emails per reminder', () => {
+    expect(draftStepCounts([{ dedupe_key: 'draft:a:1' }, { dedupe_key: 'draft:b:1' }, { dedupe_key: 'draft:a:2' }, { dedupe_key: 'views:x:50' }, {}])).toEqual({ 1: 2, 2: 1 });
+  });
+  it('names the automation that uses a template', () => {
+    expect(templateUsage('t9', [{ id: DRAFTS_AUTOMATION_ID, template_id: 't9' }])).toEqual(['Unfinished draft reminders → email']);
+  });
+});
+
+describe('draft reminder template (migrations/013 in the buyer portal)', () => {
+  const tpl = {
+    name: 'Borrador sin terminar — recordatorio', subject: 'Te falta poco para publicar tu propiedad', heading: 'Tu propiedad está casi lista',
+    body: 'Hola {{name}},\n\nEmpezaste a publicar **{{property_title}}** en Casa Libre y quedó guardada como borrador. Lo que cargaste sigue ahí.\n\n![{{property_title}}]({{photo_url}})\n\nTe falta poco: tocá el botón y seguí justo donde lo dejaste. Publicar es gratis.',
+    button_label: 'Continuar mi publicación', button_url: '{{draft_url}}',
+  };
+  it('passes the editor validation (all variables known)', () => {
+    expect(vt(tpl).ok).toBe(true);
+    expect(templateVars.map((v) => v.key)).toEqual(expect.arrayContaining(['draft_url', 'photo_url', 'draft_location']));
+  });
+  it('the preview shows the sample photo and a button to the draft', () => {
+    const { html } = renderTemplate(tpl, Object.fromEntries(templateVars.map((v) => [v.key, v.sample])), countryFrame('uy'));
+    expect(html).toMatch(/<img src="https:\/\/images\.unsplash\.com\/[^"]+" alt="Casa 3 dorm · Villa Morra"/);
+    expect(html).toMatch(/<a href="https:\/\/casa-libre\.com\.py\/cuenta\/publicaciones\?tab=borradores&amp;draft=ejemplo"[^>]*>Continuar mi publicación<\/a>/);
+  });
+  it('the renderer is the same file as the buyer portal’s (when both repos sit side by side)', () => {
+    const here = fs.readFileSync(new URL('../lib/emailTemplateRender.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const buyerPath = process.env.BUYER_PORTAL_DIR ? `${process.env.BUYER_PORTAL_DIR}/lib/emailTemplateRender.js` : null;
+    if (!buyerPath || !fs.existsSync(buyerPath)) return;   // only checked when BUYER_PORTAL_DIR is set
+    expect(fs.readFileSync(buyerPath, 'utf8').replace(/\r\n/g, '\n')).toBe(here);
+  });
+});

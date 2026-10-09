@@ -1,12 +1,14 @@
 'use client';
-// Automations — the built-in "first listing → free home display" flow for the active
-// country, laid out as one horizontal row of steps: trigger → wait → gift email →
-// ending-soon email. Each email step picks which template it sends. The buyer
-// portal's hourly cron (/api/cron/automations) does the sending; this page only
-// configures it.
+// Automations — the built-in flows for the active country, each laid out as one
+// horizontal row of steps: "first listing → free home display" (trigger → wait → gift
+// email → ending-soon email), "listing getting views" and "unfinished draft reminders"
+// (trigger → reminder steps → email). Each email step picks which template it sends.
+// The buyer portal's hourly cron (/api/cron/automations) does the sending; this page
+// only configures it.
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/components/automations/ui';
+import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -83,6 +85,51 @@ function DayField({ value, onChange, min, max, error, suffix }) {
   );
 }
 
+// The draft reminders: 1–5 rows of "Reminder n · after [N] [hours|days]" — add / remove.
+function DraftSteps({ steps, errors, onChange }) {
+  const set = (i, k) => (v) => onChange(steps.map((s, j) => (j === i ? { ...s, [k]: v } : s)));
+  const add = () => {
+    const last = steps[steps.length - 1];
+    const lastH = last ? Number(last.value || 0) * (last.unit === 'days' ? 24 : 1) : 0;
+    const days = Math.min(60, Math.max(1, Math.ceil(lastH / 24) * 2 || 1));
+    onChange([...steps, { value: days, unit: 'days' }]);
+  };
+  const remove = (i) => onChange(steps.filter((_, j) => j !== i));
+  return (
+    <div className="space-y-2.5" data-testid="draft-steps">
+      {steps.map((s, i) => (
+        <div key={i} className="rounded-[12px] border px-3 py-2.5" style={{ borderColor: errors[`step_${i}`] ? T.danger : 'rgba(17,17,17,.12)', background: '#fff' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>Reminder {i + 1}</p>
+            {steps.length > 1 && (
+              <button type="button" onClick={() => remove(i)} aria-label={`Remove reminder ${i + 1}`} className="w-6 h-6 rounded-full text-[14px] leading-none hover:bg-black/5" style={{ color: T.textMuted }}>×</button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px]" style={{ color: T.textSecondary }}>after</span>
+            <input type="number" min={1} max={s.unit === 'days' ? 60 : 1440} value={s.value} aria-label={`Reminder ${i + 1}: wait`}
+              onChange={(e) => set(i, 'value')(e.target.value === '' ? '' : Number(e.target.value))}
+              className="w-[64px] px-2 py-1.5 rounded-[10px] border text-[15px] font-bold text-center outline-none focus:border-ink/60 tabular-nums"
+              style={{ borderColor: errors[`step_${i}`] ? T.danger : 'rgba(17,17,17,.2)', color: T.textPrimary }} />
+            <select value={s.unit} onChange={(e) => set(i, 'unit')(e.target.value)} aria-label={`Reminder ${i + 1}: hours or days`}
+              className="px-2 py-1.5 rounded-[10px] border text-[13px] font-medium outline-none focus:border-ink/60"
+              style={{ borderColor: 'rgba(17,17,17,.2)', color: T.textPrimary, background: T.bgWhite }}>
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </select>
+          </div>
+          {errors[`step_${i}`] ? <p className="text-[11px] mt-1" style={{ color: T.danger }}>{errors[`step_${i}`]}</p> : null}
+        </div>
+      ))}
+      {errors.steps ? <p className="text-[11px]" style={{ color: T.danger }}>{errors.steps}</p> : null}
+      {steps.length < DRAFT_STEPS.max && (
+        <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add reminder</button>
+      )}
+      <p className="text-[11px]" style={{ color: T.textMuted }}>Counted from the last time the seller opened or changed the draft. Each reminder goes once per draft (up to {DRAFT_STEPS.max}); coming back to the draft pushes the next one back.</p>
+    </div>
+  );
+}
+
 // Pick the template an email step sends; shows its subject and an Edit link.
 function TemplatePicker({ label, value, templates, onChange, error }) {
   const chosen = templates.find((t) => String(t.id) === String(value));
@@ -148,6 +195,7 @@ export default function AutomationsPage() {
   const [data, setData] = useState(null);
   const [form, setForm] = useState(null);
   const [vform, setVform] = useState(null);
+  const [dform, setDform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -160,6 +208,8 @@ export default function AutomationsPage() {
     setForm({ wait_days: a.wait_days, free_days: a.free_days, remind_days_before: a.remind_days_before, first_tier_count: a.first_tier_count, later_free_days: a.later_free_days, free_tiers: Array.isArray(a.free_tiers) ? a.free_tiers.map((t) => ({ sellers: t.sellers, days: t.days })) : undefined, gift_template_id: a.gift_template_id || '', reminder_template_id: a.reminder_template_id || '' });
     const v = j.views?.automation;
     setVform(v ? { milestones: (v.milestones || []).join(', '), template_id: v.template_id || '' } : null);
+    const d = j.drafts?.automation;
+    setDform(d ? { steps: stepsFromHours(d.milestones), template_id: d.template_id || '' } : null);
   }
 
   useEffect(() => {
@@ -176,7 +226,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -216,6 +266,22 @@ export default function AutomationsPage() {
     if (on && !window.confirm('Switch "Listing getting views" on?\n\nSellers get an email when their listing reaches your view numbers. Listings that already passed a number before now won’t be emailed for it.')) return;
     run('views', 'toggle', () => put('views', { enabled: on }, on ? '“Listing getting views” is on.' : '“Listing getting views” is off.'));
   };
+
+  const da = data.drafts?.automation;
+  const e3 = errors.drafts || {};
+  const savedSteps = da ? stepsFromHours(da.milestones) : [];
+  const dDirty = !!(da && dform && (JSON.stringify(dform.steps.map((s) => ({ value: Number(s.value), unit: s.unit }))) !== JSON.stringify(savedSteps) || String(dform.template_id || '') !== String(da.template_id || '')));
+  const toggleDrafts = () => {
+    const on = !da.enabled;
+    const when = (da.milestones || []).map(stepLabel).join(', ');
+    if (on && !window.confirm(`Switch "Unfinished draft reminders" on?\n\nSellers with an unfinished draft get an email after ${when || 'your waits'} without changes, with a button that opens the draft. Drafts already waiting get ONE email for the latest reminder they reached (if it came due in the last 7 days).`)) return;
+    run('drafts', 'toggle', () => put('drafts', { enabled: on }, on ? '“Unfinished draft reminders” is on.' : '“Unfinished draft reminders” is off.'));
+  };
+  const perStep = data.drafts?.perStep || {};
+  const draftStats = [
+    data.drafts?.sent ? `${data.drafts.sent.toLocaleString('en-US')} sent so far${Object.keys(perStep).length > 1 ? ` (${Object.keys(perStep).sort((x, y) => x - y).map((k) => `#${k}: ${perStep[k]}`).join(' · ')})` : ''}.` : '',
+    data.drafts?.waiting != null ? `${data.drafts.waiting.toLocaleString('en-US')} unfinished ${data.drafts.waiting === 1 ? 'draft' : 'drafts'} right now.` : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div className="space-y-5">
@@ -297,6 +363,34 @@ export default function AutomationsPage() {
       ) : (
         <Banner tone="warning">
           <b>“Listing getting views” isn’t set up for this country yet.</b> Apply <span className="font-mono">migrations/006_views_automation.sql</span> (buyer portal repo) in the AiroBase SQL editor, then reload.
+        </Banner>
+      )}
+
+      {da && dform ? (
+        <AutomationCard
+          title="Unfinished draft reminders"
+          description="Emails sellers who started a listing and left it as a draft, with a button that opens that draft so they can finish it."
+          enabled={da.enabled} enabledAt={da.enabled_at} busy={busy.drafts}
+          onToggle={toggleDrafts} dirty={dDirty}
+          onSave={() => run('drafts', 'save', () => put('drafts', { steps: dform.steps, template_id: dform.template_id }, 'Changes saved.'))}
+          footnote={`Signed-in sellers and guests who typed their email in the wizard. Stops as soon as the draft is published or deleted; at most one email per person per hour; a reminder more than 7 days late is skipped.${draftStats ? ` ${draftStats}` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A seller leaves a listing unfinished (saved as a draft)" />
+          <Connector />
+          <StepCard n={2} kind="Reminders" title="Email after this long without changes">
+            <DraftSteps steps={dform.steps} errors={e3} onChange={(steps) => setDform((f) => ({ ...f, steps }))} />
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Email" title="Email with a button that opens the draft">
+            <TemplatePicker label="Email sent at every reminder" value={dform.template_id} templates={data.templates} onChange={(v) => setDform((f) => ({ ...f, template_id: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              The button link is <span className="font-mono">{'{{draft_url}}'}</span> — My listings → Drafts, opening that draft in the wizard (after signing in, if needed).
+            </p>
+          </StepCard>
+        </AutomationCard>
+      ) : (
+        <Banner tone="warning">
+          <b>“Unfinished draft reminders” isn’t set up for this country yet.</b> Apply <span className="font-mono">migrations/013_draft_reminders.sql</span> (buyer portal repo) in the AiroBase SQL editor, then reload.
         </Banner>
       )}
     </div>

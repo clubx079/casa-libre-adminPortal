@@ -224,7 +224,7 @@ export default function TemplateEditor({ params }) {
               <Err k="heading" />
             </div>
             <div>
-              <Label hint="blank line = new paragraph · **bold** · [text](https://…)">Body</Label>
+              <Label hint="blank line = new paragraph · **bold** · [text](https://…) · ![photo](https://…)">Body</Label>
               <textarea {...fieldProps('body')} rows={9} className={`${fieldProps('body').className} leading-relaxed`} placeholder={'Hola {{name}},\n\nGracias por publicar…'} />
               <Err k="body" />
             </div>

@@ -1,12 +1,14 @@
-// GET /api/automations → the "first listing → free home display" automation for the
-//                        active country: settings, template choices, stats, latest runs.
+// GET /api/automations → the automations of the active country: "first listing → free
+//                        home display" (settings, template choices, stats, latest runs),
+//                        "listing getting views" and "unfinished draft reminders".
 // PUT /api/automations → change settings / switch on-off (switching on stamps
-//                        enabled_at: only first listings created after it count).
+//                        enabled_at). Body { id: 'listing_views_milestone' | 'draft_reminders', … }
+//                        targets those two; no id = the first-listing automation.
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, validateSettings, validateViewsSettings, automationStats } from '@/lib/automationAdmin';
+import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, validateSettings, validateViewsSettings, validateDraftSettings, automationStats, draftStepCounts } from '@/lib/automationAdmin';
 import { dbError, q } from '@/lib/automationDb';
 
 export const runtime = 'nodejs';
@@ -30,6 +32,19 @@ async function payload(db) {
       views = { automation: va, sent: sent.count || 0 };
     }
   } catch { views = null; }
+  // "Unfinished draft reminders" (migrations/013_draft_reminders.sql). Missing → the page explains it.
+  let drafts = null;
+  try {
+    const [da] = await db.select('automations', `select=*&id=eq.${DRAFTS_AUTOMATION_ID}&limit=1`);
+    if (da && 'milestones' in da) {
+      const [sent, logs, waiting] = await Promise.all([
+        db.selectWithCount('email_log', `select=id&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 })),
+        db.select('email_log', `select=dedupe_key&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=5000`).catch(() => []),
+        db.selectWithCount('listing_drafts', 'select=id&limit=1').catch(() => null),
+      ]);
+      drafts = { automation: da, sent: sent.count || 0, perStep: draftStepCounts(logs), waiting: waiting ? waiting.count || 0 : null };
+    }
+  } catch { drafts = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -46,6 +61,7 @@ async function payload(db) {
   return {
     automation,
     views,
+    drafts,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -83,6 +99,15 @@ export async function PUT(req) {
       const v = validateViewsSettings(patch, cur);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       await db.update('automations', `id=eq.${q(VIEWS_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === DRAFTS_AUTOMATION_ID) {
+      const [cur] = await db.select('automations', `select=*&id=eq.${DRAFTS_AUTOMATION_ID}&limit=1`);
+      if (!cur) return NextResponse.json({ pending: true, error: 'migration_pending' });
+      const { id, ...patch } = body;
+      const v = validateDraftSettings(patch, cur);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      await db.update('automations', `id=eq.${q(DRAFTS_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }
     const [current] = await db.select('automations', `select=*&id=eq.${AUTOMATION_ID}&limit=1`);

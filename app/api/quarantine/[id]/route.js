@@ -6,6 +6,7 @@ import { getUsdRate } from '@/lib/fx';
 import { currencyFor } from '@/lib/currency';
 import { looseFor, splitReasons, persistedPriceUsd } from '@/lib/unverified';
 import { genShortCode } from '@/lib/shortcode';
+import { forget } from '@/lib/swrCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,7 @@ const ACTIONS = ['release', 'discard', 'approve'];
 // approve -> a user's listing whose photos the AI check rejected ("images_rejected",
 //            external_id listing:<id>): the admin looked and it's fine → publish that
 //            listing as it is + mark released.
-export async function PATCH(req, { params }) {
+async function handlePATCH(req, { params }) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const cc = activeCountry();
@@ -99,3 +100,8 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }
+
+// A change here makes the cached Quarantine / Properties lists (lib/heldListings.js,
+// the "Contact seller for …" view) stale: drop them so the next page shows it.
+const fresh = (res) => { if (res.ok) { forget('heldListings:'); forget('activeIncomplete:'); } return res; };
+export async function PATCH(req, ctx) { return fresh(await handlePATCH(req, ctx)); }

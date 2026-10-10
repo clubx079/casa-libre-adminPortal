@@ -5,6 +5,7 @@ import { makeT } from '@/lib/i18n';
 import { getUsdRate } from '@/lib/fx';
 import { buildingsParts, landOrGroup, isLandType } from '@/lib/land';
 import { heldListings } from '@/lib/heldListings';
+import { selectAll } from '@/lib/selectAll';
 import { validateListing } from '@/lib/ingest';
 import { looseFor, splitReasons } from '@/lib/unverified';
 import PropertiesView from '@/components/PropertiesView';
@@ -35,12 +36,14 @@ export default async function PropertiesPage({ searchParams }) {
   const kind = searchParams?.kind === 'originals' ? 'originals' : 'scraped';
   const offset = (page - 1) * PAGE_SIZE;
 
+  const cc = activeCountry();
   // source templates for the filter dropdown — exclude the "User submissions" virtual
-  // row: user-published listings now live under the Originals sub-tab.
-  let allSources = [];
-  try {
-    allSources = await select('scrape_sources', 'select=id,key,name&order=name.asc');
-  } catch { allSources = []; }
+  // row: user-published listings now live under the Originals sub-tab. Read at the same
+  // time as this country's currency per 1 USD (live, cached).
+  const [allSources, rate] = await Promise.all([
+    select('scrape_sources', 'select=id,key,name&order=name.asc').catch(() => []),
+    getUsdRate(cc),
+  ]);
   const sources = allSources.filter((s) => s.key !== 'user_submissions');
   const sourceId = source ? sources.find((s) => s.key === source)?.id : null;
 
@@ -66,9 +69,6 @@ export default async function PropertiesPage({ searchParams }) {
   }
   const query = (...extra) => [COLS, ...filters, ...extra].join('&');
   const countOf = async (...extra) => (await selectWithCount('properties', ['select=id', ...filters, ...extra, 'limit=1'].join('&'))).count;
-
-  const cc = activeCountry();
-  const rate = await getUsdRate(cc); // this country's currency per 1 USD (live, cached)
 
   // A property is LIVE on the buyer portal only when it is admin-active AND passes
   // the completeness gate. Compute it per row so the Active/Inactive filter and the
@@ -98,13 +98,14 @@ export default async function PropertiesPage({ searchParams }) {
   let tabCounts = null;
   let error = null;
   try {
-    const activeRaw = [];
-    for (let off = 0; ; off += 1000) {
-      const part = await select('properties', query('admin_status=eq.active', 'order=created_at.desc', 'limit=1000', `offset=${off}`));
-      activeRaw.push(...part);
-      if (part.length < 1000) break;
-    }
-    const [total, inactiveDb] = await Promise.all([countOf(), countOf('admin_status=neq.active')]);
+    // All at the same time: the admin-active rows (pages read in parallel), the two exact
+    // counts and the held listings (cached, lib/heldListings.js).
+    const [activeRaw, total, inactiveDb, heldAll] = await Promise.all([
+      selectAll({ select, selectWithCount }, 'properties', query('admin_status=eq.active', 'order=created_at.desc')),
+      countOf(),
+      countOf('admin_status=neq.active'),
+      heldListings(select, cc).catch(() => []),
+    ]);
     const active = activeRaw.map(annotate);
     const live = active.filter((r) => r._live);
     const activeIncomplete = active.filter((r) => !r._live);
@@ -116,7 +117,7 @@ export default async function PropertiesPage({ searchParams }) {
     const userSrc = allSources.find((s) => s.key === 'user_submissions')?.id;
     const nameOf = new Map(allSources.map((s) => [s.id, s.name]));
     const needle = q.toLowerCase();
-    const held = (await heldListings(select, cc).catch(() => []))
+    const held = heldAll
       .filter((r) => (kind === 'originals' ? r.source_id === userSrc : r.source_id !== userSrc))
       .filter((r) => !sourceId || r.source_id === sourceId)
       .filter((r) => cls === 'all' || (cls === 'land') === isLandType(r.property_type))

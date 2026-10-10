@@ -8,6 +8,8 @@ import { looseFor, splitReasons, canGoLive, FIXABLE_CODES, quarantineState, reas
 import { validateListing } from '@/lib/ingest';
 import { buildingsParts } from '@/lib/land';
 import { listingUrl } from '@/lib/buyerSite';
+import { selectAll, selectIn } from '@/lib/selectAll';
+import { swr } from '@/lib/swrCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,18 +31,18 @@ const BLOCK_FILTER = ['no_contact', 'duplicate', 'unverified_seller', 'no_images
 // hold a listing back.
 const VIEWS = ['blocked', 'incomplete'];
 const DEFAULT_PAGE_SIZE = 50;
-const CHUNK = 150;
-const INCOMPLETE_CACHE_MS = 60 * 1000;
-const incompleteCache = (globalThis.__clIncompleteCache ||= new Map());
 
 // Live listings (active, not delisted, buildings) whose only problems are fields the site
-// shows as "Contact seller for …". Same check as the Properties page. Cached 60s per
-// country: the page refetches on every filter change.
-async function activeIncomplete(select, cc, rate) {
-  const hit = incompleteCache.get(cc);
-  if (hit && Date.now() - hit.at < INCOMPLETE_CACHE_MS) return hit.rows;
+// shows as "Contact seller for …". Same check as the Properties page. Kept per country
+// (lib/swrCache.js): fresh 60 s — the page refetches on every filter change — then the
+// last copy is used at once while a new one loads behind it.
+function activeIncomplete(db, cc, rate) {
+  return swr(`activeIncomplete:${cc}`, () => loadIncomplete(db, cc, rate), { fresh: 60_000, stale: 10 * 60_000 });
+}
+
+async function loadIncomplete(db, cc, rate) {
   const cols = 'id,address,city,neighborhood,zone_canonical,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,external_id,external_url,created_at';
-  const props = await selectAll(select, 'properties', `select=${cols}&admin_status=eq.active&is_delisted=eq.false&${buildingsParts().join('&')}&order=created_at.desc`);
+  const props = await selectAll(db, 'properties', `select=${cols}&admin_status=eq.active&is_delisted=eq.false&${buildingsParts().join('&')}&order=created_at.desc`);
   const rows = [];
   for (const p of props) {
     const { reasons } = validateListing(p, rate, cc);
@@ -52,27 +54,7 @@ async function activeIncomplete(select, cc, rate) {
       state: 'incomplete', on_site: 'active', public_url: listingUrl(cc, p.id),
     });
   }
-  incompleteCache.set(cc, { at: Date.now(), rows });
   return rows;
-}
-
-// Fetch every row of a query (PostgREST pages with limit/offset).
-async function selectAll(select, table, query) {
-  const out = [];
-  for (let off = 0; ; off += 1000) {
-    const rows = await select(table, `${query}&limit=1000&offset=${off}`);
-    out.push(...rows);
-    if (rows.length < 1000) return out;
-  }
-}
-const inList = (vals) => vals.map((v) => `"${String(v).replace(/"/g, '')}"`).join(',');
-async function selectIn(select, table, cols, col, vals, extra = '') {
-  const out = [];
-  for (let i = 0; i < vals.length; i += CHUNK) {
-    const part = vals.slice(i, i + CHUNK);
-    if (part.length) out.push(...(await select(table, `select=${cols}&${col}=in.(${encodeURIComponent(inList(part))})${extra}`)));
-  }
-  return out;
 }
 
 // GET /api/quarantine?status=pending&view=blocked&reason=no_contact&page=1&pageSize=50
@@ -84,7 +66,8 @@ export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const cc = activeCountry();
   const loose = looseFor(cc);
-  const { select, selectWithCount } = dbFor(cc);
+  const db = dbFor(cc);
+  const { select, selectWithCount } = db;
   const { searchParams } = new URL(req.url);
   const status = STATUSES.includes(searchParams.get('status')) ? searchParams.get('status') : 'pending';
   const reason = REASON_CODES.includes(searchParams.get('reason')) ? searchParams.get('reason') : null;
@@ -113,15 +96,20 @@ export async function GET(req) {
       });
     }
 
-    // Pending: classify every record, then filter / count / page in code.
-    const all = await selectAll(select, 'ingest_quarantine', 'select=id,source_id,external_id,dedupe_key,reasons,created_at&status=eq.pending&order=created_at.desc');
+    // Pending: classify every record, then filter / count / page in code. The live
+    // "Contact seller for …" listings load at the same time (null if they can't be read).
+    const incompleteP = loose ? activeIncomplete(db, cc, rate).catch(() => null) : Promise.resolve([]);
+    const all = await selectAll(db, 'ingest_quarantine', 'select=id,source_id,external_id,dedupe_key,reasons,created_at&status=eq.pending&order=created_at.desc');
     const ext = [...new Set(all.map((r) => r.external_id).filter(Boolean))];
-    const props = await selectIn(select, 'properties', 'id,source_id,external_id,admin_status,is_delisted', 'external_id', ext);
-    const listed = new Map(props.map((p) => [`${p.source_id}|${p.external_id}`, p]));
     // Listings whose photos the AI check rejected are held as external_id "listing:<id>":
     // their own listing is that property (it already exists, switched off).
     const ownIds = [...new Set(all.filter((r) => String(r.external_id || '').startsWith('listing:')).map((r) => r.external_id.slice(8)))];
-    for (const p of await selectIn(select, 'properties', 'id,admin_status,is_delisted', 'id', ownIds)) {
+    const [props, own] = await Promise.all([
+      selectIn(select, 'properties', 'id,source_id,external_id,admin_status,is_delisted', 'external_id', ext),
+      selectIn(select, 'properties', 'id,admin_status,is_delisted', 'id', ownIds),
+    ]);
+    const listed = new Map(props.map((p) => [`${p.source_id}|${p.external_id}`, p]));
+    for (const p of own) {
       for (const r of all) if (r.external_id === `listing:${p.id}`) listed.set(`${r.source_id}|${r.external_id}`, p);
     }
     // A record's own listing counts as on the site only while it's active: one switched
@@ -157,7 +145,7 @@ export async function GET(req) {
     // itself) isn't blocked, so it's left out.
     const held = all.filter((r) => info.get(r.id).state !== 'live');
     // Live listings shown with "Contact seller for …" (null if they couldn't be read)
-    const incomplete = loose ? await activeIncomplete(select, cc, rate).catch(() => null) : [];
+    const incomplete = await incompleteP;
     const viewCounts = { blocked: held.length, incomplete: incomplete ? incomplete.length : null };
 
     if (view === 'incomplete') {

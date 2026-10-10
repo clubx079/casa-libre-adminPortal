@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import * as b2 from '@/lib/b2';
+import { forget } from '@/lib/swrCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ export async function GET(_req, { params }) {
 }
 
 // PATCH /api/properties/:id  -> update editable fields (incl. admin_status toggle)
-export async function PATCH(req, { params }) {
+async function handlePATCH(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const { select, update, remove } = dbFor(activeCountry());
   let body;
@@ -58,7 +59,7 @@ export async function PATCH(req, { params }) {
 }
 
 // DELETE /api/properties/:id  -> delete property (cascades image rows) + purge B2 objects
-export async function DELETE(_req, { params }) {
+async function handleDELETE(_req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const { select, update, remove } = dbFor(activeCountry());
   try {
@@ -72,3 +73,9 @@ export async function DELETE(_req, { params }) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }
+
+// A change here makes the cached Quarantine / Properties lists (lib/heldListings.js,
+// the "Contact seller for …" view) stale: drop them so the next page shows it.
+const fresh = (res) => { if (res.ok) { forget('heldListings:'); forget('activeIncomplete:'); } return res; };
+export async function PATCH(req, ctx) { return fresh(await handlePATCH(req, ctx)); }
+export async function DELETE(req, ctx) { return fresh(await handleDELETE(req, ctx)); }

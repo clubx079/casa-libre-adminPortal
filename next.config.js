@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // instrumentation.js: warms the slow Resend / PostHog reads when the server starts.
+  experimental: { instrumentationHook: true },
   // The admin portal (admin.casa-libre.com) must never appear in search results.
   // X-Robots-Tag covers every response — pages, API routes, the /api/media image
   // proxy — not just HTML that also carries the <meta name="robots"> tag (layout).

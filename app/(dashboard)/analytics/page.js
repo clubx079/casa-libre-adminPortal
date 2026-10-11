@@ -620,7 +620,6 @@ function SourcesCard() {
   const [rows, setRows] = useState([]);
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
-  const [usage, setUsage] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -650,13 +649,6 @@ function SourcesCard() {
       .then((d) => { if (alive && d?.configured) setTech(d); }).catch(() => {});
     return () => { alive = false; };
   }, [days]);
-
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/analytics/posthog?type=usage').then((r) => r.json())
-      .then((d) => { if (alive && d?.configured) setUsage(d); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
 
   // one row per channel (campaigns rolled up), biggest first
   const byChannel = [];
@@ -753,24 +745,6 @@ function SourcesCard() {
         </div>
       )}
 
-      {usage && (
-        <div className="mt-5 pt-3 border-t" style={{ borderColor: T.borderLight }}>
-          <p className="text-[10px] mb-1" style={{ color: T.textMuted }}>
-            PostHog usage · billing cycle from {usage.cycleStart} · free plan covers 1M events per cycle
-          </p>
-          <p className="text-xs" style={{ color: T.textBody }}>
-            {usage.current.toLocaleString()} events so far · on pace for ~{usage.projected.toLocaleString()} ({usage.percentOfFree}% of the allowance)
-          </p>
-          <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>
-            matches posthog.com/organization/billing — it bills per cycle, not per calendar month
-          </p>
-          {usage.bySite?.length > 1 && (
-            <p className="text-[10px] mt-1" style={{ color: T.textMuted }}>
-              by site (30d): {usage.bySite.map((b) => `${b.site} ${b.events.toLocaleString()}`).join(' · ')}
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

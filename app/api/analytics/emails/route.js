@@ -26,7 +26,7 @@ export async function GET(req) {
   if (!process.env.RESEND_READ_API_KEY) return NextResponse.json({ error: 'no_key' }, { status: 200 });
 
   const country = activeCountry();
-  const days = Math.min(Math.max(parseInt(new URL(req.url).searchParams.get('days') || '30', 10) || 30, 1), 365);
+  const days = Math.min(Math.max(parseInt(new URL(req.url).searchParams.get('days') || '7', 10) || 7, 1), 365);
 
   try {
     const [{ domain, rows, truncated }, extra] = await Promise.all([countryEmails(country, days), internalEmails(country)]);

@@ -7,6 +7,11 @@ import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
 import { CAMPAIGNS, ALIASES } from '@/lib/campaigns';
 import { buildLinksReport, clickSlugSql, landingChannelSql, LEGACY_CAMPAIGNS } from '@/lib/linksReport';
+import { dbFor } from '@/lib/db';
+import { selectIn } from '@/lib/selectAll';
+import { clickSql, applyClicks, OPEN_TRACKING_GAP } from '@/lib/contactsReport';
+import { isInternalContact } from '@/lib/internalTraffic';
+import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -107,12 +112,12 @@ const geoFilter = () => `${GEO_BASE}${siteClause(currentSite())}`;
 const CONTACT_EVENTS = ['contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'contact_seller_clicked'];
 const CONTACT_IN = `event IN (${CONTACT_EVENTS.map((e) => `'${e}'`).join(', ')})`;
 
-// event: one event name, or a list (any of them counts).
-const stepQuery = (event) => `
+// event: one event name, or a list (any of them counts). days: the window (default 7).
+const stepQuery = (event, days = 7) => `
   SELECT count(DISTINCT ${UKEY}) AS c
   FROM events
   WHERE ${Array.isArray(event) ? `event IN (${event.map((e) => `'${e}'`).join(', ')})` : `event = '${event}'`}
-    AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
+    AND timestamp >= now() - INTERVAL ${days} DAY AND ${geoFilter()}
 `;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
@@ -306,7 +311,7 @@ async function userActivity({ personId, ip }) {
 async function geoBreakdown(country, days) {
   const q = (s) => String(s || '').replace(/'/g, "''");
   // Whitelist the window (7d / 30d / 3mo / 6mo / 12mo) — never interpolate raw input.
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   if (country) {
     const rows = await hogql(`
       SELECT coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS name,
@@ -330,7 +335,7 @@ async function geoBreakdown(country, days) {
 // bucket for "arrived with no utm and no referrer"; organic Google shows as
 // 'google' via the referrer.
 async function sourcesBreakdown(days, site) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const rows = await hogql(`
     WITH first_touch AS (
       SELECT ${UKEY} AS idkey,
@@ -362,7 +367,7 @@ async function sourcesBreakdown(days, site) {
 // AI answer engines on their own: which ones send people, and — the useful part
 // for the AIEO work — which pages they send them to.
 async function aiBreakdown(days, site) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const aiList = AI_SOURCES.map((x) => `'${x}'`).join(', ');
   const isAi = `${SOURCE_EXPR} IN (${aiList})`;
 
@@ -395,7 +400,7 @@ async function aiBreakdown(days, site) {
 const REAL_CLICK = "coalesce(properties.$geoip_country_name, '') != ''";
 
 async function linkClicks(days) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const rows = flat(await hogql(`
     SELECT coalesce(properties.utm_source, '?') AS source,
            coalesce(properties.slug, '?') AS slug,
@@ -417,7 +422,7 @@ async function linkClicks(days) {
 // their channel); landed = distinct visitors whose page views carried the channel's
 // utm tags. Same country + dev-team filters as the rest of Analytics (geoFilter).
 async function linksData(days) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const where = `timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`;
   const clicks = flat(await hogql(`
     SELECT ${clickSlugSql(ALIASES)} AS slug, count() AS opened, max(timestamp) AS last
@@ -441,7 +446,7 @@ async function linksData(days) {
 // What people browse with. "From Google" is a source (above); "from Safari" is a
 // browser — different question, so it gets its own cut.
 async function techBreakdown(days, site) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 90;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const one = async (expr) => flat(await hogql(`
     SELECT coalesce(nullIf(${expr}, ''), 'Unknown') AS name, count(DISTINCT ${UKEY}) AS visitors
     FROM events
@@ -466,7 +471,7 @@ async function techBreakdown(days, site) {
 // rather than the database: it keeps this a single query, and it still reflects
 // how the listing looked when people were viewing it.
 async function propertyViews(days, limit) {
-  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 30;
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const n = [10, 20, 30, 50, 100].includes(Number(limit)) ? Number(limit) : 20;
   const rows = flat(await hogql(`
     SELECT coalesce(nullIf(properties.property_id, ''), 'unknown') AS pid,
@@ -569,6 +574,59 @@ async function usage() {
   });
 }
 
+// ── WhatsApp contacts (the card on User analytics) ──
+// Counts come from the database's contact taps (website AND app, lib/whatsappStats.js),
+// cleaned like the contacts list (api/contacts): buyers who signed in later are filled
+// in from PostHog, then the team's own taps are dropped. Device, where the visitor came
+// from and the share of visitors who tapped WhatsApp come from PostHog, which only the
+// website reports (the app sends no PostHog events) — best effort: if PostHog fails,
+// the counts still show.
+async function whatsappData(days) {
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
+  const cc = currentSite() || 'py';
+  const { select } = dbFor(cc);
+  const now = Date.now();
+  const gap = OPEN_TRACKING_GAP[cc] || null;
+  let rows = [];
+  try {
+    rows = await select('contact_link_clicks', `select=id,token,buyer_user_id,buyer_name,buyer_email,buyer_ip,buyer_country,buyer_city,property_id,listing_ref,channel,status,created_at,opened_at&created_at=gte.${new Date(now - 2 * d * 86400000).toISOString()}&order=created_at.desc&limit=10000`);
+  } catch (e) {
+    // table not created in this country yet → an empty card, not an error
+    if (!/does not exist|PGRST205|schema cache|not find the table/i.test(String(e?.message || e))) throw e;
+  }
+  const sql = clickSql(rows);
+  if (sql) {
+    try { rows = applyClicks(rows, await hogql(sql)); } catch (e) { console.error('[analytics/whatsapp] clicks', e?.message || e); }
+  }
+  const extra = await internalEmails(cc).catch(() => null);
+  rows = rows.filter((r) => !isInternalContact(r, extra));
+  const ids = [...new Set(rows.map((r) => r.property_id).filter((v) => /^[0-9a-f-]{36}$/i.test(String(v || ''))))];
+  const props = ids.length ? await selectIn(select, 'properties', 'id,address,city,neighborhood,listing_type,property_type,created_by', 'id', ids, '', 100) : [];
+  const stats = whatsappStats({ rows, props, days: d, now, tz: COUNTRY_TZ[cc] || 'America/Asuncion', gap });
+
+  let web = null;
+  try {
+    const wa = `event = 'contact_whatsapp_click' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`;
+    const [devices, sources, reach] = await Promise.all([
+      hogql(`SELECT coalesce(nullIf(properties.$device_type, ''), 'Unknown') AS k, count() AS c FROM events WHERE ${wa} GROUP BY k ORDER BY c DESC LIMIT 6`),
+      hogql(`SELECT ${SOURCE_EXPR} AS k, count() AS c FROM events WHERE ${wa} GROUP BY k ORDER BY c DESC LIMIT 8`),
+      hogql(`SELECT uniqExact(${UKEY}) AS visitors, uniqExactIf(${UKEY}, event = 'contact_whatsapp_click') AS contacted
+             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
+    ]);
+    const pairs = (rows) => flat(rows).map(([name, n]) => ({ name: String(name), n: Number(n || 0) }));
+    const [visitors = 0, contacted = 0] = (flat(reach)[0] || []).map(Number);
+    web = {
+      devices: pairs(devices),
+      sources: pairs(sources),
+      visitors,
+      contacted,
+      rate: visitors ? Math.round((contacted / visitors) * 1000) / 10 : null,   // % of visitors, one decimal
+    };
+  } catch (e) { console.error('[analytics/whatsapp] posthog', e?.message || e); }
+
+  return NextResponse.json({ configured: true, country: cc, gap, ...stats, web });
+}
+
 export async function GET(request) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -594,33 +652,36 @@ export async function GET(request) {
     if (type === 'links') return await linksData(searchParams.get('days') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '');
+    if (type === 'whatsapp') return await whatsappData(searchParams.get('days') || '');
 
     // ── default: dashboard ──
+    // The summary's window (?days=, whitelisted; default the last 7 days).
+    const d = [7, 30, 90, 180, 365].includes(Number(searchParams.get('days'))) ? Number(searchParams.get('days')) : 7;
     const [
       totals, todayRow, activeNow, dailyPV,
       fPage, fSearch, fView, fSave, fContact, fListing,
       topEvents, topProps,
     ] = await Promise.all([
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}`),
+             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
       hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
              FROM events WHERE toDate(timestamp) = today() AND ${geoFilter()}`),
       hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter()}`),
       hogql(`SELECT toDate(timestamp) AS day, count() AS c
-             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
+             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
              GROUP BY day ORDER BY day ASC`),
-      hogql(stepQuery('$pageview')),
-      hogql(stepQuery('search_applied')),
-      hogql(stepQuery('property_viewed')),
-      hogql(stepQuery('property_saved')),
-      hogql(stepQuery(CONTACT_EVENTS)),
-      hogql(stepQuery('listing_created')),
+      hogql(stepQuery('$pageview', d)),
+      hogql(stepQuery('search_applied', d)),
+      hogql(stepQuery('property_viewed', d)),
+      hogql(stepQuery('property_saved', d)),
+      hogql(stepQuery(CONTACT_EVENTS, d)),
+      hogql(stepQuery('listing_created', d)),
       hogql(`SELECT event, count() AS c
-             FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
+             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
              GROUP BY event ORDER BY c DESC LIMIT 15`),
       hogql(`SELECT properties.property_id AS pid, count() AS c
              FROM events
-             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL 30 DAY AND ${geoFilter()}
+             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
                AND properties.property_id IS NOT NULL AND properties.property_id != ''
              GROUP BY pid ORDER BY c DESC LIMIT 10`),
     ]);
@@ -631,6 +692,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       configured: true,
+      days: d,
       totals: { pageviews: Number(t[0] || 0), uniqueUsers: Number(t[1] || 0) },
       today: { pageviews: Number(td[0] || 0), uniqueUsers: Number(td[1] || 0) },
       activeNow: num(activeNow),

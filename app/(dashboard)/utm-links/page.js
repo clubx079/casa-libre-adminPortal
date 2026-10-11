@@ -39,7 +39,7 @@ function CopyLink({ link }) {
 
 export default function UtmLinksPage() {
   const [tab, setTab] = useState('links');
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(7);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 

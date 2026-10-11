@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
-  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail,
+  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle,
 } from 'lucide-react';
+import { listingUrl } from '@/lib/buyerSite';
 
 // Casa Libre palette (neo-brutalist: ink accent on warm paper).
 const T = {
@@ -618,7 +619,7 @@ const GEO_RANGES = [{ v: 7, l: '7 days' }, { v: 30, l: '30 days' }, { v: 90, l: 
 // rest of this page, so a source is recorded whether or not they sign up.
 function SourcesCard() {
   const [rows, setRows] = useState([]);
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [usage, setUsage] = useState(null);
 
@@ -780,7 +781,7 @@ function SourcesCard() {
 // anything — and which pages it lands on says what the engines are recommending.
 function AiCard() {
   const [data, setData] = useState(null);
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(7);
   useEffect(() => {
     let alive = true;
     fetch(`/api/analytics/posthog?type=ai&days=${days}`).then((r) => r.json())
@@ -797,6 +798,7 @@ function AiCard() {
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>AI answer engines</h2>
         <select value={days} onChange={(e) => setDays(Number(e.target.value))}
           className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
+          <option value={7}>7 days</option>
           <option value={30}>30 days</option>
           <option value={90}>90 days</option>
           <option value={365}>12 months</option>
@@ -837,7 +839,7 @@ const GeoDonut = () => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState(-1);
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(7);
   const load = async (c = '', d = days) => {
     setLoading(true);
     try {
@@ -929,7 +931,221 @@ const GeoDonut = () => {
 };
 
 // Users Analytics — user behaviour + funnel, read from PostHog.
+// ── WhatsApp contacts: taps on a listing's WhatsApp button (website + app) ──
+const MODE_LABEL = { rent: 'Rent', sale: 'Sale', alquiler: 'Rent', venta: 'Sale' };
+const SELLER_LABEL = { owner: 'Owner (Casa Libre user)', agency: 'Agency' };
+const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const deltaOf = (now, before) => {
+  if (!before) return now ? 'new' : null;
+  const pct = Math.round(((now - before) / before) * 100);
+  return pct === 0 ? '0%' : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`;
+};
+
+// one row per item: name, count, a thin ink bar (share of the list's largest)
+const BarList = ({ title, items, label = (x) => x }) => {
+  const max = Math.max(1, ...items.map((i) => i.n));
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>{title}</p>
+      {items.length === 0 ? <p className="text-[11px]" style={{ color: T.textMuted }}>—</p> : items.map((i) => (
+        <div key={i.name} className="mb-1.5">
+          <div className="flex items-center justify-between text-[11px] mb-0.5">
+            <span className="truncate pr-2" style={{ color: T.textBody }}>{label(i.name)}</span>
+            <span className="font-semibold" style={{ color: T.textPrimary }}>{i.n}</span>
+          </div>
+          <div style={{ height: 6, background: T.bgSurface, borderRadius: 999 }}>
+            <div style={{ width: `${Math.max(3, Math.round((i.n / max) * 100))}%`, height: 6, background: T.primary, borderRadius: 999 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// vertical bars with a hover read-out above them (one series → no legend)
+const Columns = ({ points, height = 84, ticks = [] }) => {
+  const [hover, setHover] = useState(null);
+  const max = Math.max(1, ...points.map((p) => p.n));
+  const shown = hover != null ? points[hover] : null;
+  return (
+    <div>
+      <p className="text-[11px] h-4 mb-1" style={{ color: T.textSecondary }}>
+        {shown ? <><span className="font-semibold" style={{ color: T.textPrimary }}>{shown.n}</span> {shown.n === 1 ? 'tap' : 'taps'} · {shown.label}</> : ' '}
+      </p>
+      <div className="flex items-end" style={{ height, gap: 2 }} onMouseLeave={() => setHover(null)}>
+        {points.map((p, i) => (
+          <div key={p.key} className="flex-1 h-full flex items-end cursor-default" onMouseEnter={() => setHover(i)} title={`${p.label}: ${p.n}`}>
+            <div style={{
+              width: '100%', height: p.n ? Math.max(3, Math.round((p.n / max) * height)) : 1,
+              background: p.n ? T.primary : T.borderLight, opacity: hover == null || hover === i ? 1 : 0.45,
+              borderRadius: p.n ? '4px 4px 0 0' : 0,
+            }} />
+          </div>
+        ))}
+      </div>
+      {ticks.length > 0 && (
+        <div className="flex justify-between text-[10px] mt-1" style={{ color: T.textMuted }}>
+          {ticks.map((t) => <span key={t}>{t}</span>)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const WhatsAppCard = () => {
+  const [days, setDays] = useState(7);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(false);
+    loadAnalytics(`/api/analytics/posthog?type=whatsapp&days=${days}`, { isCancelled: () => cancelled })
+      .then((j) => { if (!cancelled) setData(j); })
+      .catch((e) => { if (!cancelled && !e.cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [days]);
+
+  const t = data?.totals;
+  const prev = data?.previous || {};
+  const range = GEO_RANGES.find((r) => r.v === days)?.l || `${days} days`;
+  // daily bars up to a month; longer windows add the days up per week
+  let points = (data?.daily || []).map((d) => ({ key: d.date, n: d.n, label: fmtDay(d.date) }));
+  if (points.length > 31) {
+    const weeks = [];
+    for (let i = points.length; i > 0; i -= 7) {
+      const chunk = points.slice(Math.max(0, i - 7), i);
+      weeks.unshift({ key: chunk[0].key, n: chunk.reduce((a, p) => a + p.n, 0), label: `week of ${chunk[0].label}` });
+    }
+    points = weeks;
+  }
+  const hh = (h) => String(h).padStart(2, '0');
+  const hours = (data?.byHour || []).map((n, h) => ({ key: `h${h}`, n, label: `${hh(h)}:00–${hh(h)}:59` }));
+  const tiles = t ? [
+    { label: 'WhatsApp taps', value: t.whatsapp, d: deltaOf(t.whatsapp, prev.whatsapp), sub: `vs previous ${range}` },
+    { label: 'Buyers', value: t.buyers, d: deltaOf(t.buyers, prev.buyers), sub: 'different people' },
+    { label: 'Listings contacted', value: t.listings, sub: 'different listings' },
+    { label: 'Seller opened', value: t.openRate == null ? '—' : `${t.openRate}%`, sub: `${t.opened} of ${t.trackable} message links` },
+  ] : [];
+
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <MessageCircle className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>WhatsApp contacts</h2>
+        <span className="text-[10px]" style={{ color: T.textMuted }}>· taps on a listing&apos;s WhatsApp button, website and app</span>
+        <div className="ml-auto flex items-center gap-2">
+          {loading && data ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
+          <a href="/utm-links?tab=contacts" className="text-[11px] font-medium" style={{ color: T.textSecondary }}>All contacts →</a>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="WhatsApp range" style={selectStyle} className="text-[11px] px-2.5 py-1">
+            {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {loading && !data ? (
+        <div className="py-10 text-center"><div className="inline-block w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /></div>
+      ) : error && !data ? (
+        <p className="text-xs py-8 text-center" style={{ color: T.textMuted }}>WhatsApp numbers are unavailable right now — try again in a moment.</p>
+      ) : (
+        <div style={{ opacity: loading ? 0.55 : 1, transition: 'opacity .15s' }}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            {tiles.map((x) => (
+              <div key={x.label} className="p-3.5" style={{ background: T.bgSurface, borderRadius: 12 }}>
+                <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{x.label}</p>
+                <p className="text-2xl font-bold tracking-head mt-1" style={{ color: T.textPrimary }}>
+                  {typeof x.value === 'number' ? x.value.toLocaleString() : x.value}
+                  {x.d ? <span className="text-[11px] font-semibold ml-1.5 align-middle" style={{ color: T.textSecondary }}>{x.d}</span> : null}
+                </p>
+                <p className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{x.sub}</p>
+              </div>
+            ))}
+          </div>
+          {t && (t.calls > 0 || t.copies > 0) && (
+            <p className="text-[11px] mt-2" style={{ color: T.textMuted }}>
+              Also {t.calls} {t.calls === 1 ? 'call' : 'calls'} and {t.copies} copied {t.copies === 1 ? 'number' : 'numbers'} in the same {range}.
+            </p>
+          )}
+
+          {t && t.whatsapp === 0 ? (
+            <p className="text-xs py-6 text-center" style={{ color: T.textMuted }}>No WhatsApp taps in the last {range}.</p>
+          ) : data && (
+            <>
+              <div className="grid lg:grid-cols-2 gap-6 mt-5">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textMuted }}>{days > 31 ? 'Taps per week' : 'Taps per day'}</p>
+                  <Columns points={points} ticks={points.length ? [points[0].label, points[points.length - 1].label] : []} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textMuted }}>Busiest hours (local time)</p>
+                  <Columns points={hours} ticks={['00:00', '06:00', '12:00', '18:00', '23:00']} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
+                <BarList title="Rent or sale" items={data.byMode || []} label={(k) => MODE_LABEL[k] || k} />
+                <BarList title="Seller" items={data.bySeller || []} label={(k) => SELLER_LABEL[k] || k} />
+                <BarList title="Property type" items={data.byType || []} />
+                <BarList title="City" items={data.byCity || []} />
+              </div>
+
+              {data.web && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>Website visitors who tapped</p>
+                    <p className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{data.web.rate == null ? '—' : `${data.web.rate}%`}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>{data.web.contacted.toLocaleString()} of {data.web.visitors.toLocaleString()} visitors · website only</p>
+                  </div>
+                  <BarList title="Device (website)" items={data.web.devices} />
+                  <BarList title="Came from (website)" items={data.web.sources.slice(0, 6)} label={sourceLabel} />
+                </div>
+              )}
+
+              {(data.topListings || []).length > 0 && (
+                <div className="mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>Most contacted listings</p>
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr style={{ color: T.textSecondary }}>
+                        <th className="text-left font-semibold py-1.5">Listing</th>
+                        <th className="text-right font-semibold py-1.5">WhatsApp taps</th>
+                        <th className="text-right font-semibold py-1.5">Seller opened</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.topListings.map((l) => (
+                        <tr key={l.property_id} className="border-t" style={{ borderColor: T.borderLight }}>
+                          <td className="py-2 pr-3">
+                            <a href={listingUrl(data.country, l.property_id)} target="_blank" rel="noreferrer" className="font-semibold inline-flex items-center gap-1" style={{ color: T.textPrimary }}>
+                              {l.ref || 'Listing'} <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <span className="ml-2" style={{ color: T.textSecondary }}>
+                              {[l.type, MODE_LABEL[l.mode], l.place].filter(Boolean).join(' · ') || 'listing removed'}
+                            </span>
+                          </td>
+                          <td className="py-2 text-right font-semibold" style={{ color: T.textPrimary }}>{l.whatsapp}</td>
+                          <td className="py-2 text-right" style={{ color: T.textBody }}>{l.opened}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// "last 7 days" / "last 3 months" … for the summary's window (GEO_RANGES values).
+const rangeLabel = (d) => `last ${(GEO_RANGES.find((r) => r.v === d)?.l || `${d} days`)}`;
+
 const UsersAnalytics = () => {
+  const [days, setDays] = useState(7);   // summary window (cards + funnel); default the last 7 days
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -947,7 +1163,7 @@ const UsersAnalytics = () => {
     setLoading(true); setError(null); setBusy(false);
     (async () => {
       try {
-        const json = await loadAnalytics('/api/analytics/posthog', {
+        const json = await loadAnalytics(`/api/analytics/posthog?days=${days}`, {
           onBusy: () => { if (!cancelled) setBusy(true); },
           isCancelled: () => cancelled,
         });
@@ -959,7 +1175,7 @@ const UsersAnalytics = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1000,7 +1216,7 @@ const UsersAnalytics = () => {
 
   if (selected) return <UserActivityDetail user={selected} onBack={() => setSelected(null)} />;
 
-  if (loading) {
+  if (loading && !data) {
     return shell(<>
       <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} />
       <p className="text-sm mt-3" style={{ color: T.textSecondary }}>{busy ? BUSY_MESSAGE : 'Loading user analytics…'}</p>
@@ -1028,8 +1244,8 @@ const UsersAnalytics = () => {
 
   const cards = [
     { label: 'Active now', value: (data?.activeNow ?? 0).toLocaleString(), Icon: Radio, sub: 'last 5 min' },
-    { label: 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: Users, sub: 'last 30 days' },
-    { label: 'Page views', value: (totals.pageviews || 0).toLocaleString(), Icon: Eye, sub: 'last 30 days' },
+    { label: 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: Users, sub: rangeLabel(days) },
+    { label: 'Page views', value: (totals.pageviews || 0).toLocaleString(), Icon: Eye, sub: rangeLabel(days) },
     { label: 'Page views today', value: (today.pageviews || 0).toLocaleString(), Icon: TrendingUp, sub: 'so far' },
   ];
 
@@ -1038,8 +1254,16 @@ const UsersAnalytics = () => {
       {resolveNote && (
         <div className="text-xs px-4 py-2.5 rounded-full" style={{ background: T.primarySurface, color: T.primary }}>{resolveNote}</div>
       )}
+      {/* Window for the stat cards + funnel (the cards below have their own) */}
+      <div className="flex items-center justify-end gap-2">
+        {loading ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Time range"
+          className="text-[12px] px-2.5 py-1.5 border rounded-full bg-white" style={{ borderColor: T.borderLight, color: T.textBody }}>
+          {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+        </select>
+      </div>
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ opacity: loading ? 0.55 : 1, transition: 'opacity .15s' }}>
         {cards.map(({ label, value, Icon, sub }) => (
           <div key={label} className="bg-white p-5" style={CARD}>
             <div className="flex items-start justify-between mb-4">
@@ -1060,7 +1284,7 @@ const UsersAnalytics = () => {
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-4 h-4" style={{ color: T.primary }} />
           <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>User funnel</h2>
-          <span className="text-[10px]" style={{ color: T.textMuted }}>· distinct users, last 30 days</span>
+          <span className="text-[10px]" style={{ color: T.textMuted }}>· distinct users, {rangeLabel(days)}</span>
         </div>
         <div className="space-y-2">
           {funnel.map((s, i) => {
@@ -1088,6 +1312,8 @@ const UsersAnalytics = () => {
       </div>
         <GeoDonut />
       </div>
+
+      <WhatsAppCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SourcesCard />
@@ -1177,7 +1403,7 @@ const UsersAnalytics = () => {
 // someone keeps coming back to stands out) and `visitors` counts distinct people
 // (so one person refreshing does not read as demand).
 const PropertyAnalytics = () => {
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(7);
   const [limit, setLimit] = useState(20);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1287,7 +1513,7 @@ const PropertyAnalytics = () => {
 // ── Email analytics (Resend): what the site sent for the ACTIVE country, and
 // what happened to it. Counts come from each email's latest Resend status.
 const EmailAnalytics = () => {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);

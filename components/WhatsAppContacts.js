@@ -39,8 +39,9 @@ const BADGE = {
 };
 
 // landed: people PostHog saw arrive through these links (selected period), optional.
-export default function WhatsAppContacts({ landed = null, landedSub = '' }) {
-  const [all, setAll] = useState([]);
+// days: the page's range — every box and the list cover the same days (null = all).
+export default function WhatsAppContacts({ landed = null, landedSub = '', days = null }) {
+  const [loaded, setAll] = useState([]);
   const [gap, setGap] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -61,6 +62,7 @@ export default function WhatsAppContacts({ landed = null, landedSub = '' }) {
     return () => { cancelled = true; };
   }, []);
 
+  const all = useMemo(() => (days ? loaded.filter((r) => Date.parse(r.created_at) >= Date.now() - days * 86400000) : loaded), [loaded, days]);
   const stats = useMemo(() => contactStats(all, gap), [all, gap]);
   const rows = useMemo(() => all.filter((r) => (r.channel || 'whatsapp') === 'whatsapp').map((r) => ({ ...r, _state: openState(r, gap) })), [all, gap]);
   const shown = tab === 'all' ? rows : rows.filter((r) => r._state === tab);
@@ -72,13 +74,13 @@ export default function WhatsAppContacts({ landed = null, landedSub = '' }) {
         <Stat label="WhatsApp contacts" value={stats.whatsapp} sub={stats.calls || stats.copies ? `+ ${stats.calls} call${stats.calls === 1 ? '' : 's'}, ${stats.copies} copied number${stats.copies === 1 ? '' : 's'}` : ''} />
         <Stat label="Opened by seller" value={stats.opened} />
         <Stat label="Open rate" value={stats.trackable ? `${stats.rate}%` : '—'} sub={stats.untracked ? `of ${stats.trackable} trackable` : ''} />
-        {landed != null ? <Stat label="People landed" value={landed} sub={landedSub} /> : null}
+        {landed != null ? <Stat label="Visits from message links" value={landed} sub={landedSub} /> : null}
       </div>
 
       {stats.untracked > 0 && gap ? (
         <p className="text-[12px] leading-relaxed" style={{ color: T.textSecondary }}>
           <b style={{ color: T.textPrimary }}>{stats.untracked} contacts are not trackable.</b> From {fmtDay(gap.from)}{gap.until ? ` to ${fmtDay(gap.until)}` : ''}, the
-          link in the message had no contact code, so a seller opening it couldn&apos;t be matched to the contact. Those visits still count in People landed.
+          link in the message had no contact code, so a seller opening it couldn&apos;t be matched to the contact. Those visits still count in Visits from message links.
         </p>
       ) : null}
 

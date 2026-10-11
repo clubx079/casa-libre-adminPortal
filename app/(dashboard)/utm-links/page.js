@@ -137,7 +137,7 @@ export default function UtmLinksPage() {
             (&ldquo;Hola! ¿Está disponible la propiedad?&rdquo;) and a link to the listing. Every message gets its own link, so we can see who contacted
             which seller and whether the seller opened it. Buyers who weren&apos;t signed in show by name once they sign in.
           </p>
-          <WhatsAppContacts landed={data ? data.contactLanded : null} landedSub={`from these links, last ${rangeLabel}`} />
+          <WhatsAppContacts days={days} landed={data ? data.contactLanded : null} landedSub={`anyone who opened a buyer→seller link (incl. ones we can't match to a contact), last ${rangeLabel}`} />
         </>
       )}
     </div>

@@ -577,10 +577,7 @@ async function usage() {
 // ── WhatsApp contacts (the card on User analytics) ──
 // Counts come from the database's contact taps (website AND app, lib/whatsappStats.js),
 // cleaned like the contacts list (api/contacts): buyers who signed in later are filled
-// in from PostHog, then the team's own taps are dropped. Device, where the visitor came
-// from and the share of visitors who tapped WhatsApp come from PostHog, which only the
-// website reports (the app sends no PostHog events) — best effort: if PostHog fails,
-// the counts still show.
+// in from PostHog, then the team's own taps are dropped.
 async function whatsappData(days) {
   const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const cc = currentSite() || 'py';
@@ -604,27 +601,7 @@ async function whatsappData(days) {
   const props = ids.length ? await selectIn(select, 'properties', 'id,address,city,neighborhood,listing_type,property_type,created_by', 'id', ids, '', 100) : [];
   const stats = whatsappStats({ rows, props, days: d, now, tz: COUNTRY_TZ[cc] || 'America/Asuncion', gap });
 
-  let web = null;
-  try {
-    const wa = `event = 'contact_whatsapp_click' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`;
-    const [devices, sources, reach] = await Promise.all([
-      hogql(`SELECT coalesce(nullIf(properties.$device_type, ''), 'Unknown') AS k, count() AS c FROM events WHERE ${wa} GROUP BY k ORDER BY c DESC LIMIT 6`),
-      hogql(`SELECT ${SOURCE_EXPR} AS k, count() AS c FROM events WHERE ${wa} GROUP BY k ORDER BY c DESC LIMIT 8`),
-      hogql(`SELECT uniqExact(${UKEY}) AS visitors, uniqExactIf(${UKEY}, event = 'contact_whatsapp_click') AS contacted
-             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
-    ]);
-    const pairs = (rows) => flat(rows).map(([name, n]) => ({ name: String(name), n: Number(n || 0) }));
-    const [visitors = 0, contacted = 0] = (flat(reach)[0] || []).map(Number);
-    web = {
-      devices: pairs(devices),
-      sources: pairs(sources),
-      visitors,
-      contacted,
-      rate: visitors ? Math.round((contacted / visitors) * 1000) / 10 : null,   // % of visitors, one decimal
-    };
-  } catch (e) { console.error('[analytics/whatsapp] posthog', e?.message || e); }
-
-  return NextResponse.json({ configured: true, country: cc, gap, ...stats, web });
+  return NextResponse.json({ configured: true, country: cc, gap, ...stats });
 }
 
 export async function GET(request) {

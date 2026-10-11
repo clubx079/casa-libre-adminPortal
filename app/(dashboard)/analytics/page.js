@@ -6,7 +6,6 @@ import {
   ChevronLeft, ChevronRight, MapPin,
   Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle,
 } from 'lucide-react';
-import { listingUrl } from '@/lib/buyerSite';
 
 // Casa Libre palette (neo-brutalist: ink accent on warm paper).
 const T = {
@@ -932,64 +931,10 @@ const GeoDonut = () => {
 
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── WhatsApp contacts: taps on a listing's WhatsApp button (website + app) ──
-const MODE_LABEL = { rent: 'Rent', sale: 'Sale', alquiler: 'Rent', venta: 'Sale' };
-const SELLER_LABEL = { owner: 'Owner (Casa Libre user)', agency: 'Agency' };
-const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const deltaOf = (now, before) => {
   if (!before) return now ? 'new' : null;
   const pct = Math.round(((now - before) / before) * 100);
   return pct === 0 ? '0%' : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`;
-};
-
-// one row per item: name, count, a thin ink bar (share of the list's largest)
-const BarList = ({ title, items, label = (x) => x }) => {
-  const max = Math.max(1, ...items.map((i) => i.n));
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>{title}</p>
-      {items.length === 0 ? <p className="text-[11px]" style={{ color: T.textMuted }}>—</p> : items.map((i) => (
-        <div key={i.name} className="mb-1.5">
-          <div className="flex items-center justify-between text-[11px] mb-0.5">
-            <span className="truncate pr-2" style={{ color: T.textBody }}>{label(i.name)}</span>
-            <span className="font-semibold" style={{ color: T.textPrimary }}>{i.n}</span>
-          </div>
-          <div style={{ height: 6, background: T.bgSurface, borderRadius: 999 }}>
-            <div style={{ width: `${Math.max(3, Math.round((i.n / max) * 100))}%`, height: 6, background: T.primary, borderRadius: 999 }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// vertical bars with a hover read-out above them (one series → no legend)
-const Columns = ({ points, height = 84, ticks = [] }) => {
-  const [hover, setHover] = useState(null);
-  const max = Math.max(1, ...points.map((p) => p.n));
-  const shown = hover != null ? points[hover] : null;
-  return (
-    <div>
-      <p className="text-[11px] h-4 mb-1" style={{ color: T.textSecondary }}>
-        {shown ? <><span className="font-semibold" style={{ color: T.textPrimary }}>{shown.n}</span> {shown.n === 1 ? 'tap' : 'taps'} · {shown.label}</> : ' '}
-      </p>
-      <div className="flex items-end" style={{ height, gap: 2 }} onMouseLeave={() => setHover(null)}>
-        {points.map((p, i) => (
-          <div key={p.key} className="flex-1 h-full flex items-end cursor-default" onMouseEnter={() => setHover(i)} title={`${p.label}: ${p.n}`}>
-            <div style={{
-              width: '100%', height: p.n ? Math.max(3, Math.round((p.n / max) * height)) : 1,
-              background: p.n ? T.primary : T.borderLight, opacity: hover == null || hover === i ? 1 : 0.45,
-              borderRadius: p.n ? '4px 4px 0 0' : 0,
-            }} />
-          </div>
-        ))}
-      </div>
-      {ticks.length > 0 && (
-        <div className="flex justify-between text-[10px] mt-1" style={{ color: T.textMuted }}>
-          {ticks.map((t) => <span key={t}>{t}</span>)}
-        </div>
-      )}
-    </div>
-  );
 };
 
 const WhatsAppCard = () => {
@@ -1011,22 +956,9 @@ const WhatsAppCard = () => {
   const t = data?.totals;
   const prev = data?.previous || {};
   const range = GEO_RANGES.find((r) => r.v === days)?.l || `${days} days`;
-  // daily bars up to a month; longer windows add the days up per week
-  let points = (data?.daily || []).map((d) => ({ key: d.date, n: d.n, label: fmtDay(d.date) }));
-  if (points.length > 31) {
-    const weeks = [];
-    for (let i = points.length; i > 0; i -= 7) {
-      const chunk = points.slice(Math.max(0, i - 7), i);
-      weeks.unshift({ key: chunk[0].key, n: chunk.reduce((a, p) => a + p.n, 0), label: `week of ${chunk[0].label}` });
-    }
-    points = weeks;
-  }
-  const hh = (h) => String(h).padStart(2, '0');
-  const hours = (data?.byHour || []).map((n, h) => ({ key: `h${h}`, n, label: `${hh(h)}:00–${hh(h)}:59` }));
   const tiles = t ? [
     { label: 'WhatsApp taps', value: t.whatsapp, d: deltaOf(t.whatsapp, prev.whatsapp), sub: `vs previous ${range}` },
     { label: 'Buyers', value: t.buyers, d: deltaOf(t.buyers, prev.buyers), sub: 'different people' },
-    { label: 'Listings contacted', value: t.listings, sub: 'different listings' },
     { label: 'Seller opened', value: t.openRate == null ? '—' : `${t.openRate}%`, sub: `${t.opened} of ${t.trackable} message links` },
   ] : [];
 
@@ -1051,7 +983,7 @@ const WhatsAppCard = () => {
         <p className="text-xs py-8 text-center" style={{ color: T.textMuted }}>WhatsApp numbers are unavailable right now — try again in a moment.</p>
       ) : (
         <div style={{ opacity: loading ? 0.55 : 1, transition: 'opacity .15s' }}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
             {tiles.map((x) => (
               <div key={x.label} className="p-3.5" style={{ background: T.bgSurface, borderRadius: 12 }}>
                 <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{x.label}</p>
@@ -1063,78 +995,6 @@ const WhatsAppCard = () => {
               </div>
             ))}
           </div>
-          {t && (t.calls > 0 || t.copies > 0) && (
-            <p className="text-[11px] mt-2" style={{ color: T.textMuted }}>
-              Also {t.calls} {t.calls === 1 ? 'call' : 'calls'} and {t.copies} copied {t.copies === 1 ? 'number' : 'numbers'} in the same {range}.
-            </p>
-          )}
-
-          {t && t.whatsapp === 0 ? (
-            <p className="text-xs py-6 text-center" style={{ color: T.textMuted }}>No WhatsApp taps in the last {range}.</p>
-          ) : data && (
-            <>
-              <div className="grid lg:grid-cols-2 gap-6 mt-5">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textMuted }}>{days > 31 ? 'Taps per week' : 'Taps per day'}</p>
-                  <Columns points={points} ticks={points.length ? [points[0].label, points[points.length - 1].label] : []} />
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textMuted }}>Busiest hours (local time)</p>
-                  <Columns points={hours} ticks={['00:00', '06:00', '12:00', '18:00', '23:00']} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
-                <BarList title="Rent or sale" items={data.byMode || []} label={(k) => MODE_LABEL[k] || k} />
-                <BarList title="Seller" items={data.bySeller || []} label={(k) => SELLER_LABEL[k] || k} />
-                <BarList title="Property type" items={data.byType || []} />
-                <BarList title="City" items={data.byCity || []} />
-              </div>
-
-              {data.web && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>Website visitors who tapped</p>
-                    <p className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>{data.web.rate == null ? '—' : `${data.web.rate}%`}</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>{data.web.contacted.toLocaleString()} of {data.web.visitors.toLocaleString()} visitors · website only</p>
-                  </div>
-                  <BarList title="Device (website)" items={data.web.devices} />
-                  <BarList title="Came from (website)" items={data.web.sources.slice(0, 6)} label={sourceLabel} />
-                </div>
-              )}
-
-              {(data.topListings || []).length > 0 && (
-                <div className="mt-6 pt-5 border-t" style={{ borderColor: T.borderLight }}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.textMuted }}>Most contacted listings</p>
-                  <table className="w-full text-[12px]">
-                    <thead>
-                      <tr style={{ color: T.textSecondary }}>
-                        <th className="text-left font-semibold py-1.5">Listing</th>
-                        <th className="text-right font-semibold py-1.5">WhatsApp taps</th>
-                        <th className="text-right font-semibold py-1.5">Seller opened</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.topListings.map((l) => (
-                        <tr key={l.property_id} className="border-t" style={{ borderColor: T.borderLight }}>
-                          <td className="py-2 pr-3">
-                            <a href={listingUrl(data.country, l.property_id)} target="_blank" rel="noreferrer" className="font-semibold inline-flex items-center gap-1" style={{ color: T.textPrimary }}>
-                              {l.ref || 'Listing'} <ExternalLink className="w-3 h-3" />
-                            </a>
-                            <span className="ml-2" style={{ color: T.textSecondary }}>
-                              {[l.type, MODE_LABEL[l.mode], l.place].filter(Boolean).join(' · ') || 'listing removed'}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right font-semibold" style={{ color: T.textPrimary }}>{l.whatsapp}</td>
-                          <td className="py-2 text-right" style={{ color: T.textBody }}>{l.opened}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
         </div>
       )}
     </div>

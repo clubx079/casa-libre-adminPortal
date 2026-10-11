@@ -290,9 +290,7 @@ export default function AutomationsPage() {
   const xDirty = !!(xa && xform && String(xform.template_id || '') !== String(xa.template_id || ''));
   const toggleDups = () => {
     const on = !xa.enabled;
-    if (on && !window.confirm('Switch "Same property listed twice" on?
-
-A user who publishes the exact same property again gets one email with a link to each copy and a button to My listings. Copies published before now are not emailed.')) return;
+    if (on && !window.confirm('Switch "Same property listed twice" on?\n\nA user who publishes the exact same property again gets one email with a link to each copy and a button to My listings. Copies published before now are not emailed.')) return;
     run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
   };
 

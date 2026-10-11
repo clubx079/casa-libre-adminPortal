@@ -648,7 +648,8 @@ export async function GET(request) {
       today: { pageviews: v[2] || 0, uniqueUsers: v[3] || 0 },
       activeNow: num(activeNow),
       funnel: [
-        { step: 'Viewed a page', persons: v[4] || 0 },
+        // everyone who used the site in the window — same number as the Unique users card
+        { step: 'Visited the site', persons: v[1] || 0 },
         { step: 'Searched', persons: v[5] || 0 },
         { step: 'Viewed a property', persons: v[6] || 0 },
         { step: 'Saved a property', persons: v[7] || 0 },

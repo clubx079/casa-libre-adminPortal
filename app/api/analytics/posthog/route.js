@@ -112,13 +112,6 @@ const geoFilter = () => `${GEO_BASE}${siteClause(currentSite())}`;
 const CONTACT_EVENTS = ['contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'contact_seller_clicked'];
 const CONTACT_IN = `event IN (${CONTACT_EVENTS.map((e) => `'${e}'`).join(', ')})`;
 
-// event: one event name, or a list (any of them counts). days: the window (default 7).
-const stepQuery = (event, days = 7) => `
-  SELECT count(DISTINCT ${UKEY}) AS c
-  FROM events
-  WHERE ${Array.isArray(event) ? `event IN (${event.map((e) => `'${e}'`).join(', ')})` : `event = '${event}'`}
-    AND timestamp >= now() - INTERVAL ${days} DAY AND ${geoFilter()}
-`;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
 
@@ -634,56 +627,34 @@ export async function GET(request) {
     // ── default: dashboard ──
     // The summary's window (?days=, whitelisted; default the last 7 days).
     const d = [7, 30, 90, 180, 365].includes(Number(searchParams.get('days'))) ? Number(searchParams.get('days')) : 7;
-    const [
-      totals, todayRow, activeNow, dailyPV,
-      fPage, fSearch, fView, fSave, fContact, fListing,
-      topEvents, topProps,
-    ] = await Promise.all([
-      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
+    // ONE scan for the cards + funnel (PostHog queues queries it gets at the same time:
+    // 12 separate ones took ~5 s, one takes <1 s). "Active now" stays its own live query.
+    const step = (cond) => `uniqExactIf(${UKEY}, ${cond})`;
+    const [summary, activeNow] = await Promise.all([
+      hogql(`SELECT countIf(event = '$pageview'), uniqExact(${UKEY}),
+               countIf(event = '$pageview' AND toDate(timestamp) = today()), ${step('toDate(timestamp) = today()')},
+               ${step("event = '$pageview'")}, ${step("event = 'search_applied'")}, ${step("event = 'property_viewed'")},
+               ${step("event = 'property_saved'")}, ${step(CONTACT_IN)}, ${step("event = 'listing_created'")}
              FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
-      hogql(`SELECT countIf(event = '$pageview') AS pv, count(DISTINCT ${UKEY}) AS uu
-             FROM events WHERE toDate(timestamp) = today() AND ${geoFilter()}`),
       hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter()}`),
-      hogql(`SELECT toDate(timestamp) AS day, count() AS c
-             FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
-             GROUP BY day ORDER BY day ASC`),
-      hogql(stepQuery('$pageview', d)),
-      hogql(stepQuery('search_applied', d)),
-      hogql(stepQuery('property_viewed', d)),
-      hogql(stepQuery('property_saved', d)),
-      hogql(stepQuery(CONTACT_EVENTS, d)),
-      hogql(stepQuery('listing_created', d)),
-      hogql(`SELECT event, count() AS c
-             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
-             GROUP BY event ORDER BY c DESC LIMIT 15`),
-      hogql(`SELECT properties.property_id AS pid, count() AS c
-             FROM events
-             WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
-               AND properties.property_id IS NOT NULL AND properties.property_id != ''
-             GROUP BY pid ORDER BY c DESC LIMIT 10`),
     ]);
-
+    const v = (flat(summary)[0] || []).map((x) => Number(x || 0));
     const num = (rows) => Number(flat(rows)[0]?.[0] || 0);
-    const t = flat(totals)[0] || [0, 0];
-    const td = flat(todayRow)[0] || [0, 0];
 
     return NextResponse.json({
       configured: true,
       days: d,
-      totals: { pageviews: Number(t[0] || 0), uniqueUsers: Number(t[1] || 0) },
-      today: { pageviews: Number(td[0] || 0), uniqueUsers: Number(td[1] || 0) },
+      totals: { pageviews: v[0] || 0, uniqueUsers: v[1] || 0 },
+      today: { pageviews: v[2] || 0, uniqueUsers: v[3] || 0 },
       activeNow: num(activeNow),
-      dailyPageviews: flat(dailyPV),
       funnel: [
-        { step: 'Viewed a page', persons: num(fPage) },
-        { step: 'Searched', persons: num(fSearch) },
-        { step: 'Viewed a property', persons: num(fView) },
-        { step: 'Saved a property', persons: num(fSave) },
-        { step: 'Contacted a seller', persons: num(fContact) },
-        { step: 'Listed a property', persons: num(fListing) },
+        { step: 'Viewed a page', persons: v[4] || 0 },
+        { step: 'Searched', persons: v[5] || 0 },
+        { step: 'Viewed a property', persons: v[6] || 0 },
+        { step: 'Saved a property', persons: v[7] || 0 },
+        { step: 'Contacted a seller', persons: v[8] || 0 },
+        { step: 'Listed a property', persons: v[9] || 0 },
       ],
-      topEvents: flat(topEvents),
-      topProperties: flat(topProps),
       project_url: `${POSTHOG_HOST}/project/${POSTHOG_PROJECT_ID}`,
     });
   } catch (err) {

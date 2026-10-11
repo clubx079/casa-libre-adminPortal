@@ -70,17 +70,16 @@ export default function WhatsAppContacts({ landed = null, landedSub = '', days =
 
   return (
     <div className="space-y-4">
-      <div className={`grid grid-cols-2 ${landed != null ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3`}>
+      <div className={`grid grid-cols-2 md:grid-cols-3 gap-3`}>
         <Stat label="WhatsApp contacts" value={stats.whatsapp} sub={stats.calls || stats.copies ? `+ ${stats.calls} call${stats.calls === 1 ? '' : 's'}, ${stats.copies} copied number${stats.copies === 1 ? '' : 's'}` : ''} />
         <Stat label="Opened by seller" value={stats.opened} />
         <Stat label="Open rate" value={stats.trackable ? `${stats.rate}%` : '—'} sub={stats.untracked ? `of ${stats.trackable} trackable` : ''} />
-        {landed != null ? <Stat label="Visits from message links" value={landed} sub={landedSub} /> : null}
       </div>
 
       {stats.untracked > 0 && gap ? (
         <p className="text-[12px] leading-relaxed" style={{ color: T.textSecondary }}>
           <b style={{ color: T.textPrimary }}>{stats.untracked} contacts are not trackable.</b> From {fmtDay(gap.from)}{gap.until ? ` to ${fmtDay(gap.until)}` : ''}, the
-          link in the message had no contact code, so a seller opening it couldn&apos;t be matched to the contact. Those visits still count in Visits from message links.
+          link in the message had no contact code, so a seller opening it couldn&apos;t be matched to the contact.
         </p>
       ) : null}
 

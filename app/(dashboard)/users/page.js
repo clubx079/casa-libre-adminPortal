@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { LISTING_FREE_LIMIT } from '@/lib/listingCount';
 import Link from 'next/link';
 import { Search, X, Users as UsersIcon, Activity, CheckCircle2, Circle, Globe, Ban, ShieldOff, Trash2 } from 'lucide-react';
 
@@ -226,8 +227,8 @@ export default function UsersPage() {
           <table className="w-full min-w-[1180px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Joined', 'Last login', 'Actions'].map((h, i) => (
-                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 8 ? 'text-right' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
+                {['User', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Listings', 'Joined', 'Last login', 'Actions'].map((h, i) => (
+                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 9 ? 'text-right' : i === 6 ? 'text-center' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -235,16 +236,16 @@ export default function UsersPage() {
               {loading ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i} className="border-b animate-pulse" style={{ borderColor: T.borderLight }}>
-                    {[...Array(9)].map((__, j) => (
+                    {[...Array(10)].map((__, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '160px' : '70px', background: T.bgSurface }} /></td>
                     ))}
                   </tr>
                 ))
               ) : error ? (
-                <tr><td colSpan="9" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
+                <tr><td colSpan="10" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="px-6 py-12 text-center">
+                  <td colSpan="10" className="px-6 py-12 text-center">
                     <UsersIcon className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>No users found</p>
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term ? 'Try a different search.' : 'Users appear here once people sign in to the buyer portal.'}</p>
@@ -309,6 +310,12 @@ export default function UsersPage() {
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: T.textMuted }}><Circle className="w-3 h-3" /> Unverified</span>
                       )}
+                    </td>
+                    {/* listings this user published; 5+ is where paid listing will start (LISTING_FREE_LIMIT) */}
+                    <td className="px-4 py-3 text-center text-xs">
+                      {u.listings >= LISTING_FREE_LIMIT ? (
+                        <span className="inline-block px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F5EAD5', color: '#8A5A12' }} title={`${LISTING_FREE_LIMIT}+ listings — over the free limit`}>{u.listings}</span>
+                      ) : <span style={{ color: u.listings ? T.textBody : T.textMuted }}>{u.listings || 0}</span>}
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{fmtDate(u.created_at)}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textMuted }}>{fmtWhen(u.last_login_at)}</td>

@@ -5,6 +5,7 @@ import { activeCountry } from '@/lib/adminCountry';
 import { HIDE_DELETED_USERS } from '@/lib/userInsights';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
+import { listingCounts } from '@/lib/listingCount';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,9 @@ export async function GET(request) {
     const [{ rows, count }, extra] = await Promise.all([selectWithCount('users', query), internalEmails(activeCountry())]);
     // Team / Pakistan accounts never show (lib/internalTraffic + internalAudience).
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
+    // How many listings each one published (lib/listingCount.js).
+    const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => new Map());
+    for (const u of users) u.listings = counts.get(String(u.id)) || 0;
     return NextResponse.json({ users, count: Math.max(0, count - (rows.length - users.length)) });
   } catch (err) {
     console.error('[api/users]', err);

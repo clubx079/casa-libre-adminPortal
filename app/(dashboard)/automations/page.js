@@ -196,6 +196,7 @@ export default function AutomationsPage() {
   const [form, setForm] = useState(null);
   const [vform, setVform] = useState(null);
   const [dform, setDform] = useState(null);
+  const [xform, setXform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -210,6 +211,8 @@ export default function AutomationsPage() {
     setVform(v ? { milestones: (v.milestones || []).join(', '), template_id: v.template_id || '' } : null);
     const d = j.drafts?.automation;
     setDform(d ? { steps: stepsFromHours(d.milestones), template_id: d.template_id || '' } : null);
+    const x = j.duplicates?.automation;
+    setXform(x ? { template_id: x.template_id || '' } : null);
   }
 
   useEffect(() => {
@@ -226,7 +229,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -282,6 +285,16 @@ export default function AutomationsPage() {
     data.drafts?.sent ? `${data.drafts.sent.toLocaleString('en-US')} sent so far${Object.keys(perStep).length > 1 ? ` (${Object.keys(perStep).sort((x, y) => x - y).map((k) => `#${k}: ${perStep[k]}`).join(' · ')})` : ''}.` : '',
     data.drafts?.waiting != null ? `${data.drafts.waiting.toLocaleString('en-US')} unfinished ${data.drafts.waiting === 1 ? 'draft' : 'drafts'} right now.` : '',
   ].filter(Boolean).join(' ');
+
+  const xa = data.duplicates?.automation;
+  const xDirty = !!(xa && xform && String(xform.template_id || '') !== String(xa.template_id || ''));
+  const toggleDups = () => {
+    const on = !xa.enabled;
+    if (on && !window.confirm('Switch "Same property listed twice" on?
+
+A user who publishes the exact same property again gets one email with a link to each copy and a button to My listings. Copies published before now are not emailed.')) return;
+    run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
+  };
 
   return (
     <div className="space-y-5">
@@ -393,6 +406,26 @@ export default function AutomationsPage() {
           <b>“Unfinished draft reminders” isn’t set up for this country yet.</b> Apply <span className="font-mono">migrations/013_draft_reminders.sql</span> (buyer portal repo) in the AiroBase SQL editor, then reload.
         </Banner>
       )}
+
+      {xa && xform ? (
+        <AutomationCard
+          title="Same property listed twice"
+          description="When a user publishes the exact same property more than once, emails them a link to each copy and a button to My listings, so they can delete the extras."
+          enabled={xa.enabled} enabledAt={xa.enabled_at} busy={busy.dups}
+          onToggle={toggleDups} dirty={xDirty}
+          onSave={() => run('dups', 'save', () => put('dups', { template_id: xform.template_id }, 'Changes saved.'))}
+          footnote={`“Exact same” = same type, rent/sale, price, currency, neighbourhood, city, areas, rooms, phone and description. One email per set of copies; checked every hour.${data.duplicates?.sent ? ` ${data.duplicates.sent.toLocaleString('en-US')} sent so far.` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A user publishes a listing identical to one of their own" />
+          <Connector />
+          <StepCard n={2} kind="Email" title="Email with each copy's link and a My listings button">
+            <TemplatePicker label="Email sent" value={xform.template_id} templates={data.templates} onChange={(v) => setXform((f) => ({ ...f, template_id: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              Use <span className="font-mono">{'{{listing_links}}'}</span> for the links to each copy and <span className="font-mono">{'{{my_listings_url}}'}</span> for the button.
+            </p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
     </div>
   );
 }

@@ -957,9 +957,10 @@ const WhatsAppCard = () => {
   const prev = data?.previous || {};
   const range = GEO_RANGES.find((r) => r.v === days)?.l || `${days} days`;
   const tiles = t ? [
-    { label: 'WhatsApp taps', value: t.whatsapp, d: deltaOf(t.whatsapp, prev.whatsapp), sub: `vs previous ${range}` },
-    { label: 'Buyers', value: t.buyers, d: deltaOf(t.buyers, prev.buyers), sub: 'different people' },
-    { label: 'Seller opened', value: t.openRate == null ? '—' : `${t.openRate}%`, sub: `${t.opened} of ${t.trackable} message links` },
+    // same three boxes, same labels as UTM Links → WhatsApp contacts
+    { label: 'WhatsApp contacts', value: t.whatsapp, d: deltaOf(t.whatsapp, prev.whatsapp), sub: `vs previous ${range}` },
+    { label: 'Opened by seller', value: t.opened },
+    { label: 'Open rate', value: t.openRate == null ? '—' : `${t.openRate}%`, sub: t.trackable < t.whatsapp ? `of ${t.trackable} trackable` : '' },
   ] : [];
 
   return (

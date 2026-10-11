@@ -931,11 +931,6 @@ const GeoDonut = () => {
 
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── WhatsApp contacts: taps on a listing's WhatsApp button (website + app) ──
-const deltaOf = (now, before) => {
-  if (!before) return now ? 'new' : null;
-  const pct = Math.round(((now - before) / before) * 100);
-  return pct === 0 ? '0%' : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`;
-};
 
 const WhatsAppCard = () => {
   const [days, setDays] = useState(7);
@@ -954,11 +949,9 @@ const WhatsAppCard = () => {
   }, [days]);
 
   const t = data?.totals;
-  const prev = data?.previous || {};
-  const range = GEO_RANGES.find((r) => r.v === days)?.l || `${days} days`;
   const tiles = t ? [
     // same three boxes, same labels as UTM Links → WhatsApp contacts
-    { label: 'WhatsApp contacts', value: t.whatsapp, d: deltaOf(t.whatsapp, prev.whatsapp), sub: `vs previous ${range}` },
+    { label: 'WhatsApp contacts', value: t.whatsapp },
     { label: 'Opened by seller', value: t.opened },
     { label: 'Open rate', value: t.openRate == null ? '—' : `${t.openRate}%`, sub: t.trackable < t.whatsapp ? `of ${t.trackable} trackable` : '' },
   ] : [];

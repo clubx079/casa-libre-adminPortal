@@ -18,7 +18,7 @@ const T = {
 };
 
 const PAGE_SIZE = 24;
-const COLS = 'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,feature_image_url,external_id,external_url,origin,created_by,created_at,scrape_sources(name)';
+const COLS = 'select=id,address,city,neighborhood,price,currency,listing_type,property_type,bedrooms,bathrooms,floor_area,covered_area,land_area,parking_spaces,contact_phone,admin_status,status,is_complete,feature_image_url,external_id,external_url,origin,created_by,created_at,scrape_sources(name)';
 
 export default async function PropertiesPage({ searchParams }) {
   const { select, selectWithCount } = dbFor(activeCountry());
@@ -70,20 +70,21 @@ export default async function PropertiesPage({ searchParams }) {
   const query = (...extra) => [COLS, ...filters, ...extra].join('&');
   const countOf = async (...extra) => (await selectWithCount('properties', ['select=id', ...filters, ...extra, 'limit=1'].join('&'))).count;
 
-  // A property is LIVE on the buyer portal only when it is admin-active AND passes
-  // the completeness gate. Compute it per row so the Active/Inactive filter and the
-  // status badge both reflect exactly what buyers see. Looser rule (lib/unverified.js):
-  // only missing contact or location hide a listing; fields that fail the other
-  // checks are listed in _unverified and the buyer site shows "Contact seller for …".
+  // A property is LIVE when the buyer portal shows it: admin-active AND is_complete = true —
+  // the exact flag the website's marketplace, search and counts filter on
+  // (buyer lib/marketplace.js). So "Active" here is precisely what buyers see.
+  // validateListing still explains WHY a hidden row is hidden, and lists the fields the
+  // site shows as "Contact seller for …" (looser rule, lib/unverified.js).
   const loose = looseFor(cc);
   const annotate = (r) => {
     const v = validateListing(r, rate, cc);
     const { blocking, unverified } = splitReasons(v.reasons);
-    const complete = v.ok || (loose && blocking.length === 0);
+    const complete = r.is_complete === true;
+    const why = loose ? blocking : v.reasons;
     return {
       ...r, _incomplete: !complete, _live: r.admin_status === 'active' && complete,
-      _problems: complete ? [] : (loose ? blocking : v.reasons),   // why it's hidden from the site
-      _unverified: loose ? unverified : [],                          // shown as "Contact seller for …"
+      _problems: complete ? [] : (why.length ? why : ['not_on_site']),   // why it's hidden from the site
+      _unverified: loose ? unverified : [],                               // shown as "Contact seller for …"
     };
   };
 

@@ -23,6 +23,7 @@ const NAV = [
   ['/paid-listings', 'Paid listings', 'card'],
   ['/earnings', 'Earnings', 'card'],
   ['/marketing', 'Marketing', 'chart'],
+  ['/app-updates', 'App updates', 'phone'],
   ['/email-templates', 'Email templates', 'mail'],
   ['/runs', 'Runs', 'runs'],
 ];
@@ -99,6 +100,13 @@ function Icon({ name }) {
     return (
       <svg {...p}>
         <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+      </svg>
+    );
+  if (name === 'phone')
+    return (
+      <svg {...p}>
+        <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+        <path d="M11 18h2" />
       </svg>
     );
   if (name === 'card')

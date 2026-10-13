@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { listingUrl } from '@/lib/buyerSite';
 import { useRouter } from 'next/navigation';
 import { makeT, locale } from '@/lib/i18n';
+import { listedDate } from '@/lib/listedDate';
 import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
 import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
@@ -51,6 +52,7 @@ const LIST_MAX_HEIGHT = 640;
 export default function PropertiesView({ rows, count, tabCounts = null, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py' }) {
   const t = makeT(lang);
   const loc = locale(lang);
+  const listed = (r) => listedDate(r.created_at, { country, lang });
   const router = useRouter();
 
   const [search, setSearch] = useState(q);
@@ -236,6 +238,7 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                       )}
                     </div>
                     <div className="text-[11px] mt-2" style={{ color: T.textMuted }}>{specs(r)}</div>
+                    {listed(r) && <div suppressHydrationWarning className="text-[11px] mt-0.5" style={{ color: T.textMuted }} title={listed(r).full}>{t('prop.listedOn')} {listed(r).date}{listed(r).ago ? ` · ${listed(r).ago}` : ''}</div>}
                     {r._held ? (
                       <div className="flex gap-2 mt-3">
                         <QuarantineBtn cls="flex-1 text-center px-3 py-2 text-[13px] font-semibold" />
@@ -273,6 +276,7 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thUsd')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{currencyFor(country).prefix ? `Local (${currencyFor(country).prefix.trim()})` : ''}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSpecs')}</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thListed')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thStatus')}</th>
                   <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thActions')}</th>
                 </tr>
@@ -307,6 +311,10 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                         <td className="px-3 py-2 text-xs font-bold tracking-head whitespace-nowrap" style={{ color: T.textPrimary }}>{fmtUsd(money(r).usd, loc)}{rentSfx(r)}</td>
                         <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap" style={{ color: T.textSecondary }}>{localLine(r)}</td>
                         <td className="px-3 py-2 text-[11px] whitespace-nowrap" style={{ color: T.textMuted }}>{specs(r) || '—'}</td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap" title={listed(r)?.full}>
+                          <div style={{ color: T.textBody }}>{listed(r)?.date || '—'}</div>
+                          {listed(r)?.ago && <div suppressHydrationWarning className="text-[10.5px]" style={{ color: T.textMuted }}>{listed(r).ago}</div>}
+                        </td>
                         <td className="px-3 py-2">
                           {incomplete ? (
                             <span title={incompleteHint} className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: '#F5EAD5', color: '#8A5A12' }}>

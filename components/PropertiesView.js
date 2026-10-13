@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { listingUrl } from '@/lib/buyerSite';
 import { useRouter } from 'next/navigation';
 import { makeT, locale } from '@/lib/i18n';
 import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
@@ -109,7 +110,7 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
   });
 
   const ViewBtn = ({ r, cls }) => (
-    <a href={`/preview/${r.id}`} target="_blank" rel="noopener noreferrer" className={cls} style={{ borderRadius: '999px', border: `1px solid ${T.borderLight}`, color: T.textBody }}>{t('prop.view')}</a>
+    <a href={listingUrl(country, r.id)} target="_blank" rel="noopener noreferrer" className={cls} style={{ borderRadius: '999px', border: `1px solid ${T.borderLight}`, color: T.textBody }}>{t('prop.view')}</a>
   );
   const EditBtn = ({ r, cls }) => (
     <Link href={`/properties/${r.id}/edit`} className={cls} style={{ borderRadius: '999px', background: T.textPrimary, color: T.bgWhite }}>{t('prop.edit')}</Link>

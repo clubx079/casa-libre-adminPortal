@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -480,7 +481,7 @@ const UserActivityDetail = ({ user, onBack }) => {
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-medium" style={{ color: T.textSecondary }}>
-        <ChevronLeft className="w-4 h-4" /> Back to users
+        <ChevronLeft className="w-4 h-4" /> Back to analytics
       </button>
 
       <div className="bg-white p-5" style={CARD}>
@@ -972,7 +973,7 @@ const WhatsAppCard = () => {
 // "last 7 days" / "last 3 months" … for the summary's window (GEO_RANGES values).
 const rangeLabel = (d) => `last ${(GEO_RANGES.find((r) => r.v === d)?.l || `${d} days`)}`;
 
-const UsersAnalytics = () => {
+const UsersAnalytics = ({ deep = false, onDeepDone }) => {
   const [days, setDays] = useState(7);   // summary window (cards + funnel); default the last 7 days
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -982,6 +983,7 @@ const UsersAnalytics = () => {
   const [usersLoading, setUsersLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [resolveNote, setResolveNote] = useState('');
+  const [resolved, setResolved] = useState(false);   // the ?user= deep link has been looked up
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
   useEffect(() => { setPage(0); }, [users.length]);
@@ -1034,7 +1036,8 @@ const UsersAnalytics = () => {
         // keep the DB id so the user page can load their account + listings by id
         if (json.found && json.user) setSelected({ ...json.user, db_id: uid || '' });
         else setResolveNote('This user has no tracked PostHog activity yet.');
-      } catch { /* ignore */ }
+      } catch { setResolveNote('Couldn\'t load this user\'s activity right now. Please try again in a moment.'); }
+      finally { setResolved(true); }
     })();
   }, []);
 
@@ -1042,7 +1045,24 @@ const UsersAnalytics = () => {
     <div className="bg-white p-12 text-center" style={CARD}>{children}</div>
   );
 
-  if (selected) return <UserActivityDetail user={selected} onBack={() => setSelected(null)} />;
+  const back = () => { setSelected(null); if (deep && onDeepDone) onDeepDone(); };
+  if (selected) return <UserActivityDetail user={selected} onBack={back} />;
+
+  // Opened from Users → Activity: only a loader until THAT user's activity is ready —
+  // never the whole analytics page first.
+  if (deep) {
+    return (
+      <div className="space-y-4">
+        <button onClick={back} className="flex items-center gap-1.5 text-xs font-medium" style={{ color: T.textSecondary }}>
+          <ChevronLeft className="w-4 h-4" /> Back to analytics
+        </button>
+        {shell(!resolved ? <>
+          <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} />
+          <p className="text-sm mt-3" style={{ color: T.textSecondary }}>Loading this user&apos;s activity…</p>
+        </> : <p className="text-sm" style={{ color: T.textSecondary }}>{resolveNote || 'No activity found for this user.'}</p>)}
+      </div>
+    );
+  }
 
   if (loading && !data) {
     return shell(<>
@@ -1498,11 +1518,18 @@ const TABS = [
 ];
 
 export default function AnalyticsPage() {
+  const sp = useSearchParams();
+  // Users → Activity opens /analytics?user=…: show just that user's activity (loader first).
+  const [deep, setDeep] = useState(() => !!(sp?.get('user') || sp?.get('email')));
   const [tab, setTab] = useState('users');
   // Resend lists are rate-limited: load the email tab only once it is opened.
   const [emailsSeen, setEmailsSeen] = useState(false);
   useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
+
+  if (deep) {
+    return <UsersAnalytics deep onDeepDone={() => { try { window.history.replaceState(null, '', '/analytics'); } catch {} setDeep(false); }} />;
+  }
 
   return (
     <div className="space-y-5">

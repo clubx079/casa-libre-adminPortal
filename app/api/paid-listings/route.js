@@ -15,7 +15,7 @@ import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DE
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const TZ = { py: 'America/Asuncion', bo: 'America/La_Paz', uy: 'America/Montevideo', ve: 'America/Caracas' };
+const TZ = { py: 'America/Asuncion', bo: 'America/La_Paz', uy: 'America/Montevideo', ve: 'America/Caracas', sv: 'America/El_Salvador' };
 function monthStartIso(cc, now = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ[cc] || TZ.py, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(now).map((x) => [x.type, x.value]));
   const offset = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(now.getTime() / 1000) * 1000;

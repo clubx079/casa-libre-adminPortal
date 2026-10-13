@@ -9,7 +9,7 @@ import { T, CARD, PageHeader, Banner, Pill, fmtDate } from '@/components/automat
 import { PRODUCTS, SOURCES, sourceOf, periodRange, previousRange, filterRows, totals, productTable, series, topSellers, change, toCsv } from '@/lib/earnings';
 
 const usd = (n) => `US$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 })}`;
-const COUNTRY_NAME = { py: 'Paraguay', bo: 'Bolivia', uy: 'Uruguay', ve: 'Venezuela' };
+const COUNTRY_NAME = { py: 'Paraguay', bo: 'Bolivia', uy: 'Uruguay', ve: 'Venezuela', sv: 'El Salvador' };
 const PRODUCT_SHADE = { 'Extra listing': '#111111', 'Listing extension': '#5B5852', Verified: '#2A5B8A', 'Home page': '#0F6E56', Renewal: '#8A5A12' };
 const PERIODS = [['month', 'This month'], ['last_month', 'Last month'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['year', 'This year'], ['all', 'All time'], ['custom', 'Custom dates']];
 const label = (key, group) => {

@@ -412,7 +412,7 @@ export default function AutomationsPage() {
           enabled={xa.enabled} enabledAt={xa.enabled_at} busy={busy.dups}
           onToggle={toggleDups} dirty={xDirty}
           onSave={() => run('dups', 'save', () => put('dups', { template_id: xform.template_id }, 'Changes saved.'))}
-          footnote={`Repeat = every detail the same (type, rent/sale, price, currency, neighbourhood, city, areas, rooms, phone, description) AND half or more of the photos the same. Checked instantly when the listing is published. Off = repeats are published like any listing.${data.duplicates?.sent ? ` ${data.duplicates.sent.toLocaleString('en-US')} sent so far.` : ''}`}
+          footnote={`Repeat = every detail the same (type, rent/sale, price, currency, neighbourhood, city, areas, rooms, phone — the description may differ) AND half or more of the photos the same. Checked instantly when the listing is published. Off = repeats are published like any listing.${data.duplicates?.sent ? ` ${data.duplicates.sent.toLocaleString('en-US')} sent so far.` : ''}`}
         >
           <StepCard n={1} kind="Trigger" title="A user publishes a listing that repeats one of their own — it is held, not published" />
           <Connector />

@@ -290,7 +290,7 @@ export default function AutomationsPage() {
   const xDirty = !!(xa && xform && String(xform.template_id || '') !== String(xa.template_id || ''));
   const toggleDups = () => {
     const on = !xa.enabled;
-    if (on && !window.confirm('Switch "Same property listed twice" on?\n\nA user who publishes the exact same property again gets one email with a link to each copy and a button to My listings. Copies published before now are not emailed.')) return;
+    if (on && !window.confirm('Switch "Same property listed twice" on?\n\nA listing that repeats one of the user\'s own (same details + half or more of the same photos) is held as "Under review — possible duplicate" instead of published, and the user is emailed right away.')) return;
     run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
   };
 
@@ -408,13 +408,13 @@ export default function AutomationsPage() {
       {xa && xform ? (
         <AutomationCard
           title="Same property listed twice"
-          description="When a user publishes the exact same property more than once, emails them a link to each copy and a button to My listings, so they can delete the extras."
+          description="When a user publishes a listing that repeats one of their own, it is NOT published: it shows in My listings as “Under review — possible duplicate”, waits in Quarantine (Approve anyway publishes it) and the user gets this email right away."
           enabled={xa.enabled} enabledAt={xa.enabled_at} busy={busy.dups}
           onToggle={toggleDups} dirty={xDirty}
           onSave={() => run('dups', 'save', () => put('dups', { template_id: xform.template_id }, 'Changes saved.'))}
-          footnote={`“Exact same” = same type, rent/sale, price, currency, neighbourhood, city, areas, rooms, phone and description. One email per set of copies; checked every hour.${data.duplicates?.sent ? ` ${data.duplicates.sent.toLocaleString('en-US')} sent so far.` : ''}`}
+          footnote={`Repeat = every detail the same (type, rent/sale, price, currency, neighbourhood, city, areas, rooms, phone, description) AND half or more of the photos the same. Checked instantly when the listing is published. Off = repeats are published like any listing.${data.duplicates?.sent ? ` ${data.duplicates.sent.toLocaleString('en-US')} sent so far.` : ''}`}
         >
-          <StepCard n={1} kind="Trigger" title="A user publishes a listing identical to one of their own" />
+          <StepCard n={1} kind="Trigger" title="A user publishes a listing that repeats one of their own — it is held, not published" />
           <Connector />
           <StepCard n={2} kind="Email" title="Email with each copy's link and a My listings button">
             <TemplatePicker label="Email sent" value={xform.template_id} templates={data.templates} onChange={(v) => setXform((f) => ({ ...f, template_id: v }))} />

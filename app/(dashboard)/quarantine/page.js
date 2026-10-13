@@ -6,6 +6,7 @@ import { reasonLabel } from '@/lib/ingestLabels';
 import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
 import { currencyFor } from '@/lib/currency';
 import { FIXABLE, reasonValue, contactLine } from '@/lib/unverified';
+import { listingUrl } from '@/lib/buyerSite';
 
 const T = {
   textPrimary: '#111111',
@@ -267,6 +268,13 @@ export default function QuarantinePage() {
                           );
                         })}
                       </div>
+                      {(r.reasons || []).includes('duplicate') && p.duplicate_of && (
+                        <p className="mt-2 text-[11.5px]" style={{ color: T.textSecondary }} data-testid="q-duplicate-of">
+                          Same details and photos as the owner&apos;s{' '}
+                          <a href={listingUrl(country, p.duplicate_of)} target="_blank" rel="noreferrer" className="underline font-semibold">earlier listing</a>
+                          {' '}— held, not on the site.
+                        </p>
+                      )}
                       {(r.reasons || []).includes('images_rejected') && (
                         <div className="mt-2" data-testid="q-rejected-photos">
                           <div className="flex gap-1.5 flex-wrap">
@@ -322,9 +330,9 @@ export default function QuarantinePage() {
                         </a>
                       ) : (
                         <div className="inline-flex gap-1.5">
-                          {(r.reasons || []).includes('images_rejected') && (
+                          {((r.reasons || []).includes('images_rejected') || ((r.reasons || []).includes('duplicate') && String(r.external_id || '').startsWith('listing:'))) && (
                             <button onClick={() => act(r, 'approve')} disabled={busyId === r.id} data-testid="q-approve"
-                              title="The photos are fine: publish this listing as it is"
+                              title="It's fine: publish this listing as it is"
                               className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full transition-colors disabled:opacity-60 whitespace-nowrap"
                               style={{ background: T.textPrimary, color: '#fff' }}>
                               {busyId === r.id ? '…' : 'Approve anyway'}

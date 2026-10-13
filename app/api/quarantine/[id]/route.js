@@ -16,9 +16,10 @@ const ACTIONS = ['release', 'discard', 'approve'];
 // PATCH /api/quarantine/:id  { action: 'release' | 'discard' | 'approve' }
 // release -> promote the held payload into `properties` (active) + mark released.
 // discard -> mark discarded (payload stays for the record, never published).
-// approve -> a user's listing whose photos the AI check rejected ("images_rejected",
-//            external_id listing:<id>): the admin looked and it's fine → publish that
-//            listing as it is + mark released.
+// approve -> a user's listing whose photos the AI check rejected ("images_rejected") or
+//            that was held as a possible duplicate of another of their listings
+//            ("duplicate", the buyer portal's instant check) — external_id listing:<id>:
+//            the admin looked and it's fine → publish that listing as it is + mark released.
 async function handlePATCH(req, { params }) {
   const session = getSession();
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -38,7 +39,8 @@ async function handlePATCH(req, { params }) {
 
     if (body.action === 'approve') {
       const propertyId = row.payload?.property_id;
-      if (!(row.reasons || []).includes('images_rejected') || !propertyId) return NextResponse.json({ error: 'Only listings with rejected photos can be approved' }, { status: 400 });
+      const approvable = (row.reasons || []).includes('images_rejected') || ((row.reasons || []).includes('duplicate') && String(row.external_id || '').startsWith('listing:'));
+      if (!approvable || !propertyId) return NextResponse.json({ error: 'Only held user listings (rejected photos / possible duplicate) can be approved' }, { status: 400 });
       const [prop] = await select('properties', `select=id,raw_data&id=eq.${encodeURIComponent(propertyId)}&limit=1`);
       if (!prop) return NextResponse.json({ error: 'Listing not found (deleted by its owner?)' }, { status: 404 });
       const moderation = { ...(prop.raw_data?.moderation || {}), state: 'approved', approved_by: reviewer, approved_at: ts };

@@ -311,10 +311,10 @@ export default function UsersPage() {
                         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: T.textMuted }}><Circle className="w-3 h-3" /> Unverified</span>
                       )}
                     </td>
-                    {/* listings this user published; 5+ is where paid listing will start (LISTING_FREE_LIMIT) */}
+                    {/* listings this user published; flagged from the free limit on (LISTING_FREE_LIMIT, 3) */}
                     <td className="px-4 py-3 text-center text-xs">
                       {u.listings >= LISTING_FREE_LIMIT ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F5EAD5', color: '#8A5A12' }} title={`${LISTING_FREE_LIMIT}+ listings — over the free limit`}>{u.listings}</span>
+                        <span className="inline-block px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F5EAD5', color: '#8A5A12' }} title={`${LISTING_FREE_LIMIT}+ listings — at or over the free listings per month`}>{u.listings}</span>
                       ) : <span style={{ color: u.listings ? T.textBody : T.textMuted }}>{u.listings || 0}</span>}
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{fmtDate(u.created_at)}</td>

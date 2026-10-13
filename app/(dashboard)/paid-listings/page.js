@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { T, CARD, PageHeader, Banner, Pill, fmtDate, inputCls, btnPrimary } from '@/components/automations/ui';
 import { SIGNAL_LABEL } from '@/lib/paidListingsAdmin';
+import { templateOptionLabel } from '@/lib/templateEnglish';
+import { useEnglishNames } from '@/components/automations/useEnglishNames';
 
 function Field({ label, help, error, children }) {
   return (
@@ -37,6 +39,7 @@ export default function PaidListingsPage() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadErr, setLoadErr] = useState('');
+  const enNames = useEnglishNames(data?.templates); // pickers read "English (Spanish)"
 
   const take = (j) => {
     setData(j);
@@ -76,7 +79,7 @@ export default function PaidListingsPage() {
   const tplOptions = (cur) => (
     <>
       <option value="">— pick a template —</option>
-      {data.templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.is_active === false ? ' (inactive)' : ''}</option>)}
+      {data.templates.map((t) => <option key={t.id} value={t.id}>{templateOptionLabel(t.name, enNames[t.id])}{t.is_active === false ? ' (inactive)' : ''}</option>)}
     </>
   );
 

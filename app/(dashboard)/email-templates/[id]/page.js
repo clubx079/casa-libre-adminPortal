@@ -2,13 +2,18 @@
 // Email template editor — fields on the left, a live preview on the right rendered by
 // the SAME renderer the buyer portal sends with (lib/emailTemplateRender.js), inside
 // the Casa Libre frame, filled with sample data. /email-templates/new creates one.
+// Under the form, a read-only English version of the email for the team: the fixed
+// English of built-in templates (lib/templateEnglish.js) for text still as shipped,
+// else the translate route. Emails still go out in Spanish.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { renderTemplate, sampleVars, templateVars } from '@/lib/emailTemplateRender';
 import { BADGE_APPLE_PNG, BADGE_PLAY_PNG } from '@/lib/emailBadges';
 import { countryFrame, validateTemplate } from '@/lib/automationAdmin';
+import { fixedEnglish, TEMPLATE_FIELDS } from '@/lib/templateEnglish';
 import { T, CARD, PageHeader, Banner, PendingMigration, inputCls, btnPrimary, btnSecondary, fmtDate } from '@/components/automations/ui';
+import { useEnglishNames } from '@/components/automations/useEnglishNames';
 
 const EMPTY = { name: '', subject: '', heading: '', body: '', button_label: '', button_url: '', is_active: true };
 const FIELDS = ['subject', 'heading', 'body', 'button_label', 'button_url'];
@@ -22,11 +27,41 @@ function Label({ children, hint }) {
   );
 }
 
+// Read-only English of the email (name, subject, heading, body, button) so a team member
+// who doesn't read Spanish knows what it says. A field with no English shows why.
+function EnglishPanel({ name, en, state, form }) {
+  const missing = state === 'loading' ? 'Translating…' : '(no English version)';
+  const rows = [
+    ['Name', name === undefined ? (form.name ? 'Translating…' : '') : (name || (form.name ? '(no English version)' : ''))],
+    ['Subject', form.subject ? (en.subject ?? missing) : ''],
+    ['Heading', form.heading ? (en.heading ?? missing) : ''],
+    ['Body', form.body ? (en.body ?? missing) : ''],
+    ['Button', form.button_label ? (en.button_label ?? missing) : ''],
+  ].filter(([, v]) => v);
+  if (!rows.length) return null;
+  return (
+    <div className="p-5" style={CARD}>
+      <div className="flex items-baseline justify-between gap-2 mb-3">
+        <div className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>In English · read-only</div>
+        <div className="text-[11px]" style={{ color: T.textMuted }}>The email goes out in Spanish</div>
+      </div>
+      <dl className="space-y-2.5">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid grid-cols-[72px_1fr] gap-3">
+            <dt className="text-[12px] font-medium" style={{ color: T.textSecondary }}>{k}</dt>
+            <dd className="text-[13px] leading-relaxed whitespace-pre-wrap break-words" style={{ color: v === 'Translating…' || v === '(no English version)' ? T.textMuted : T.textBody }}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export default function TemplateEditor({ params }) {
   const router = useRouter();
   const isNew = params.id === 'new';
   const [form, setForm] = useState(EMPTY);
-  const [meta, setMeta] = useState({ key: null, usedBy: [], updated_at: null });
+  const [meta, setMeta] = useState({ key: null, name: '', usedBy: [], updated_at: null }); // name = as saved
   const [country, setCountry] = useState('py');
   const [loading, setLoading] = useState(!isNew);
   const [pending, setPending] = useState(false);
@@ -54,7 +89,7 @@ export default function TemplateEditor({ params }) {
         if (!isNew && j.row) {
           const r = j.row;
           setForm({ name: r.name || '', subject: r.subject || '', heading: r.heading || '', body: r.body || '', button_label: r.button_label || '', button_url: r.button_url || '', is_active: r.is_active !== false });
-          setMeta({ key: r.key, usedBy: r.usedBy || [], updated_at: r.updated_at });
+          setMeta({ key: r.key, name: r.name || '', usedBy: r.usedBy || [], updated_at: r.updated_at });
         }
       } catch (e) { if (alive) setNotice({ tone: 'error', text: String(e.message || e) }); }
       finally { if (alive) setLoading(false); }
@@ -90,9 +125,13 @@ export default function TemplateEditor({ params }) {
     requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(start + tag.length, start + tag.length); } });
   }
 
-  // Re-translate (after a short pause in typing) while the English preview is on.
+  // English of each text field: fixed when a built-in template's text is unchanged,
+  // otherwise translated (after a short pause in typing). Feeds the English panel and
+  // the "Preview in English".
+  const fixed = useMemo(() => fixedEnglish({ key: meta.key, ...form }), [meta.key, form.subject, form.heading, form.body, form.button_label]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needsTr = TEMPLATE_FIELDS.some((f) => fixed[f] === null && String(form[f] || '').trim());
   useEffect(() => {
-    if (!english) return undefined;
+    if (loading || !needsTr) { setTrState(''); return undefined; }
     let alive = true;
     setTrState('loading');
     const id = setTimeout(async () => {
@@ -106,9 +145,12 @@ export default function TemplateEditor({ params }) {
       } catch { if (alive) setTrState('error'); }
     }, 700);
     return () => { alive = false; clearTimeout(id); };
-  }, [english, form.subject, form.heading, form.body, form.button_label]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, needsTr, form.subject, form.heading, form.body, form.button_label]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const shown = english && tr ? { ...form, ...tr } : form;
+  const en = Object.fromEntries(TEMPLATE_FIELDS.map((f) => [f, fixed[f] ?? (needsTr ? tr?.[f] : null) ?? null]));
+  // English of the saved name (not re-translated on every keystroke).
+  const enName = useEnglishNames(isNew || loading ? [] : [{ id: 'this', key: meta.key, name: meta.name }]).this;
+  const shown = english ? { ...form, ...Object.fromEntries(Object.entries(en).filter(([, v]) => v != null)) } : form;
   const preview = useMemo(() => renderTemplate(shown, sampleVars, countryFrame(country, {
     appleSrc: `data:image/png;base64,${BADGE_APPLE_PNG}`,
     playSrc: `data:image/png;base64,${BADGE_PLAY_PNG}`,
@@ -133,7 +175,7 @@ export default function TemplateEditor({ params }) {
       if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
       setDirty(false);
       if (isNew) { router.replace(`/email-templates/${j.row.id}`); return; }
-      setMeta((m) => ({ ...m, updated_at: j.row?.updated_at || new Date().toISOString(), usedBy: j.row?.usedBy || m.usedBy }));
+      setMeta((m) => ({ ...m, name: form.name, updated_at: j.row?.updated_at || new Date().toISOString(), usedBy: j.row?.usedBy || m.usedBy }));
       setNotice({ tone: 'success', text: 'Saved.' });
     } catch (e) { setNotice({ tone: 'error', text: e.message }); }
     finally { setBusy(''); }
@@ -206,67 +248,72 @@ export default function TemplateEditor({ params }) {
         <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-          {/* Form */}
-          <div className="p-5 space-y-4" style={CARD}>
-            <div>
-              <Label>Template name</Label>
-              <input {...fieldProps('name')} placeholder="e.g. First listing — gift" />
-              <Err k="name" />
-            </div>
-            <div>
-              <Label hint="what people see in their inbox">Subject</Label>
-              <input {...fieldProps('subject')} placeholder="{{name}}, tu propiedad está en la portada" />
-              <Err k="subject" />
-            </div>
-            <div>
-              <Label>Heading</Label>
-              <input {...fieldProps('heading')} placeholder="Un regalo por publicar con nosotros" />
-              <Err k="heading" />
-            </div>
-            <div>
-              <Label hint="blank line = new paragraph · **bold** · [text](https://…) · ![photo](https://…)">Body</Label>
-              <textarea {...fieldProps('body')} rows={9} className={`${fieldProps('body').className} leading-relaxed`} placeholder={'Hola {{name}},\n\nGracias por publicar…'} />
-              <Err k="body" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-4">
+            {/* Form */}
+            <div className="p-5 space-y-4" style={CARD}>
               <div>
-                <Label hint="optional">Button text</Label>
-                <input {...fieldProps('button_label')} placeholder="Extender por {{price}}" />
-                <Err k="button_label" />
+                <Label>Template name</Label>
+                <input {...fieldProps('name')} placeholder="e.g. First listing — gift" />
+                <Err k="name" />
               </div>
               <div>
-                <Label hint="a link variable or https://">Button link</Label>
-                <input {...fieldProps('button_url')} placeholder="{{extend_url}}" />
-                <Err k="button_url" />
+                <Label hint="what people see in their inbox">Subject</Label>
+                <input {...fieldProps('subject')} placeholder="{{name}}, tu propiedad está en la portada" />
+                <Err k="subject" />
               </div>
-            </div>
-
-            <div>
-              <Label hint="click to insert where your cursor is">Variables</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {templateVars.map((v) => (
-                  <button key={v.key} type="button" onClick={() => insertVar(v.key)} title={`${v.label} — e.g. ${v.sample}`}
-                    className="text-[11px] font-mono px-2 py-1 rounded-full border transition-colors hover:bg-ink/5"
-                    style={{ borderColor: T.borderLight, color: T.textBody }}>
-                    {`{{${v.key}}}`}
-                  </button>
-                ))}
+              <div>
+                <Label>Heading</Label>
+                <input {...fieldProps('heading')} placeholder="Un regalo por publicar con nosotros" />
+                <Err k="heading" />
               </div>
+              <div>
+                <Label hint="blank line = new paragraph · **bold** · [text](https://…) · ![photo](https://…)">Body</Label>
+                <textarea {...fieldProps('body')} rows={9} className={`${fieldProps('body').className} leading-relaxed`} placeholder={'Hola {{name}},\n\nGracias por publicar…'} />
+                <Err k="body" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label hint="optional">Button text</Label>
+                  <input {...fieldProps('button_label')} placeholder="Extender por {{price}}" />
+                  <Err k="button_label" />
+                </div>
+                <div>
+                  <Label hint="a link variable or https://">Button link</Label>
+                  <input {...fieldProps('button_url')} placeholder="{{extend_url}}" />
+                  <Err k="button_url" />
+                </div>
+              </div>
+
+              <div>
+                <Label hint="click to insert where your cursor is">Variables</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {templateVars.map((v) => (
+                    <button key={v.key} type="button" onClick={() => insertVar(v.key)} title={`${v.label} — e.g. ${v.sample}`}
+                      className="text-[11px] font-mono px-2 py-1 rounded-full border transition-colors hover:bg-ink/5"
+                      style={{ borderColor: T.borderLight, color: T.textBody }}>
+                      {`{{${v.key}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-[13px]" style={{ color: T.textBody }}>
+                <input type="checkbox" checked={form.is_active} onChange={set('is_active')} />
+                Active — when off, automations skip this email
+              </label>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button onClick={save} disabled={!!busy} className={btnPrimary}>{busy === 'save' ? 'Saving…' : isNew ? 'Create template' : 'Save'}</button>
+                {!isNew && <button onClick={sendTest} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }}>{busy === 'test' ? 'Sending…' : 'Send test'}</button>}
+                {!isNew && <button onClick={duplicate} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }}>Duplicate</button>}
+                {canDelete && <button onClick={del} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.danger, color: T.danger }}>Delete</button>}
+                {dirty && <span className="text-[11px]" style={{ color: T.textMuted }}>Unsaved changes</span>}
+              </div>
+              {!isNew && <p className="text-[11px]" style={{ color: T.textMuted }}>“Send test” uses sample data and only goes to the team test inbox, never to a real user.</p>}
             </div>
 
-            <label className="flex items-center gap-2 text-[13px]" style={{ color: T.textBody }}>
-              <input type="checkbox" checked={form.is_active} onChange={set('is_active')} />
-              Active — when off, automations skip this email
-            </label>
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button onClick={save} disabled={!!busy} className={btnPrimary}>{busy === 'save' ? 'Saving…' : isNew ? 'Create template' : 'Save'}</button>
-              {!isNew && <button onClick={sendTest} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }}>{busy === 'test' ? 'Sending…' : 'Send test'}</button>}
-              {!isNew && <button onClick={duplicate} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }}>Duplicate</button>}
-              {canDelete && <button onClick={del} disabled={!!busy} className={btnSecondary} style={{ borderColor: T.danger, color: T.danger }}>Delete</button>}
-              {dirty && <span className="text-[11px]" style={{ color: T.textMuted }}>Unsaved changes</span>}
-            </div>
-            {!isNew && <p className="text-[11px]" style={{ color: T.textMuted }}>“Send test” uses sample data and only goes to the team test inbox, never to a real user.</p>}
+            {/* English version — read-only, for the team */}
+            <EnglishPanel name={enName} en={en} state={trState} form={{ ...form, name: meta.name }} />
           </div>
 
           {/* Preview */}
@@ -276,7 +323,7 @@ export default function TemplateEditor({ params }) {
                 <div className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>
                   {english ? 'English preview · not saved, emails go out in Spanish' : 'Preview · sample data'}
                 </div>
-                <button type="button" onClick={() => { setEnglish((v) => !v); if (english) setTrState(''); }}
+                <button type="button" onClick={() => setEnglish((v) => !v)}
                   className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors"
                   style={english ? { background: T.primary, color: '#fff', borderColor: T.primary } : { background: T.bgWhite, color: T.textBody, borderColor: T.borderLight }}>
                   {english ? 'Back to Spanish' : 'Preview in English'}

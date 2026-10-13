@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
+import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
+import { useEnglishNames } from '@/components/automations/useEnglishNames';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -131,8 +133,10 @@ function DraftSteps({ steps, errors, onChange }) {
 }
 
 // Pick the template an email step sends; shows its subject and an Edit link.
+// Options read "English (Spanish)" — the emails themselves go out in Spanish.
 function TemplatePicker({ label, value, templates, onChange, error }) {
   const chosen = templates.find((t) => String(t.id) === String(value));
+  const enNames = useEnglishNames(templates);
   return (
     <div className="rounded-[12px] p-3" style={{ background: T.bgSurface, border: `1px solid ${error ? T.danger : T.borderLight}` }}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -143,11 +147,14 @@ function TemplatePicker({ label, value, templates, onChange, error }) {
         className="w-full px-3 py-2 rounded-[10px] border text-[13px] font-medium outline-none focus:border-ink/60"
         style={{ borderColor: 'rgba(17,17,17,.2)', color: T.textPrimary, background: T.bgWhite }}>
         <option value="">Choose a template…</option>
-        {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.is_active ? '' : ' (off)'}</option>)}
+        {templates.map((t) => <option key={t.id} value={t.id}>{templateOptionLabel(t.name, enNames[t.id])}{t.is_active ? '' : ' (off)'}</option>)}
       </select>
       <p className="text-[11px] mt-1.5 leading-snug truncate" style={{ color: chosen ? T.textBody : T.textMuted }} title={chosen?.subject || ''}>
         {chosen ? <>Subject: {chosen.subject}</> : 'No email will be sent until you choose one.'}
       </p>
+      {chosen && fixedEnglish(chosen).subject && fixedEnglish(chosen).subject !== chosen.subject && (
+        <p className="text-[11px] leading-snug truncate" style={{ color: T.textMuted }} title={fixedEnglish(chosen).subject}>In English: {fixedEnglish(chosen).subject}</p>
+      )}
       {chosen && !chosen.is_active && <p className="text-[11px] mt-1" style={{ color: T.warning }}>This template is switched off, so this email is skipped.</p>}
       {error ? <p className="text-[11px] mt-1" style={{ color: T.danger }}>{error}</p> : null}
     </div>

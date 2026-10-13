@@ -1,11 +1,14 @@
 'use client';
 // Email templates — list. Built-in templates (used by the automation) can be edited
-// but not deleted; custom templates can be created, duplicated and deleted.
+// but not deleted; custom templates can be created, duplicated and deleted. Each name
+// and subject shows its English version underneath (the emails stay in Spanish).
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail } from 'lucide-react';
 import { T, CARD, PageHeader, Pill, Banner, PendingMigration, btnPrimary, btnSecondary } from '@/components/automations/ui';
+import { useEnglishNames } from '@/components/automations/useEnglishNames';
+import { fixedEnglish } from '@/lib/templateEnglish';
 
 export default function EmailTemplatesPage() {
   const router = useRouter();
@@ -14,6 +17,7 @@ export default function EmailTemplatesPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const enNames = useEnglishNames(rows);
 
   async function load() {
     setLoading(true); setError('');
@@ -88,9 +92,15 @@ export default function EmailTemplatesPage() {
                   <tr key={t.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
                     <td className="px-4 py-3 max-w-[240px]">
                       <Link href={`/email-templates/${t.id}`} className="text-[13px] font-medium hover:underline" style={{ color: T.textPrimary }}>{t.name}</Link>
+                      {enNames[t.id]
+                        ? (enNames[t.id].toLowerCase() !== String(t.name).trim().toLowerCase() && <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>{enNames[t.id]}</div>)
+                        : enNames[t.id] === null && <div className="text-[11px] mt-0.5 italic" style={{ color: T.textMuted }}>(no English version)</div>}
                       <div className="mt-0.5">{t.key ? <span className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>Built-in</span> : <span className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>Custom</span>}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs max-w-[280px] truncate" style={{ color: T.textBody }} title={t.subject}>{t.subject}</td>
+                    <td className="px-4 py-3 text-xs max-w-[280px]" style={{ color: T.textBody }}>
+                      <div className="truncate" title={t.subject}>{t.subject}</div>
+                      {fixedEnglish(t).subject && fixedEnglish(t).subject !== t.subject && <div className="truncate mt-0.5" style={{ color: T.textMuted }} title={fixedEnglish(t).subject}>{fixedEnglish(t).subject}</div>}
+                    </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{t.usedBy.length ? t.usedBy.join(', ') : <span style={{ color: T.textMuted }}>—</span>}</td>
                     <td className="px-4 py-3">{t.is_active ? <Pill tone="success">Active</Pill> : <Pill>Off</Pill>}</td>
                     <td className="px-4 py-3 text-right">

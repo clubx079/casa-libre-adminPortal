@@ -21,6 +21,8 @@ const NAV = [
   ['/leads', 'Leads', 'users'],
   ['/automations', 'Automations', 'bolt'],
   ['/paid-listings', 'Paid listings', 'card'],
+  ['/earnings', 'Earnings', 'card'],
+  ['/marketing', 'Marketing', 'chart'],
   ['/email-templates', 'Email templates', 'mail'],
   ['/runs', 'Runs', 'runs'],
 ];

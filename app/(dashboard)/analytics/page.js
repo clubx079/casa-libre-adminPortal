@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -38,6 +39,38 @@ const selectStyle = {
   padding: '6px 12px',
   outline: 'none',
 };
+
+// One section's date range: follows the page's master range until the section
+// picks its own; moving the master again resets every section back to it.
+function useSectionRange(master = DEFAULT_DAYS) {
+  const [override, setOverride] = useState(null);
+  const days = sectionDays(master, override);
+  return {
+    days, master, custom: days !== master,
+    setDays: (d) => setOverride(pickSection(master, d)),
+    reset: () => setOverride(null),
+  };
+}
+
+// A section's own range picker. When it differs from the page range it says so,
+// and the tag puts it back on the page range in one click.
+function RangeSelect({ range, options = RANGES, ariaLabel = 'Range', className = '' }) {
+  const { days, master, custom, setDays, reset } = range;
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${className}`}>
+      {custom ? (
+        <button type="button" onClick={reset} title={`This section shows ${rangeName(days, options)}; the page range is ${rangeName(master)}. Click to follow the page range again.`}
+          className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: T.warningSurface, color: T.warning }}>
+          Custom · page is {rangeName(master)} ×
+        </button>
+      ) : null}
+      <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label={ariaLabel}
+        style={custom ? { ...selectStyle, borderColor: T.warning, color: T.warning } : selectStyle}>
+        {optionsWith(options, days).map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+      </select>
+    </span>
+  );
+}
 
 const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home];
 
@@ -612,14 +645,14 @@ function arcPath(cx, cy, rO, rI, start, end) {
   const [ix2, iy2] = polar(cx, cy, rI, end), [ix1, iy1] = polar(cx, cy, rI, start);
   return `M ${ox1} ${oy1} A ${rO} ${rO} 0 ${large} 1 ${ox2} ${oy2} L ${ix2} ${iy2} A ${rI} ${rI} 0 ${large} 0 ${ix1} ${iy1} Z`;
 }
-const GEO_RANGES = [{ v: 7, l: '7 days' }, { v: 30, l: '30 days' }, { v: 90, l: '3 months' }, { v: 180, l: '6 months' }, { v: 365, l: '12 months' }];
 // Where visitors came from, first touch. Our own outbound links carry a utm via
 // /r/<slug>; anything with no utm and no referrer is 'direct', and organic Google
 // arrives as a google referrer. Anonymous visitors are counted by IP, same as the
 // rest of this page, so a source is recorded whether or not they sign up.
-function SourcesCard() {
+function SourcesCard({ master }) {
   const [rows, setRows] = useState([]);
-  const [days, setDays] = useState(7);
+  const range = useSectionRange(master);
+  const { days } = range;
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -665,13 +698,7 @@ function SourcesCard() {
     <div className="bg-white p-5" style={CARD}>
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Where visitors come from</h2>
-        <select value={days} onChange={(e) => setDays(Number(e.target.value))}
-          className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
-          <option value={7}>7 days</option>
-          <option value={30}>30 days</option>
-          <option value={90}>90 days</option>
-          <option value={365}>12 months</option>
-        </select>
+        <RangeSelect range={range} ariaLabel="Sources range" />
       </div>
       <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
         first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct
@@ -753,9 +780,10 @@ function SourcesCard() {
 // AI answer engines on their own. ChatGPT tags its own outbound links
 // (?utm_source=chatgpt.com), so this traffic is measurable without us placing
 // anything — and which pages it lands on says what the engines are recommending.
-function AiCard() {
+function AiCard({ master }) {
   const [data, setData] = useState(null);
-  const [days, setDays] = useState(7);
+  const range = useSectionRange(master);
+  const { days } = range;
   useEffect(() => {
     let alive = true;
     fetch(`/api/analytics/posthog?type=ai&days=${days}`).then((r) => r.json())
@@ -770,13 +798,7 @@ function AiCard() {
     <div className="bg-white p-5" style={CARD}>
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>AI answer engines</h2>
-        <select value={days} onChange={(e) => setDays(Number(e.target.value))}
-          className="text-[11px] px-2 py-1 border" style={{ borderColor: T.borderLight, color: T.textBody }}>
-          <option value={7}>7 days</option>
-          <option value={30}>30 days</option>
-          <option value={90}>90 days</option>
-          <option value={365}>12 months</option>
-        </select>
+        <RangeSelect range={range} ariaLabel="AI engines range" />
       </div>
       <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
         visitors sent by ChatGPT, Perplexity, Gemini, Claude and Copilot — they tag their own links
@@ -807,13 +829,14 @@ function AiCard() {
   );
 }
 
-const GeoDonut = () => {
+const GeoDonut = ({ master }) => {
   const [level, setLevel] = useState('countries');
   const [country, setCountry] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState(-1);
-  const [days, setDays] = useState(7);
+  const range = useSectionRange(master);
+  const { days } = range;
   const load = async (c = '', d = days) => {
     setLoading(true);
     try {
@@ -824,9 +847,9 @@ const GeoDonut = () => {
       setCountry(c);
     } catch { setRows([]); } finally { setLoading(false); }
   };
-  useEffect(() => { load('', days); }, []);
-  // Re-fetch the current view (country or cities) when the range changes.
-  const onRange = (d) => { setDays(d); load(level === 'cities' ? country : '', d); };
+  // First load, and again on every range change (the page's master range or
+  // this card's own pick), keeping the current view: countries or cities.
+  useEffect(() => { load(level === 'cities' ? country : '', days); }, [days]);
   const total = rows.reduce((s, r) => s + r.visitors, 0);
   const top = rows.slice(0, 7);
   const otherRows = rows.slice(7);
@@ -861,9 +884,7 @@ const GeoDonut = () => {
         )}
         <MapPin className="w-4 h-4" style={{ color: T.primary }} />
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{level === 'cities' ? `${country} — cities` : 'Visitors by country'}</h2>
-        <select value={days} onChange={(e) => onRange(Number(e.target.value))} style={selectStyle} className="ml-auto">
-          {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-        </select>
+        <RangeSelect range={range} ariaLabel="Visitors by country range" className="ml-auto" />
       </div>
       {level === 'countries' && !loading && arcs.length > 0 && (
         <p className="text-[10px] mb-2" style={{ color: T.textMuted }}>Click a slice to drill into that country&apos;s cities.</p>
@@ -907,8 +928,9 @@ const GeoDonut = () => {
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── WhatsApp contacts: taps on a listing's WhatsApp button (website + app) ──
 
-const WhatsAppCard = () => {
-  const [days, setDays] = useState(7);
+const WhatsAppCard = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -940,9 +962,7 @@ const WhatsAppCard = () => {
         <div className="ml-auto flex items-center gap-2">
           {loading && data ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
           <a href="/utm-links?tab=contacts" className="text-[11px] font-medium" style={{ color: T.textSecondary }}>All contacts →</a>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="WhatsApp range" style={selectStyle} className="text-[11px] px-2.5 py-1">
-            {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-          </select>
+          <RangeSelect range={range} ariaLabel="WhatsApp range" />
         </div>
       </div>
 
@@ -970,11 +990,10 @@ const WhatsAppCard = () => {
   );
 };
 
-// "last 7 days" / "last 3 months" … for the summary's window (GEO_RANGES values).
-const rangeLabel = (d) => `last ${(GEO_RANGES.find((r) => r.v === d)?.l || `${d} days`)}`;
-
-const UsersAnalytics = ({ deep = false, onDeepDone }) => {
-  const [days, setDays] = useState(7);   // summary window (cards + funnel); default the last 7 days
+// `master` is the page's date range: the summary (cards + funnel) always shows
+// it, and each card below starts from it but can pick its own.
+const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => {
+  const days = master;   // summary window (cards + funnel)
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1102,14 +1121,6 @@ const UsersAnalytics = ({ deep = false, onDeepDone }) => {
       {resolveNote && (
         <div className="text-xs px-4 py-2.5 rounded-full" style={{ background: T.primarySurface, color: T.primary }}>{resolveNote}</div>
       )}
-      {/* Window for the stat cards + funnel (the cards below have their own) */}
-      <div className="flex items-center justify-end gap-2">
-        {loading ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
-        <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Time range"
-          className="text-[12px] px-2.5 py-1.5 border rounded-full bg-white" style={{ borderColor: T.borderLight, color: T.textBody }}>
-          {GEO_RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-        </select>
-      </div>
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ opacity: loading ? 0.55 : 1, transition: 'opacity .15s' }}>
         {cards.map(({ label, value, Icon, sub }) => (
@@ -1158,14 +1169,14 @@ const UsersAnalytics = ({ deep = false, onDeepDone }) => {
           <p className="text-xs mt-3" style={{ color: T.textMuted }}>No events yet — data appears once users use the site.</p>
         )}
       </div>
-        <GeoDonut />
+        <GeoDonut master={master} />
       </div>
 
-      <WhatsAppCard />
+      <WhatsAppCard master={master} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SourcesCard />
-        <AiCard />
+        <SourcesCard master={master} />
+        <AiCard master={master} />
       </div>
 
       {/* Users — click to drill into activity */}
@@ -1250,8 +1261,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone }) => {
 // Deliberately two numbers per row: `views` counts every opening (so a listing
 // someone keeps coming back to stands out) and `visitors` counts distinct people
 // (so one person refreshing does not read as demand).
-const PropertyAnalytics = () => {
-  const [days, setDays] = useState(7);
+const PropertyAnalytics = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
   const [limit, setLimit] = useState(20);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1285,13 +1297,7 @@ const PropertyAnalytics = () => {
               <option value={50}>Top 50</option>
               <option value={100}>Top 100</option>
             </select>
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
-              <option value={7}>7 days</option>
-              <option value={30}>30 days</option>
-              <option value={90}>90 days</option>
-              <option value={180}>6 months</option>
-              <option value={365}>12 months</option>
-            </select>
+            <RangeSelect range={range} ariaLabel="Most viewed range" />
           </div>
         </div>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
@@ -1360,8 +1366,10 @@ const PropertyAnalytics = () => {
 
 // ── Email analytics (Resend): what the site sent for the ACTIVE country, and
 // what happened to it. Counts come from each email's latest Resend status.
-const EmailAnalytics = () => {
-  const [days, setDays] = useState(7);
+const EMAIL_RANGES = [{ v: 1, l: '24 hours' }, ...RANGES];
+const EmailAnalytics = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1387,12 +1395,7 @@ const EmailAnalytics = () => {
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
           <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Emails sent via Resend</h2>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={selectStyle}>
-            <option value={1}>24 hours</option>
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
-          </select>
+          <RangeSelect range={range} options={EMAIL_RANGES} ariaLabel="Emails range" />
         </div>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
           {data ? `from ${data.domain} · ` : ''}each email counted once, by its latest status
@@ -1522,6 +1525,9 @@ export default function AnalyticsPage() {
   // Users → Activity opens /analytics?user=…: show just that user's activity (loader first).
   const [deep, setDeep] = useState(() => !!(sp?.get('user') || sp?.get('email')));
   const [tab, setTab] = useState('users');
+  // The master date range: drives every section on every tab. Moving it resets
+  // any section that had picked its own range.
+  const [master, setMaster] = useState(DEFAULT_DAYS);
   // Resend lists are rate-limited: load the email tab only once it is opened.
   const [emailsSeen, setEmailsSeen] = useState(false);
   useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
@@ -1538,7 +1544,7 @@ export default function AnalyticsPage() {
         <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>{active.sub}</p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {TABS.map((t) => {
           const on = t.key === tab;
           return (
@@ -1556,12 +1562,19 @@ export default function AnalyticsPage() {
             </button>
           );
         })}
+        <label className="ml-auto flex items-center gap-2">
+          <span className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Date range · whole page</span>
+          <select value={master} onChange={(e) => setMaster(Number(e.target.value))} aria-label="Date range for the whole page"
+            className="text-[12px] px-2.5 py-1.5 border rounded-full bg-white" style={{ borderColor: T.borderLight, color: T.textBody }}>
+            {RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+          </select>
+        </label>
       </div>
 
       {/* Both stay mounted: switching tabs should not re-run every PostHog query. */}
-      <div hidden={tab !== 'users'}><UsersAnalytics /></div>
-      <div hidden={tab !== 'properties'}><PropertyAnalytics /></div>
-      <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics /> : null}</div>
+      <div hidden={tab !== 'users'}><UsersAnalytics master={master} /></div>
+      <div hidden={tab !== 'properties'}><PropertyAnalytics master={master} /></div>
+      <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics master={master} /> : null}</div>
     </div>
   );
 }

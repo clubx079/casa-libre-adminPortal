@@ -38,12 +38,14 @@ for (const a of parseCsv(fs.readFileSync(path.join(dir, 'ubicaprop-agents.csv'),
   if (r) rows.push(r);
 }
 for (const g of parseCsv(fs.readFileSync(path.join(dir, 'ubicaprop-agencies.csv'), 'utf8'))) {
-  const r = toLeadRow({ name: g.agency, phone: g.agency_phone, whatsapp: g.agency_phone, email: (g.agent_emails_sample || '').split(';')[0], location: loc(g.city, g.department), profile_url: g.profile_url }, { source: 'ubicaprop', category: 'agency' });
-  if (r) { r.notes = `${g.agents_on_ubicaprop} agents on Ubicaprop`; rows.push(r); }
+  // The agency's OWN contact block (address / email / phone) — never one of its agents'.
+  const r = toLeadRow({ name: g.agency, phone: g.phone, whatsapp: g.mobile || g.phone, email: g.email, location: g.address || loc(g.city, g.department), profile_url: g.profile_url }, { source: 'ubicaprop', category: 'agency' });
+  if (r) { r.notes = [`${g.agents_on_ubicaprop} agents on Ubicaprop`, g.website, g.social].filter(Boolean).join(' · '); rows.push(r); }
 }
 const hc = path.join(here, 'data', 'holacasa-desarrolladoras.json');
 if (fs.existsSync(hc)) for (const d of JSON.parse(fs.readFileSync(hc, 'utf8'))) { const r = toLeadRow(d, { source: 'holacasa', category: 'developer' }); if (r) rows.push(r); }
 
+for (const r of rows) if (!('notes' in r)) r.notes = null;   // bulk insert takes its columns from the first row
 const by = rows.reduce((m, r) => ((m[r.category] = (m[r.category] || 0) + 1), m), {});
 console.log(`${rows.length} rows`, by, apply ? '→ inserting' : '(dry run)');
 if (!apply) process.exit(0);

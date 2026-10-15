@@ -4,12 +4,15 @@
 // PUT /api/automations → change settings / switch on-off (switching on stamps
 //                        enabled_at). Body { id: 'listing_views_milestone' | 'draft_reminders', … }
 //                        targets those two; no id = the first-listing automation.
+//                        id 'no_listing_nudge' (signed up, never listed): the first save
+//                        creates its row + two default emails (lib/noListingAdmin.js).
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, DUPLICATES_AUTOMATION_ID, validateSettings, validateViewsSettings, validateDraftSettings, validateDuplicateSettings, automationStats, draftStepCounts } from '@/lib/automationAdmin';
 import { dbError, q } from '@/lib/automationDb';
+import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoListing } from '@/lib/noListingAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +57,13 @@ async function payload(db) {
       duplicates = { automation: xa, sent: sent.count || 0 };
     }
   } catch { duplicates = null; }
+  // "Signed up but never listed" — no row until the first save on the card (defaults shown).
+  let noListing = null;
+  try {
+    const [na] = await db.select('automations', `select=*&id=eq.${NO_LISTING_AUTOMATION_ID}&limit=1`);
+    const logs = na ? await db.select('email_log', `select=dedupe_key&automation_id=eq.${NO_LISTING_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=10000`).catch(() => []) : [];
+    noListing = { setUp: !!na, settings: noListingConfig(na || null), sent: logs.length, perStep: noListingStepCounts(logs) };
+  } catch { noListing = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -72,6 +82,7 @@ async function payload(db) {
     views,
     drafts,
     duplicates,
+    noListing,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -127,6 +138,12 @@ export async function PUT(req) {
       const v = validateDuplicateSettings(patch, cur);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       await db.update('automations', `id=eq.${q(DUPLICATES_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === NO_LISTING_AUTOMATION_ID) {
+      const { id, ...patch } = body;
+      const v = await saveNoListing(db, patch);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }
     const [current] = await db.select('automations', `select=*&id=eq.${AUTOMATION_ID}&limit=1`);

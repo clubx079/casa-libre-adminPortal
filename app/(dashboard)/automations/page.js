@@ -2,7 +2,8 @@
 // Automations — the built-in flows for the active country, each laid out as one
 // horizontal row of steps: "first listing → free home display" (trigger → wait → gift
 // email → ending-soon email), "listing getting views" and "unfinished draft reminders"
-// (trigger → reminder steps → email). Each email step picks which template it sends.
+// (trigger → reminder steps → email), and "signed up, no listing yet" (trigger → wait →
+// welcome email → optional second email). Each email step picks which template it sends.
 // The buyer portal's hourly cron (/api/cron/automations) does the sending; this page
 // only configures it.
 import { useEffect, useState } from 'react';
@@ -204,6 +205,7 @@ export default function AutomationsPage() {
   const [vform, setVform] = useState(null);
   const [dform, setDform] = useState(null);
   const [xform, setXform] = useState(null);
+  const [nform, setNform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -220,6 +222,8 @@ export default function AutomationsPage() {
     setDform(d ? { steps: stepsFromHours(d.milestones), template_id: d.template_id || '' } : null);
     const x = j.duplicates?.automation;
     setXform(x ? { template_id: x.template_id || '' } : null);
+    const n = j.noListing?.settings;
+    setNform(n ? { days: n.days, secondAfter: n.secondAfter, templateId: n.templateId, reminderTemplateId: n.reminderTemplateId } : null);
   }
 
   useEffect(() => {
@@ -236,7 +240,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -300,6 +304,19 @@ export default function AutomationsPage() {
     if (on && !window.confirm('Switch "Same property listed twice" on?\n\nA listing that repeats one of the user\'s own (same details + half or more of the same photos) is held as "Under review — possible duplicate" instead of published, and the user is emailed right away.')) return;
     run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
   };
+
+  const nl = data.noListing;
+  const ns = nl?.settings;
+  const e5 = errors.nolist || {};
+  const nDirty = !!(ns && nform && (['days', 'secondAfter', 'templateId', 'reminderTemplateId'].some((k) => String(nform[k] ?? '') !== String(ns[k] ?? ''))));
+  const nHasSecond = !!(nform && nform.secondAfter !== '' && Number(nform.secondAfter) > 0);
+  const toggleNoListing = () => {
+    const on = !ns.enabled;
+    if (on && !window.confirm(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`)) return;
+    run('nolist', 'toggle', () => put('nolist', { enabled: on }, on ? '“Signed up, no listing yet” is on.' : '“Signed up, no listing yet” is off.'));
+  };
+  const nPerStep = nl?.perStep || {};
+  const nStats = nl?.sent ? ` ${nl.sent.toLocaleString('en-US')} sent so far${nPerStep['2'] ? ` (welcome: ${nPerStep['1'] || 0} · second: ${nPerStep['2']})` : ''}.` : '';
 
   return (
     <div className="space-y-5">
@@ -428,6 +445,36 @@ export default function AutomationsPage() {
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
               Use <span className="font-mono">{'{{listing_links}}'}</span> for the links to each copy and <span className="font-mono">{'{{my_listings_url}}'}</span> for the button.
             </p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {ns && nform ? (
+        <AutomationCard
+          title="Signed up, no listing yet"
+          description="Welcomes verified users who created an account but never posted a listing — “Welcome to Casa Libre — post your first listing for free now” — with a button to the sell wizard."
+          enabled={ns.enabled} enabledAt={ns.enabledAt} busy={busy.nolist}
+          onToggle={toggleNoListing} dirty={nDirty || !nl.setUp}
+          onSave={() => run('nolist', 'save', () => put('nolist', nform, nl.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
+          footnote={`Skips anyone with a listing (any status) or an unfinished draft — drafts get the draft reminders instead. Each email goes once per person, in the daytime (9:00–21:00 local); one more than 7 days late is skipped.${nl.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${nStats}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A verified user signs up and hasn’t posted a listing" />
+          <Connector />
+          <StepCard n={2} kind="Wait" title="Send the email this many days after sign-up">
+            <DayField value={nform.days} onChange={(v) => setNform((f) => ({ ...f, days: v }))} min={1} max={60} error={e5.days} suffix="days after sign-up" />
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Email" title="Welcome email with a button to publish for free">
+            <TemplatePicker label="Email sent" value={nform.templateId} templates={data.templates} onChange={(v) => setNform((f) => ({ ...f, templateId: v }))} error={e5.templateId} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              The button link is <span className="font-mono">{'{{publish_url}}'}</span> — the sell wizard, tagged utm_campaign=no_listing_nudge.
+            </p>
+          </StepCard>
+          <Connector />
+          <StepCard n={4} kind="Optional" title="Second email if they still haven’t listed">
+            <DayField value={nform.secondAfter} onChange={(v) => setNform((f) => ({ ...f, secondAfter: v }))} min={0} max={59} error={e5.secondAfter} suffix="more days later" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>{nHasSecond ? `Sent ${Number(nform.days) + Number(nform.secondAfter)} days after sign-up.` : 'Leave empty (or 0) for no second email.'}</p>
+            {nHasSecond && <TemplatePicker label="Email sent" value={nform.reminderTemplateId} templates={data.templates} onChange={(v) => setNform((f) => ({ ...f, reminderTemplateId: v }))} error={e5.reminderTemplateId} />}
           </StepCard>
         </AutomationCard>
       ) : null}

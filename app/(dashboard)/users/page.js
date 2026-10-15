@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { LISTING_FREE_LIMIT } from '@/lib/listingCount';
 import Link from 'next/link';
-import { Search, X, Users as UsersIcon, Activity, CheckCircle2, Circle, Globe, Ban, ShieldOff, Trash2 } from 'lucide-react';
+import { Search, X, Users as UsersIcon, Activity, Home, CheckCircle2, Circle, Globe, Ban, ShieldOff, Trash2 } from 'lucide-react';
 
 const T = {
   primary: '#111111',
@@ -54,6 +54,7 @@ const fmtWhen = (v) => {
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [count, setCount] = useState(0);
+  const [stats, setStats] = useState(null); // { total, verified, verifiedWithListing, pctVerifiedWithListing } for the whole country
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [q, setQ] = useState('');
@@ -74,6 +75,7 @@ export default function UsersPage() {
           if (res.ok) {
             setUsers(json.users || []);
             setCount(json.count || 0);
+            setStats(json.stats || null);
             fetchGeoData(json.users || []);
           } else setError(true);
         }
@@ -156,6 +158,11 @@ export default function UsersPage() {
       if (res.ok) {
         setUsers((prev) => prev.filter((x) => x.id !== u.id));
         setCount((c) => Math.max(0, c - 1));
+        setStats((st) => st && (() => {
+          const verified = st.verified - (u.verified ? 1 : 0);
+          const verifiedWithListing = st.verifiedWithListing - (u.verified && u.listings > 0 ? 1 : 0);
+          return { total: Math.max(0, st.total - 1), verified, verifiedWithListing, pctVerifiedWithListing: verified ? Math.round((verifiedWithListing / verified) * 100) : null };
+        })());
         setConfirmUser(null);
       } else {
         const j = await res.json().catch(() => ({}));
@@ -168,7 +175,10 @@ export default function UsersPage() {
     }
   }
 
-  const verifiedCount = users.filter((u) => u.verified).length;
+  // Whole-country numbers from the API (all users, not only the 500 rows / search
+  // results in the table); falls back to the loaded rows if the summary failed.
+  const verifiedCount = stats ? stats.verified : users.filter((u) => u.verified).length;
+  const totalCount = stats ? stats.total : count;
 
   return (
     <div className="space-y-5">
@@ -179,13 +189,19 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      {/* Stat strip — totals for the active country */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total users', value: count.toLocaleString(), Icon: UsersIcon },
-          { label: 'Verified', value: verifiedCount.toLocaleString(), Icon: CheckCircle2 },
+          { label: 'Total users', value: totalCount.toLocaleString(), Icon: UsersIcon },
+          { label: 'Verified users', value: verifiedCount.toLocaleString(), Icon: CheckCircle2 },
+          {
+            label: 'Verified with a listing',
+            value: stats && stats.pctVerifiedWithListing != null ? `${stats.pctVerifiedWithListing}%` : '—',
+            hint: stats ? `${stats.verifiedWithListing.toLocaleString()} of ${stats.verified.toLocaleString()} verified users` : null,
+            Icon: Home,
+          },
           { label: 'Showing', value: users.length.toLocaleString(), Icon: Activity },
-        ].map(({ label, value, Icon }) => (
+        ].map(({ label, value, hint, Icon }) => (
           <div key={label} className="bg-white p-5" style={CARD}>
             <div className="flex items-start justify-between mb-3">
               <p className="text-xs font-medium" style={{ color: T.textSecondary }}>{label}</p>
@@ -194,6 +210,7 @@ export default function UsersPage() {
               </div>
             </div>
             <p className="text-3xl font-bold tracking-head" style={{ color: T.textPrimary }}>{loading ? '—' : value}</p>
+            {hint && !loading && <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>{hint}</p>}
           </div>
         ))}
       </div>

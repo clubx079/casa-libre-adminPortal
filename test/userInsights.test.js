@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HIDE_DELETED_USERS, isDeletedEmail, normalizeEmail, listingSummary } from '../lib/userInsights.js';
+import { HIDE_DELETED_USERS, isDeletedEmail, normalizeEmail, listingSummary, userListingStats } from '../lib/userInsights.js';
 
 describe('deleted accounts', () => {
   it('filters out accounts removed through "Delete account" (AiroBase like uses %)', () => {
@@ -46,5 +46,29 @@ describe('listingSummary', () => {
     const s = listingSummary({ id: 'p3', neighborhood: 'Encarnación', city: 'encarnación ', admin_status: 'active' });
     expect(s.place).toBe('Encarnación');
     expect(s.title).toBe('Encarnación');
+  });
+});
+
+describe('userListingStats', () => {
+  const users = [
+    { id: 'a', verified: true },
+    { id: 'b', verified: true },
+    { id: 'c', verified: true },
+    { id: 'd', verified: false },
+    { id: 'e', verified: null },
+  ];
+  it('counts total, verified and verified users with a listing', () => {
+    const listings = new Map([['a', 2], ['d', 5], ['c', 0]]);
+    expect(userListingStats(users, listings)).toEqual({ total: 5, verified: 3, verifiedWithListing: 1, pctVerifiedWithListing: 33 });
+  });
+  it('unverified users with listings do not count toward the percentage', () => {
+    expect(userListingStats(users, new Map([['d', 1], ['e', 3]])).verifiedWithListing).toBe(0);
+  });
+  it('matches ids as strings', () => {
+    expect(userListingStats([{ id: 7, verified: true }], new Map([['7', 1]])).pctVerifiedWithListing).toBe(100);
+  });
+  it('no verified users -> pct null; empty input is safe', () => {
+    expect(userListingStats([{ id: 'x', verified: false }]).pctVerifiedWithListing).toBe(null);
+    expect(userListingStats()).toEqual({ total: 0, verified: 0, verifiedWithListing: 0, pctVerifiedWithListing: null });
   });
 });

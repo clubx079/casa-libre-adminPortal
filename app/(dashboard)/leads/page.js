@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Target, ExternalLink, Search } from 'lucide-react';
-import { LEAD_STATUSES, STATUS_LABEL, CATEGORY_LABEL, SOURCES, waDigits, filterLeads, hasContact } from '@/lib/potentialLeads';
+import { LEAD_STATUSES, STATUS_LABEL, CATEGORY_LABEL, CATEGORY_TABS, SOURCES, waDigits, filterLeads, hasContact } from '@/lib/potentialLeads';
 
 const T = {
   textPrimary: '#111111', textBody: '#3A3A37', textSecondary: '#6B6862', textMuted: '#9C978C',
@@ -29,6 +29,7 @@ export default function LeadsPage() {
   const [pending, setPending] = useState(false);
   const [country, setCountry] = useState('');
   const [tab, setTab] = useState('all');
+  const [cat, setCat] = useState('all');
   const [contact, setContact] = useState('all');
   const [q, setQ] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
@@ -62,9 +63,11 @@ export default function LeadsPage() {
     } finally { setUpdatingId(null); }
   }
 
-  const counts = useMemo(() => LEAD_STATUSES.reduce((a, s) => { a[s] = rows.filter((r) => r.status === s).length; return a; }, {}), [rows]);
+  const inCat = useMemo(() => (cat === 'all' ? rows : rows.filter((r) => (r.category || 'other') === cat)), [rows, cat]);
+  const counts = useMemo(() => LEAD_STATUSES.reduce((a, s) => { a[s] = inCat.filter((r) => r.status === s).length; return a; }, {}), [inCat]);
+  const catCounts = useMemo(() => rows.reduce((a, r) => { const c = r.category || 'other'; a[c] = (a[c] || 0) + 1; return a; }, {}), [rows]);
   const withContact = rows.filter(hasContact).length;
-  const shown = filterLeads(rows, { q, status: tab, contact });
+  const shown = filterLeads(rows, { q, status: tab, contact, category: cat });
   const sources = [...new Set(rows.map((r) => r.source))];
 
   return (
@@ -73,7 +76,7 @@ export default function LeadsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>Leads</h1>
           <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
-            Potential clients we found ourselves — developers and businesses to contact once the marketplace has traffic.
+            Potential clients we found ourselves — agents, agencies and developers to contact.
           </p>
         </div>
         {rows.length > 0 && (
@@ -89,11 +92,24 @@ export default function LeadsPage() {
         )}
       </div>
 
+      {/* type tabs */}
+      <div className="flex items-center gap-6 border-b" style={{ borderColor: T.borderLight }} data-testid="lead-type-tabs">
+        {[['all', 'All types'], ...CATEGORY_TABS.filter(([k]) => k !== 'other' || catCounts.other)].map(([k, label]) => {
+          const on = cat === k;
+          return (
+            <button key={k} onClick={() => setCat(k)} className="pb-2.5 -mb-px text-[14px] font-semibold border-b-2 transition-colors"
+              style={on ? { borderColor: T.textPrimary, color: T.textPrimary } : { borderColor: 'transparent', color: T.textSecondary }}>
+              {label} <span className="ml-1 text-[11px] font-mono" style={{ color: T.textMuted }}>{k === 'all' ? rows.length : (catCounts[k] || 0)}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* status tabs */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {[['all', 'All'], ...LEAD_STATUSES.map((s) => [s, STATUS_LABEL[s]])].map(([k, label]) => {
           const on = tab === k;
-          const n = k === 'all' ? rows.length : counts[k];
+          const n = k === 'all' ? inCat.length : counts[k];
           return (
             <button key={k} onClick={() => setTab(k)}
               className="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-1.5 rounded-full border transition-colors"
@@ -109,7 +125,7 @@ export default function LeadsPage() {
       <div className="flex flex-col sm:flex-row gap-2">
         <label className="flex-1 flex items-center gap-2 px-3 py-2 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }}>
           <Search className="w-4 h-4" style={{ color: T.textMuted }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, location, phone…" className="flex-1 bg-transparent outline-none text-[13px]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, agency, location, phone…" className="flex-1 bg-transparent outline-none text-[13px]" />
         </label>
         <div className="flex items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }}>
           {[['all', 'All'], ['with', 'With contact'], ['without', 'No contact']].map(([k, label]) => (
@@ -151,7 +167,7 @@ export default function LeadsPage() {
                 <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }} data-testid="lead-row">
                   <td className="px-4 py-3 max-w-[240px]">
                     <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }} title={r.name}>{r.name}</p>
-                    {r.legal_name && <p className="text-[11px] truncate" style={{ color: T.textMuted }} title={r.legal_name}>{r.legal_name}</p>}
+                    {r.legal_name && <p className="text-[11px] truncate" style={{ color: T.textMuted }} title={r.legal_name}>{r.category === 'agent' ? `Agency: ${r.legal_name}` : r.legal_name}</p>}
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {[r.phone, r.whatsapp].filter(Boolean).length ? (

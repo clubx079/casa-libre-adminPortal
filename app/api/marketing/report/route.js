@@ -13,6 +13,8 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { BUYER_ORIGIN } from '@/lib/buyerSite';
 import { HIDE_DELETED_USERS } from '@/lib/userInsights';
+import { internalEmails } from '@/lib/internalAudience';
+import { isInternalEmail } from '@/lib/internalTraffic';
 import { googleSetup, adsSearch, ga4Report, gscQuery, GSC_SITE } from '@/lib/googleApi';
 import { rangeFor, adsReport, ga4Section, gscSection, outcomes } from '@/lib/marketingReport';
 
@@ -65,12 +67,15 @@ async function ownAll(cc, range) {
   const db = dbFor(cc);
   const span = `created_at=gte.${encodeURIComponent(range.startIso)}&created_at=lte.${encodeURIComponent(range.endIso)}`;
   const count = async (table, extra) => (await db.selectWithCount(table, `select=id&${span}${extra ? `&${extra}` : ''}&limit=1`).catch(() => ({ count: 0 }))).count || 0;
-  const [signups, listings, contacts] = await Promise.all([
-    count('users', HIDE_DELETED_USERS),
+  // Sign-ups in the period (team accounts left out): all, and VERIFIED — CAC counts verified only.
+  const [users, extra, listings, contacts] = await Promise.all([
+    db.select('users', `select=email,verified&${span}&${HIDE_DELETED_USERS}&limit=10000`).catch(() => []),
+    internalEmails(cc).catch(() => null),
     count('properties', 'origin=eq.user'),
     count('contact_link_clicks'),
   ]);
-  return { signups, listings, contacts };
+  const real = users.filter((u) => !isInternalEmail(u.email, extra));
+  return { signups: real.length, verifiedSignups: real.filter((u) => u.verified).length, listings, contacts };
 }
 
 export async function GET(req) {

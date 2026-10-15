@@ -26,5 +26,7 @@ describe('marketing report', () => {
   });
   it('cost per sign-up / contact', () => {
     expect(outcomes({ signups: 25, contacts: 110, listings: 0 }, { cost: 462 })).toMatchObject({ costPerSignup: 18.48, costPerContact: 4.2, costPerListing: null });
+    expect(outcomes({ signups: 25, verifiedSignups: 22, contacts: 110, listings: 15 }, { cost: 462 })).toMatchObject({ cac: 21, verifiedRate: 88, costPerListing: 30.8 });
+    expect(outcomes({ signups: 3, verifiedSignups: 0 }, { cost: 50 }).cac).toBe(null);
   });
 });

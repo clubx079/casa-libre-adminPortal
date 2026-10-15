@@ -133,13 +133,14 @@ export default function MarketingPage() {
 
   const load = (fresh = false) => {
     setLoading(true);
-    fetch(`/api/marketing/report?parts=ads&days=${days}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
+    fetch(`/api/marketing/report?parts=ads,own&days=${days}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
       .then((r) => r.json()).then(setRes).catch((e) => setRes({ ads: { ok: false, error: String(e) } }))
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const a = res?.ads?.ok ? res.ads.data : null;
+  const o = res?.own?.ok ? res.own.data : null;
   const t = a?.total;
   const maxCost = useMemo(() => Math.max(0, ...(a?.campaigns || []).map((c) => c.cost)), [a]);
   const softConv = (a?.conversionActions || []).filter((c) => c.soft).reduce((s, c) => s + c.count, 0);
@@ -176,6 +177,22 @@ export default function MarketingPage() {
             <Kpi label="Google conversions" value={int(t.conversions)} sub={softConv > 0 ? `${int(softConv)} are page views` : `${money(t.costPerConversion)} each`} />
             <Kpi label="Active campaigns" value={int(a.campaigns.filter((c) => c.status === 'ENABLED').length)} sub={`${a.campaigns.length} with activity`} />
           </div>
+
+          {o && (
+            <Card title="Customer acquisition" right={<span className="text-[11px]" style={{ color: T.textMuted }}>{(res.country || '').toUpperCase()} · same period · team accounts left out</span>} testid="cac">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                <div className="rounded-[12px] p-4" style={{ background: T.textPrimary, color: '#fff' }} data-testid="kpi-cac">
+                  <div className="text-[10.5px] font-mono uppercase tracking-label opacity-70">CAC · cost per verified sign-up</div>
+                  <div className="text-[30px] font-bold tracking-head mt-1 tabular-nums">{money(o.cac)}</div>
+                  <div className="text-[11.5px] opacity-80 mt-0.5">{money(o.spend)} ÷ {int(o.verifiedSignups)} verified sign-ups</div>
+                </div>
+                <Kpi label="Sign-ups" value={int(o.signups)} sub={`${int(o.verifiedSignups)} verified${o.verifiedRate != null ? ` (${o.verifiedRate}%)` : ''}`} />
+                <Kpi label="Seller contacts" value={int(o.contacts)} sub={o.costPerContact != null ? `${money(o.costPerContact)} per contact` : 'WhatsApp, call, copy'} />
+                <Kpi label="Listings published" value={int(o.listings)} sub={o.costPerListing != null ? `${money(o.costPerListing)} per listing` : 'by owners and agents'} />
+              </div>
+              <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Blended: the whole ad spend divided by all verified sign-ups of the period, whatever channel they came from (ads, Google search, direct, WhatsApp). Seller contacts = buyers who tapped WhatsApp / call / copy number on a listing.</p>
+            </Card>
+          )}
 
           <Card title="Per day" right={<Segmented value={metric} options={METRICS} onChange={setMetric} testid="ads-metric" />}>
             <DailyChart series={a.series} metric={metric} />

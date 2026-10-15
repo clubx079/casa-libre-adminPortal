@@ -26,7 +26,7 @@ export async function GET(req) {
       return { last7days: { ...m, cost: Math.round(m.cost * 100) / 100 } };
     }),
     run(async () => {
-      const site = GSC_SITE[out.country] || GSC_SITE.py;
+      const site = GSC_SITE[out.country] || `sc-domain:${out.country}`;   // never another country's property
       const j = await gscQuery(site, { startDate: day(9), endDate: day(2), dimensions: ['query'], rowLimit: 5 });
       return { site, topQueries: (j.rows || []).map((r) => ({ query: r.keys[0], clicks: r.clicks, impressions: r.impressions })) };
     }),

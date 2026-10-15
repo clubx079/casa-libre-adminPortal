@@ -8,6 +8,7 @@ import { internalEmails } from '@/lib/internalAudience';
 import { CAMPAIGNS, ALIASES } from '@/lib/campaigns';
 import { buildLinksReport, clickSlugSql, landingChannelSql, LEGACY_CAMPAIGNS } from '@/lib/linksReport';
 import { dbFor } from '@/lib/db';
+import { SITE_EXPR, siteClause } from '@/lib/analyticsSite';
 import { selectIn } from '@/lib/selectAll';
 import { clickSql, applyClicks, OPEN_TRACKING_GAP } from '@/lib/contactsReport';
 import { isInternalContact } from '@/lib/internalTraffic';
@@ -78,26 +79,13 @@ const SOURCE_EXPR = String.raw`
 // Roland's AI-visibility work moves.
 const AI_SOURCES = ['chatgpt', 'perplexity', 'gemini', 'claude', 'copilot', 'other ai'];
 
-// Which country site the event came from. New events carry site_country (set by
-// the buyer portal); older ones only have $host, so fall back to that — every
-// real visit before this was casa-libre.com.py.
-const SITE_EXPR = String.raw`
-  multiIf(
-    coalesce(properties.site_country, '') != '', lower(properties.site_country),
-    match(coalesce(properties.$host, ''), '(?i)casa-libre\\.com\\.bo'), 'bo',
-    match(coalesce(properties.$host, ''), '(?i)(^|\\.)uy\\.casa-libre\\.com'), 'uy',
-    match(coalesce(properties.$host, ''), '(?i)casa-libre\\.com\\.ve'), 've',
-    'py'
-  )`;
+// Which country site an event came from (country hosts, then site_country, then
+// 'py') and the per-country filter live in lib/analyticsSite.js. Any country code
+// scopes to that country only — El Salvador (and any later country) used to fall
+// through to "all sites", which is ~all Paraguay.
 
 const HIDE_SAUDI_BEFORE = '2026-09-21';
 const GEO_BASE = `coalesce(properties.$geoip_country_name, '') != 'Pakistan' AND NOT (coalesce(properties.$geoip_country_name, '') = 'Saudi Arabia' AND timestamp < toDateTime('${HIDE_SAUDI_BEFORE} 00:00:00'))`;
-
-// ?site=py|bo|uy|ve → only that country site's traffic. Anything else = all sites.
-const siteClause = (site) => {
-  const s = String(site || '').toLowerCase();
-  return ['py', 'bo', 'uy', 've'].includes(s) ? ` AND ${SITE_EXPR} = '${s}'` : '';
-};
 
 // The country the admin picked in the header switcher. Every query on this page
 // is scoped to it, so "Bolivia" means Bolivia everywhere, not just in two cards.

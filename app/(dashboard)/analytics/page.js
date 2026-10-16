@@ -6,7 +6,7 @@ import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, 
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
-  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle,
+  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle, Smartphone,
 } from 'lucide-react';
 
 // Casa Libre palette (neo-brutalist: ink accent on warm paper).
@@ -926,6 +926,85 @@ const GeoDonut = ({ master }) => {
 };
 
 // Users Analytics — user behaviour + funnel, read from PostHog.
+// ── App downloads: installs from the App Store and Google Play (store reports) ──
+// Data: /api/app-installs (lib/storeReports.js). Both stores report with a 1–2 day delay.
+const AppDownloadsCard = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/app-installs?days=${days}`, { cache: 'no-store' }).then((r) => r.json())
+      .then((j) => { if (!cancelled) setData(j); })
+      .catch(() => { if (!cancelled) setData({ error: true }); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [days]);
+
+  const t = data?.total;
+  const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString());
+  const day = (k) => (k ? new Date(`${k}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null);
+  const stores = data && !data.error ? [
+    {
+      name: 'App Store downloads', s: data.apple, latest: data.latest?.apple,
+      tiles: [['Downloads', t.ios], ['Deletions', t.iosDeletions]],
+      waiting: 'Connected — the first numbers arrive 1–2 days after the app is live on the App Store.',
+    },
+    {
+      name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
+      tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls], ['Active devices', t.androidActive]],
+      waiting: 'Connected — waiting for the first Google Play report.',
+    },
+  ] : [];
+
+  return (
+    <div className="bg-white p-5" style={CARD}>
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <Smartphone className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>App downloads</h2>
+        <span className="text-[10px]" style={{ color: T.textMuted }}>· from the App Store and Google Play reports, 1–2 days behind</span>
+        <div className="ml-auto flex items-center gap-2">
+          {loading && data ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
+          <a href="/app-installs" className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Per day →</a>
+          <RangeSelect range={range} ariaLabel="App downloads range" />
+        </div>
+      </div>
+
+      {loading && !data ? (
+        <div className="py-10 text-center"><div className="inline-block w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /></div>
+      ) : data?.error ? (
+        <p className="text-xs py-8 text-center" style={{ color: T.textMuted }}>App download numbers are unavailable right now — try again in a moment.</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3" style={{ opacity: loading ? 0.55 : 1, transition: 'opacity .15s' }}>
+          {stores.map((st) => (
+            <div key={st.name} className="p-3.5" style={{ background: T.bgSurface, borderRadius: 12 }}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold" style={{ color: T.textPrimary }}>{st.name}</p>
+                {st.s?.ok && st.latest ? <span className="text-[10px]" style={{ color: T.textMuted }}>latest day {day(st.latest)}</span> : null}
+              </div>
+              {st.s?.ok && st.s.daysWithData > 0 ? (
+                <div className={`grid gap-3 mt-2 ${st.tiles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {st.tiles.map(([label, v]) => (
+                    <div key={label}>
+                      <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{label}</p>
+                      <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(v)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>{st.s?.ok ? st.waiting : st.s?.error}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── WhatsApp contacts: taps on a listing's WhatsApp button (website + app) ──
 
 const WhatsAppCard = ({ master }) => {
@@ -1173,6 +1252,8 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
       </div>
 
       <WhatsAppCard master={master} />
+
+      <AppDownloadsCard master={master} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SourcesCard master={master} />

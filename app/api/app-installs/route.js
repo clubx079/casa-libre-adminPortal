@@ -1,4 +1,4 @@
-// GET /api/app-installs?days=7|30|90 → daily installs from Google Play and the App Store
+// GET /api/app-installs?days=7|30|90|180|365 → daily installs from Google Play and the App Store
 // (lib/storeReports.js + lib/appInstalls.js). Read-only. Each store fails on its own
 // (an error message instead of numbers), never the page. Cached 3 hours — the stores
 // only publish new numbers once a day anyway.
@@ -17,12 +17,12 @@ const settle = async (fn) => { try { return { ok: true, data: await fn() }; } ca
 export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const sp = new URL(req.url).searchParams;
-  const days = [7, 30, 90].includes(Number(sp.get('days'))) ? Number(sp.get('days')) : 30;
+  const days = [7, 30, 90, 180, 365].includes(Number(sp.get('days'))) ? Number(sp.get('days')) : 30;
   const hit = cache.get(days);
   if (hit && Date.now() - hit.at < TTL && !sp.get('fresh')) return NextResponse.json(hit.body);
 
   const setup = storeSetup();
-  const months = days > 31 ? 4 : 2;
+  const months = Math.ceil(days / 30) + 1;   // Play: one CSV per month
   const [play, apple] = await Promise.all([
     setup.play ? settle(() => fetchPlayDaily({ months })) : { ok: false, error: 'Google Play is not connected yet.' },
     setup.apple ? settle(() => fetchAppleDaily({ days })) : { ok: false, error: 'App Store is not connected yet.' },

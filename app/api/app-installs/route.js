@@ -27,12 +27,16 @@ export async function GET(req) {
     setup.play ? settle(() => fetchPlayDaily({ months })) : { ok: false, error: 'Google Play is not connected yet.' },
     setup.apple ? settle(() => fetchAppleDaily({ days })) : { ok: false, error: 'App Store is not connected yet.' },
   ]);
+  // Keep the last good answer of a store when it fails only temporarily.
+  const prev = [...cache.values()].sort((x, y) => y.at - x.at)[0]?.raw || {};
+  if (!apple.ok && prev.apple?.ok) Object.assign(apple, prev.apple, { stale: true });
+  if (!play.ok && prev.play?.ok) Object.assign(play, prev.play, { stale: true });
   const merged = mergeInstalls({ play: play.ok ? play.data : {}, apple: apple.ok ? apple.data : {}, days });
   const body = {
     days, setup, generatedAt: new Date().toISOString(), ...merged,
     play: { ok: play.ok, error: play.error || null, daysWithData: play.ok ? Object.keys(play.data).length : 0 },
     apple: { ok: apple.ok, error: apple.error || null, daysWithData: apple.ok ? Object.keys(apple.data).length : 0 },
   };
-  cache.set(days, { at: Date.now(), body });
+  cache.set(days, { at: Date.now(), body, raw: { apple, play } });
   return NextResponse.json(body);
 }

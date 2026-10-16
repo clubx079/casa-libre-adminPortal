@@ -142,6 +142,7 @@ export default function MarketingPage() {
   const a = res?.ads?.ok ? res.ads.data : null;
   const o = res?.own?.ok ? res.own.data : null;
   const t = a?.total;
+  const aq = a?.acquisition;
   const maxCost = useMemo(() => Math.max(0, ...(a?.campaigns || []).map((c) => c.cost)), [a]);
   const softConv = (a?.conversionActions || []).filter((c) => c.soft).reduce((s, c) => s + c.count, 0);
   const maxConv = Math.max(0, ...(a?.conversionActions || []).map((c) => c.count));
@@ -191,6 +192,48 @@ export default function MarketingPage() {
                 <Kpi label="Listings published" value={int(o.listings)} sub={o.costPerListing != null ? `${money(o.costPerListing)} per listing` : 'by owners and agents'} />
               </div>
               <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Blended: the whole ad spend divided by all verified sign-ups of the period, whatever channel they came from (ads, Google search, direct, WhatsApp). Seller contacts = buyers who tapped WhatsApp / call / copy number on a listing.</p>
+            </Card>
+          )}
+
+          {aq && (
+            <Card title="Customer acquisition · from Google Ads" right={<span className="text-[11px]" style={{ color: T.textMuted }}>what Google attributes to an ad click · same period</span>} testid="ads-cac">
+              {aq.partial && (
+                <div className="rounded-[10px] px-3 py-2 mb-3 text-[12px]" style={{ background: T.bgSurface, color: T.textSecondary }} data-testid="ads-cac-since">
+                  Google Ads only started counting these on {dayLabel(aq.trackingSince)}, 2026 — the days before that show zero, so this period's costs per contact / sign-up look higher than they are.
+                  {aq.sinceTracking && <> Counting only the spend since then ({money(aq.sinceTracking.spend)}): <b style={{ color: T.textPrimary }}>{money(aq.sinceTracking.costPerContact)}</b> per contact · <b style={{ color: T.textPrimary }}>{money(aq.sinceTracking.cac)}</b> per sign-up.</>}
+                </div>
+              )}
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                <div className="rounded-[12px] p-4" style={{ background: T.textPrimary, color: '#fff' }} data-testid="kpi-ads-cac">
+                  <div className="text-[10.5px] font-mono uppercase tracking-label opacity-70">Ads CAC · cost per sign-up from ads</div>
+                  <div className="text-[30px] font-bold tracking-head mt-1 tabular-nums">{money(aq.total.cac)}</div>
+                  <div className="text-[11.5px] opacity-80 mt-0.5">{money(aq.total.spend)} ÷ {fmtMetric('conversions', aq.total.signups)} sign-ups from ads</div>
+                </div>
+                <Kpi label="Cost per contact from ads" value={money(aq.total.costPerContact)} sub={`${money(aq.total.spend)} ÷ ${fmtMetric('conversions', aq.total.contacts)} contacts`} testid="kpi-ads-cpc" />
+                <Kpi label="Seller contacts from ads" value={fmtMetric('conversions', aq.total.contacts)} sub={`WhatsApp ${fmtMetric('conversions', aq.total.whatsapp)} · call ${fmtMetric('conversions', aq.total.call)} · copy ${fmtMetric('conversions', aq.total.copy)}`} testid="kpi-ads-contacts" />
+                <Kpi label="Sign-ups from ads" value={fmtMetric('conversions', aq.total.signups)} sub={`Ads spend ${money(aq.total.spend)}`} />
+              </div>
+              <div className="overflow-x-auto mt-4">
+                <table className="w-full text-[13px]" data-testid="ads-cac-campaigns">
+                  <thead><tr className="text-left" style={{ color: T.textMuted }}>
+                    <th className={th}>Campaign</th><th className={th}>Spend</th><th className={th}>Contacts</th><th className={th}>Cost / contact</th><th className={th}>Sign-ups</th><th className={th}>Cost / sign-up</th>
+                  </tr></thead>
+                  <tbody>
+                    {aq.campaigns.map((c) => (
+                      <tr key={c.id || c.name} className="border-t" style={{ borderColor: T.borderLight }}>
+                        <td className="py-2.5 pr-3 min-w-[200px] font-semibold" style={{ color: T.textPrimary }}>{c.name}</td>
+                        <td className={td}>{money(c.spend)}</td>
+                        <td className={td}>{fmtMetric('conversions', c.contacts)}{c.contacts > 0 && <span className="ml-1.5 text-[11px]" style={{ color: T.textMuted }}>{[['WA', c.whatsapp], ['call', c.call], ['copy', c.copy]].filter(([, v]) => v > 0).map(([l, v]) => `${l} ${fmtMetric('conversions', v)}`).join(' · ')}</span>}</td>
+                        <td className={td}>{money(c.costPerContact)}</td>
+                        <td className={td}>{fmtMetric('conversions', c.signups)}</td>
+                        <td className={td}>{money(c.cac)}</td>
+                      </tr>
+                    ))}
+                    {!aq.campaigns.length && <tr><td colSpan={6} className="py-4 text-center" style={{ color: T.textMuted }}>No campaign activity in this period.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Ads only: a person clicked one of our ads, then tapped WhatsApp / call / copy number on a listing, or signed up — as counted by Google Ads (all conversions, primary and secondary). “Page view”, the Google login click and form submits are not counted. Google's sign-up count is not limited to verified accounts. The blended CAC above stays as it is.</p>
             </Card>
           )}
 

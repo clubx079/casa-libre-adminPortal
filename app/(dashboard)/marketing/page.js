@@ -1,7 +1,8 @@
 'use client';
 // Marketing — the Google Ads dashboard: spend, clicks, conversions, per day, per campaign,
 // keyword and search term, straight from the Google Ads account (read-only, all
-// campaigns). Data: /api/marketing/report?parts=ads (lib/marketingReport.js), cached 10
+// campaigns). Only Google Ads numbers — nothing from our database. The ad account runs for
+// Paraguay only: other countries show an empty state. Data: /api/marketing/report?parts=ads (lib/marketingReport.js), cached 10
 // min. The one-time Google connection setup lives in the small "Connection" panel at
 // the bottom (/api/google/status).
 import { useEffect, useMemo, useState } from 'react';
@@ -133,14 +134,13 @@ export default function MarketingPage() {
 
   const load = (fresh = false) => {
     setLoading(true);
-    fetch(`/api/marketing/report?parts=ads,own&days=${days}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
+    fetch(`/api/marketing/report?parts=ads&days=${days}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
       .then((r) => r.json()).then(setRes).catch((e) => setRes({ ads: { ok: false, error: String(e) } }))
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const a = res?.ads?.ok ? res.ads.data : null;
-  const o = res?.own?.ok ? res.own.data : null;
   const t = a?.total;
   const aq = a?.acquisition;
   const maxCost = useMemo(() => Math.max(0, ...(a?.campaigns || []).map((c) => c.cost)), [a]);
@@ -153,7 +153,7 @@ export default function MarketingPage() {
         <div>
           <h1 className="text-[28px] font-bold tracking-head" style={{ color: T.textPrimary }}>Google Ads</h1>
           <div className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>
-            Ad account 874-655-0784 · all campaigns{res?.range ? ` · ${dayLabel(res.range.start)} – ${dayLabel(res.range.end)}` : ''}
+            Ad account 874-655-0784 · Paraguay · all campaigns{res?.range ? ` · ${dayLabel(res.range.start)} – ${dayLabel(res.range.end)}` : ''}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -162,9 +162,14 @@ export default function MarketingPage() {
         </div>
       </div>
 
-      {res && !res.ads?.ok && !loading && <Banner>Google Ads: {res.ads?.error}</Banner>}
+      {res && !res.ads?.ok && !res.ads?.noAds && !loading && <Banner>Google Ads: {res.ads?.error}</Banner>}
 
-      {!a ? (
+      {res?.ads?.noAds ? (
+        <div className="rounded-[14px] p-8 text-center" style={CARD} data-testid="ads-no-country">
+          <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>No Google Ads for {(res.country || '').toUpperCase()}</div>
+          <div className="text-[13px] mt-1" style={{ color: T.textSecondary }}>The ad account only runs campaigns for Paraguay. Switch to Paraguay to see the numbers.</div>
+        </div>
+      ) : !a ? (
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           {Array.from({ length: 6 }).map((_, i) => <div key={i} className="rounded-[14px] h-[92px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />)}
         </div>
@@ -178,22 +183,6 @@ export default function MarketingPage() {
             <Kpi label="Google conversions" value={int(t.conversions)} sub={softConv > 0 ? `${int(softConv)} are page views` : `${money(t.costPerConversion)} each`} />
             <Kpi label="Active campaigns" value={int(a.campaigns.filter((c) => c.status === 'ENABLED').length)} sub={`${a.campaigns.length} with activity`} />
           </div>
-
-          {o && (
-            <Card title="Customer acquisition" right={<span className="text-[11px]" style={{ color: T.textMuted }}>{(res.country || '').toUpperCase()} · same period · team accounts left out</span>} testid="cac">
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-                <div className="rounded-[12px] p-4" style={{ background: T.textPrimary, color: '#fff' }} data-testid="kpi-cac">
-                  <div className="text-[10.5px] font-mono uppercase tracking-label opacity-70">CAC · cost per verified sign-up</div>
-                  <div className="text-[30px] font-bold tracking-head mt-1 tabular-nums">{money(o.cac)}</div>
-                  <div className="text-[11.5px] opacity-80 mt-0.5">{money(o.spend)} ÷ {int(o.verifiedSignups)} verified sign-ups</div>
-                </div>
-                <Kpi label="Sign-ups" value={int(o.signups)} sub={`${int(o.verifiedSignups)} verified${o.verifiedRate != null ? ` (${o.verifiedRate}%)` : ''}`} />
-                <Kpi label="Seller contacts" value={int(o.contacts)} sub={o.costPerContact != null ? `${money(o.costPerContact)} per contact` : 'WhatsApp, call, copy'} />
-                <Kpi label="Listings published" value={int(o.listings)} sub={o.costPerListing != null ? `${money(o.costPerListing)} per listing` : 'by owners and agents'} />
-              </div>
-              <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Blended: the whole ad spend divided by all verified sign-ups of the period, whatever channel they came from (ads, Google search, direct, WhatsApp). Seller contacts = buyers who tapped WhatsApp / call / copy number on a listing.</p>
-            </Card>
-          )}
 
           {aq && (
             <Card title="Customer acquisition · from Google Ads" right={<span className="text-[11px]" style={{ color: T.textMuted }}>what Google attributes to an ad click · same period</span>} testid="ads-cac">
@@ -233,7 +222,7 @@ export default function MarketingPage() {
                   </tbody>
                 </table>
               </div>
-              <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Ads only: a person clicked one of our ads, then tapped WhatsApp / call / copy number on a listing, or signed up — as counted by Google Ads (all conversions, primary and secondary). “Page view”, the Google login click and form submits are not counted. Google's sign-up count is not limited to verified accounts. The blended CAC above stays as it is.</p>
+              <p className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>Ads only: a person clicked one of our ads, then tapped WhatsApp / call / copy number on a listing, or signed up — as counted by Google Ads (all conversions, primary and secondary). “Page view”, the Google login click and form submits are not counted. Google's sign-up count is not limited to verified accounts.</p>
             </Card>
           )}
 

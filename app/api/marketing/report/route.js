@@ -23,6 +23,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const TTL = 10 * 60 * 1000;
+// The one Google Ads account advertises Paraguay only — other countries get no ads numbers
+// (the page shows "no Google Ads for this country") instead of Paraguay's spend.
+const ADS_COUNTRIES = ['py'];
 const cache = new Map();
 const settle = async (fn) => { try { return { ok: true, data: await fn() } } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; } };
 
@@ -100,7 +103,7 @@ export async function GET(req) {
   const want = (k) => parts === 'all' || parts.split(',').includes(k);
   const skipped = { ok: false, error: 'not requested' };
   const [ads, ga4, gsc, own] = await Promise.all([
-    !want('ads') ? skipped : connected && setup.developerToken && setup.customerId ? settle(() => adsAll(range)) : notConnected,
+    !want('ads') ? skipped : !ADS_COUNTRIES.includes(cc) ? { ok: false, noAds: true, error: 'No Google Ads for this country.' } : connected && setup.developerToken && setup.customerId ? settle(() => adsAll(range)) : notConnected,
     !want('ga4') ? skipped : connected && setup.ga4PropertyId ? settle(() => ga4All(range, host)) : notConnected,
     !want('gsc') ? skipped : connected ? settle(() => gscAll(range, site)) : notConnected,
     !want('own') ? skipped : settle(() => ownAll(cc, range)),

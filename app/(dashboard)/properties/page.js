@@ -8,6 +8,7 @@ import { heldListings } from '@/lib/heldListings';
 import { selectAll } from '@/lib/selectAll';
 import { validateListing } from '@/lib/ingest';
 import { looseFor, splitReasons } from '@/lib/unverified';
+import { hiddenReason, REASON_ORDER } from '@/lib/hiddenReason';
 import PropertiesView from '@/components/PropertiesView';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,7 @@ export default async function PropertiesPage({ searchParams }) {
   const page = Math.max(1, parseInt(searchParams?.page || '1', 10) || 1);
   const q = (searchParams?.q || '').trim();
   const status = searchParams?.status || 'all'; // all | active | inactive | unverified
+  const reason = String(searchParams?.reason || ''); // Originals → Inactive: one reason (lib/hiddenReason.js)
   const view = searchParams?.view === 'cards' ? 'cards' : 'table'; // default table
   const source = (searchParams?.source || '').trim(); // scrape_sources.key filter
   const cls = ['buildings', 'land', 'all'].includes(searchParams?.class) ? searchParams.class : 'buildings';
@@ -67,7 +69,10 @@ export default async function PropertiesPage({ searchParams }) {
   } else if (qEnc) {
     filters.push(`or=(address.ilike.${qEnc},city.ilike.${qEnc})`);
   }
-  const query = (...extra) => [COLS, ...filters, ...extra].join('&');
+  // Originals also read raw_data for the photo-check result (lib/hiddenReason.js); the
+  // scraped list never does (thousands of rows, big payloads).
+  const cols = kind === 'originals' ? `${COLS},raw_data` : COLS;
+  const query = (...extra) => [cols, ...filters, ...extra].join('&');
   const countOf = async (...extra) => (await selectWithCount('properties', ['select=id', ...filters, ...extra, 'limit=1'].join('&'))).count;
 
   // A property is LIVE when the buyer portal shows it: admin-active AND is_complete = true —
@@ -76,16 +81,19 @@ export default async function PropertiesPage({ searchParams }) {
   // validateListing still explains WHY a hidden row is hidden, and lists the fields the
   // site shows as "Contact seller for …" (looser rule, lib/unverified.js).
   const loose = looseFor(cc);
-  const annotate = (r) => {
+  const annotate = (row) => {
+    const { raw_data: raw, ...r } = row;
+    if (raw?.moderation) r.moderation = raw.moderation;   // keep only what the reason needs
     const v = validateListing(r, rate, cc);
     const { blocking, unverified } = splitReasons(v.reasons);
     const complete = r.is_complete === true;
     const why = loose ? blocking : v.reasons;
-    return {
+    const out = {
       ...r, _incomplete: !complete, _live: r.admin_status === 'active' && complete,
       _problems: complete ? [] : (why.length ? why : ['not_on_site']),   // why it's hidden from the site
       _unverified: loose ? unverified : [],                               // shown as "Contact seller for …"
     };
+    return { ...out, _reason: hiddenReason(out) };                        // the one reason, in plain words
   };
 
   // Counted at the database. (It used to load the newest 5,000 rows and count those, so
@@ -97,6 +105,7 @@ export default async function PropertiesPage({ searchParams }) {
   let rows = [];
   let count = 0;
   let tabCounts = null;
+  let reasonCounts = null;   // Originals → Inactive: how many per reason
   let error = null;
   try {
     // All at the same time: the admin-active rows (pages read in parallel), the two exact
@@ -143,10 +152,21 @@ export default async function PropertiesPage({ searchParams }) {
       const dbRows = await select('properties', query(...dbFilter, 'order=created_at.desc', `limit=${need}`, `offset=${Math.max(0, offset - mem.length)}`));
       return [...fromMem, ...dbRows.map(annotate)];
     };
-    rows = status === 'active' ? live.slice(offset, offset + PAGE_SIZE)
-      : status === 'unverified' ? unverifiedLive.slice(offset, offset + PAGE_SIZE)
-      : status === 'inactive' ? await pageOf([...activeIncomplete, ...held].sort(newestFirst), 'admin_status=neq.active')
-      : await pageOf([...held].sort(newestFirst));
+    if (kind === 'originals' && status === 'inactive') {
+      // User listings are few: load every hidden one, group them by reason, and page in memory.
+      const inactiveRows = (await selectAll({ select, selectWithCount }, 'properties', query('admin_status=neq.active', 'order=created_at.desc'))).map(annotate);
+      const heldMarked = held.map((r) => ({ ...r, _held: true, _reason: { code: 'quarantine' } }));
+      const hidden = [...inactiveRows, ...activeIncomplete, ...heldMarked].sort(newestFirst);
+      reasonCounts = Object.fromEntries(REASON_ORDER.map((c) => [c, hidden.filter((r) => r._reason?.code === c).length]).filter(([, n]) => n > 0));
+      const picked = reason ? hidden.filter((r) => r._reason?.code === reason) : hidden;
+      count = picked.length;
+      rows = picked.slice(offset, offset + PAGE_SIZE);
+    } else {
+      rows = status === 'active' ? live.slice(offset, offset + PAGE_SIZE)
+        : status === 'unverified' ? unverifiedLive.slice(offset, offset + PAGE_SIZE)
+        : status === 'inactive' ? await pageOf([...activeIncomplete, ...held].sort(newestFirst), 'admin_status=neq.active')
+        : await pageOf([...held].sort(newestFirst));
+    }
   } catch (e) {
     error = e.message;
   }
@@ -202,6 +222,8 @@ export default async function PropertiesPage({ searchParams }) {
           source={kind === 'originals' ? '' : source}
           cls={cls}
           kind={kind}
+          reason={reason}
+          reasonCounts={reasonCounts}
         />
       )}
     </div>

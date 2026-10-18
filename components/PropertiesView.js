@@ -10,6 +10,13 @@ import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
 import { reasonLabel } from '@/lib/ingestLabels';
 import { notVerifiedLabel, contactLine } from '@/lib/unverified';
+import { hiddenReason, reasonLabel as hiddenLabel, reasonDetail, REASONS, REASON_ORDER } from '@/lib/hiddenReason';
+
+// Originals: why a user listing is not on the site (lib/hiddenReason.js). Red = the owner
+// has to act / it was refused; amber = waiting (payment, period, photo check).
+const REASON_TONE = { bad: { background: '#FBE4E0', color: '#A12A17' }, wait: { background: '#F5EAD5', color: '#8A5A12' } };
+const ROW_RED = '#FDF4F2';
+
 
 // Fields we couldn't verify (lib/unverified.js): live, but the buyer site shows
 // "Contact seller for …" in their place. Shown on active AND inactive listings.
@@ -49,7 +56,7 @@ const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
 const LIST_MAX_HEIGHT = 640;
 
-export default function PropertiesView({ rows, count, tabCounts = null, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py' }) {
+export default function PropertiesView({ rows, count, tabCounts = null, page, totalPages, q, status, view, lang, rate, sources = [], source = '', cls = 'buildings', kind = 'scraped', loose = false, country = 'py', reason = '', reasonCounts = null }) {
   const t = makeT(lang);
   const loc = locale(lang);
   const listed = (r) => listedDate(r.created_at, { country, lang });
@@ -57,6 +64,8 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
 
   const [search, setSearch] = useState(q);
   const [busyId, setBusyId] = useState(null);
+  const originals = kind === 'originals';
+  const reasonOf = (r) => r._reason || hiddenReason(r);
 
   const go = (params) => {
     const sp = new URLSearchParams();
@@ -66,12 +75,14 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
     const nsrc = params.source ?? source;
     const ncls = params.cls ?? cls;
     const np = params.page ?? 1;
+    const nr = params.reason ?? (ns === 'inactive' ? reason : '');
     if (nq) sp.set('q', nq);
     if (ns && ns !== 'all') sp.set('status', ns);
     if (nv && nv !== 'table') sp.set('view', nv);
     if (nsrc) sp.set('source', nsrc);
     if (ncls && ncls !== 'buildings') sp.set('class', ncls);
     if (np && np > 1) sp.set('page', String(np));
+    if (nr && ns === 'inactive') sp.set('reason', nr);
     // Keep the active sub-tab (Scraped/Originals) across filter changes.
     if (kind && kind !== 'scraped') sp.set('kind', kind);
     router.push(`/properties${sp.toString() ? '?' + sp.toString() : ''}`);
@@ -124,6 +135,17 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
   return (
     <div className="space-y-5">
       {/* controls */}
+      {originals && status === 'inactive' && reasonCounts && Object.keys(reasonCounts).length > 0 && (
+        <div className="bg-white px-4 py-3 flex flex-wrap items-center gap-2" style={CARD} data-testid="reason-filter">
+          <span className="text-[11px] font-semibold uppercase tracking-wider mr-1" style={{ color: T.textSecondary }}>{lang === 'es' ? 'Motivo' : 'Why hidden'}</span>
+          <button onClick={() => go({ reason: '', page: 1 })} className="px-3 py-1 text-[12px] font-semibold" style={pillBtn(!reason)}>{t('prop.all')}</button>
+          {REASON_ORDER.filter((c) => reasonCounts[c]).map((c) => (
+            <button key={c} onClick={() => go({ reason: c, page: 1 })} className="px-3 py-1 text-[12px] font-semibold" style={reason === c ? pillBtn(true) : { ...pillBtn(false), ...REASON_TONE[REASONS[c].tone], border: '1px solid transparent' }}>
+              {hiddenLabel(c, lang)} <span className="ml-1 font-normal opacity-70">{reasonCounts[c]}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="bg-white p-4 flex flex-wrap items-center gap-3" style={CARD}>
         <form onSubmit={(e) => { e.preventDefault(); go({ q: search, page: 1 }); }} className="flex-1 min-w-[220px]">
           <input
@@ -278,6 +300,7 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thSpecs')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thListed')}</th>
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thStatus')}</th>
+                  {originals && <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{lang === 'es' ? 'Motivo' : 'Reason'}</th>}
                   <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, background: T.bgSurface }}>{t('prop.thActions')}</th>
                 </tr>
               </thead>
@@ -287,10 +310,12 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                     const incomplete = !!r._incomplete;
                     const notLive = inactive || incomplete;
                     const incompleteHint = hiddenHint(r, lang);
+                    const why = originals ? reasonOf(r) : null;
+                    const rowBg = why ? ROW_RED : T.bgWhite;
                     return (
-                      <tr key={r.id} className={`border-b transition-colors ${notLive ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
+                      <tr key={r.id} className={`border-b transition-colors ${notLive && !why ? 'opacity-60' : ''}`} style={{ borderColor: T.borderLight, background: rowBg, ...(why ? { boxShadow: 'inset 3px 0 0 #D9472B' } : {}) }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = why ? '#FBEAE6' : T.bgSurface)}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = rowBg)}>
                         <td className="px-3 py-2">
                           <div className="w-12 h-12 overflow-hidden" style={{ borderRadius: '8px', background: T.bgSurface }}>
                             {r.feature_image_url && (/* eslint-disable-next-line @next/next/no-img-element */ <img src={r.feature_image_url} alt="" className="w-full h-full object-cover" />)}
@@ -328,6 +353,18 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
                           {incomplete && <div className="text-[10.5px] mt-1 max-w-[200px] leading-snug" style={{ color: '#8A5A12' }}>{incompleteHint}</div>}
                           <UnverifiedChips r={r} lang={lang} />
                         </td>
+                        {originals && (
+                          <td className="px-3 py-2 max-w-[230px]" data-testid="prop-reason">
+                            {why ? (
+                              <>
+                                <span className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap" style={REASON_TONE[REASONS[why.code]?.tone || 'bad']}>{hiddenLabel(why.code, lang)}</span>
+                                {reasonDetail(why, { lang, problems: why.code === 'incomplete' ? (r._problems || []).map((c) => reasonLabel(c, lang)).join(' · ') : '' }) && (
+                                  <div className="text-[10.5px] mt-1 leading-snug" style={{ color: '#8A2B16' }}>{reasonDetail(why, { lang, problems: why.code === 'incomplete' ? (r._problems || []).map((c) => reasonLabel(c, lang)).join(' · ') : '' })}</div>
+                                )}
+                              </>
+                            ) : <span className="text-[11px]" style={{ color: T.textMuted }}>—</span>}
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           <div className="flex gap-1.5 justify-end">
                             {r._held ? (

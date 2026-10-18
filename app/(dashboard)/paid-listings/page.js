@@ -5,6 +5,7 @@
 // accounts that look like the same person. Settings: lib/paidListingsAdmin.js.
 import { useEffect, useMemo, useState } from 'react';
 import { T, CARD, PageHeader, Banner, Pill, fmtDate, inputCls, btnPrimary } from '@/components/automations/ui';
+import { ChannelControl } from '@/components/automations/WhatsAppChannels';
 import { SIGNAL_LABEL } from '@/lib/paidListingsAdmin';
 import { templateOptionLabel } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
@@ -127,6 +128,9 @@ export default function PaidListingsPage() {
       </div>
 
       {/* Settings */}
+      {/* Send the paid-listing emails by Email | WhatsApp | Both (migration 017) */}
+      <div className="rounded-[14px] overflow-hidden" style={CARD}><ChannelControl id="paid_listings" /></div>
+
       <div className="rounded-[14px] p-5 space-y-5" style={CARD}>
         <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>Settings</div>
         <div className="grid gap-5 md:grid-cols-2">

@@ -1,12 +1,11 @@
 'use client';
-// Automations → "WhatsApp & channels": how each automation sends — Email, WhatsApp or
+// Automations → each card's "Send by" row: how that automation sends — Email, WhatsApp or
 // both — and which approved WhatsApp template (Relay) stands in for each of its emails.
 // Data: /api/automations/channels (migration 017). The website does the sending
 // (buyer lib/automations/whatsappSend.js); WhatsApp goes only to people with a number
 // and consent, everyone else still gets the email.
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { T, CARD, Pill, Banner, btnPrimary } from '@/components/automations/ui';
+import { T, Pill, Banner, btnPrimary } from '@/components/automations/ui';
 
 const CHANNELS = [['email', 'Email'], ['whatsapp', 'WhatsApp'], ['both', 'Both']];
 const PRICE = { utility: 'about US$0.011 / message', marketing: 'about US$0.074 / message' };
@@ -28,7 +27,7 @@ function Segmented({ value, onChange, disabled }) {
   );
 }
 
-function Row({ a, relay, whatsappHere, onSaved }) {
+function Row({ a, relay, whatsappHere, note, onSaved }) {
   const [channel, setChannel] = useState(a.channel);
   const [wa, setWa] = useState(a.wa_templates || {});
   const [busy, setBusy] = useState(false);
@@ -51,18 +50,15 @@ function Row({ a, relay, whatsappHere, onSaved }) {
   };
   const w = a.whatsapp || {};
   return (
-    <div className="py-4 border-t first:border-t-0" style={{ borderColor: T.borderLight }} data-testid={`channel-${a.id}`}>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="text-[13.5px] font-semibold" style={{ color: T.textPrimary }}>{a.label} {!a.enabled && <span className="ml-1"><Pill>off</Pill></span>}</div>
-          {(w.sent || w.delivered || w.read || w.failed) ? (
-            <div className="text-[11.5px] mt-0.5" style={{ color: T.textSecondary }}>WhatsApp so far: {w.sent + w.delivered + w.read} sent · {w.delivered + w.read} delivered · {w.read} read{w.failed ? ` · ${w.failed} failed` : ''}</div>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <Segmented value={channel} onChange={pickChannel} disabled={!whatsappHere || busy} />
-          {dirty && <button onClick={save} disabled={busy} className={btnPrimary}>{busy ? 'Saving…' : 'Save'}</button>}
-        </div>
+    <div className="px-5 md:px-6 py-3.5 border-b" style={{ borderColor: T.borderLight }} data-testid={`channel-${a.id}`}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>Send by</span>
+        <Segmented value={channel} onChange={pickChannel} disabled={!whatsappHere || busy} />
+        {!whatsappHere && <span className="text-[11.5px]" style={{ color: T.textMuted }}>{note}</span>}
+        {(w.sent || w.delivered || w.read || w.failed) ? (
+          <span className="text-[11.5px]" style={{ color: T.textSecondary }}>WhatsApp so far: {w.sent + w.delivered + w.read} sent · {w.delivered + w.read} delivered · {w.read} read{w.failed ? ` · ${w.failed} failed` : ''}</span>
+        ) : null}
+        {dirty && <button onClick={save} disabled={busy} className={`${btnPrimary} ml-auto`}>{busy ? 'Saving…' : 'Save channel'}</button>}
       </div>
       {channel !== 'email' && (
         <div className="mt-3 grid gap-2">
@@ -89,26 +85,41 @@ function Row({ a, relay, whatsappHere, onSaved }) {
   );
 }
 
-export default function WhatsAppChannels() {
+// One request for all the cards on the page (each card asks for its own automation).
+let shared = null;
+const listeners = new Set();
+function loadShared(force = false) {
+  if (!shared || force) {
+    shared = fetch('/api/automations/channels', { cache: 'no-store' }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+    shared.then((d) => listeners.forEach((fn) => fn(d)));
+  }
+  return shared;
+}
+
+// The "Send by" row of one automation card. Renders nothing for an automation the
+// country's DB doesn't have yet.
+export function ChannelControl({ id }) {
   const [d, setD] = useState(null);
-  const [err, setErr] = useState('');
-  const load = () => fetch('/api/automations/channels', { cache: 'no-store' }).then((r) => r.json()).then((j) => { if (j.error && !j.automations) setErr(j.error); else setD(j); }).catch((e) => setErr(String(e)));
-  useEffect(() => { load(); }, []);
-  if (err) return <Banner>WhatsApp channels: {err}</Banner>;
+  useEffect(() => {
+    let live = true;
+    const fn = (x) => { if (live) setD(x); };
+    listeners.add(fn);
+    loadShared().then(fn);
+    return () => { live = false; listeners.delete(fn); };
+  }, []);
   if (!d) return null;
+  if (d.error && !d.automations) return null;
+  if (!d.setUp) {
+    return <div className="px-5 md:px-6 py-3 border-b text-[12px]" style={{ borderColor: T.borderLight, color: T.textMuted }}><span className="text-[10px] font-mono uppercase tracking-label mr-2">Send by</span>Email — WhatsApp needs migration 017 on this country’s database.</div>;
+  }
+  const a = d.automations.find((x) => x.id === id);
+  if (!a) return null;
+  const whatsappHere = d.whatsappHere && d.relayConfigured;
+  const note = !d.whatsappHere ? 'WhatsApp templates link to the Paraguay site — email only here for now.' : !d.relayConfigured ? 'RELAY_API_KEY is not set on the admin.' : '';
   return (
-    <div className="p-5" style={CARD} data-testid="whatsapp-channels">
-      <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
-        <div>
-          <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>WhatsApp &amp; channels</div>
-          <div className="text-[12.5px] mt-0.5" style={{ color: T.textSecondary }}>Send each automation by email, WhatsApp or both. WhatsApp uses the approved templates in Relay — <Link href="/email-templates?tab=whatsapp" className="underline">see them</Link>.</div>
-        </div>
-      </div>
-      {!d.setUp && <Banner tone="warning">This country’s database needs migration 017 (website migrations/017_whatsapp_automations.sql) before automations can use WhatsApp.</Banner>}
-      {d.setUp && !d.whatsappHere && <Banner tone="warning">WhatsApp templates link to the Paraguay site, so automations here send email only for now.</Banner>}
-      {d.setUp && !d.relayConfigured && <Banner tone="warning">RELAY_API_KEY is not set on the admin, so the WhatsApp templates can’t be listed.</Banner>}
-      {d.relayError && <Banner>Relay: {d.relayError}</Banner>}
-      {d.setUp && d.automations.map((a) => <Row key={a.id} a={a} relay={d.relayTemplates} whatsappHere={d.whatsappHere && d.relayConfigured} onSaved={load} />)}
-    </div>
+    <>
+      {d.relayError && <div className="px-5 md:px-6 pt-3"><Banner>Relay: {d.relayError}</Banner></div>}
+      <Row key={`${a.id}-${a.channel}-${JSON.stringify(a.wa_templates)}`} a={a} relay={d.relayTemplates} whatsappHere={whatsappHere} note={note} onSaved={() => loadShared(true)} />
+    </>
   );
 }

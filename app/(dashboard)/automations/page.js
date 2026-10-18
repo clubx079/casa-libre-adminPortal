@@ -12,7 +12,7 @@ import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
-import WhatsAppChannels from '@/components/automations/WhatsAppChannels';
+import { ChannelControl } from '@/components/automations/WhatsAppChannels';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -164,7 +164,7 @@ function TemplatePicker({ label, value, templates, onChange, error }) {
 }
 
 // One automation: name + status + on/off switch, the steps in a row, a save bar.
-function AutomationCard({ title, description, enabled, enabledAt, busy, onToggle, dirty, onSave, footnote, children }) {
+function AutomationCard({ title, description, enabled, enabledAt, busy, onToggle, dirty, onSave, footnote, channelId, children }) {
   return (
     <section className="rounded-[18px] overflow-hidden" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
       <div className="flex flex-wrap items-center justify-between gap-4 px-5 md:px-6 py-5 border-b" style={{ borderColor: T.borderLight }}>
@@ -186,6 +186,8 @@ function AutomationCard({ title, description, enabled, enabledAt, busy, onToggle
           {busy === 'toggle' ? 'Saving…' : enabled ? 'On' : 'Off'}
         </button>
       </div>
+      {/* Send by Email | WhatsApp | Both (migration 017, components/automations/WhatsAppChannels.js) */}
+      {channelId && <ChannelControl id={channelId} />}
       <div className="p-4 md:p-5" style={{ background: T.bgSurface }}>
         <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-1">{children}</div>
       </div>
@@ -325,11 +327,9 @@ export default function AutomationsPage() {
       {error && <Banner>{error}</Banner>}
       {notice && <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: T.successSurface, color: T.success }}>{notice}</div>}
 
-      {/* Email, WhatsApp or both — per automation (migration 017) */}
-      <WhatsAppChannels />
-
       <AutomationCard
         title="First listing → free home display"
+          channelId="first_listing_free_home"
         description="A thank-you for a seller’s first listing: free days on the home page, then an offer to extend for US$20."
         enabled={a.enabled} enabledAt={a.enabled_at} busy={busy.first}
         onToggle={toggleFirst} dirty={dirty} onSave={() => run('first', 'save', () => put('first', firstPatch(), 'Changes saved.'))}
@@ -377,6 +377,7 @@ export default function AutomationsPage() {
       {va && vform ? (
         <AutomationCard
           title="Listing getting views"
+          channelId="listing_views_milestone"
           description="Tells a seller their listing is getting attention, with the view count, and invites them to list another property."
           enabled={va.enabled} enabledAt={va.enabled_at} busy={busy.views}
           onToggle={toggleViews} dirty={vDirty} onSave={() => run('views', 'save', () => put('views', vform, 'Changes saved.'))}
@@ -408,6 +409,7 @@ export default function AutomationsPage() {
       {da && dform ? (
         <AutomationCard
           title="Unfinished draft reminders"
+          channelId="draft_reminders"
           description="Emails sellers who started a listing and left it as a draft, with a button that opens that draft so they can finish it."
           enabled={da.enabled} enabledAt={da.enabled_at} busy={busy.drafts}
           onToggle={toggleDrafts} dirty={dDirty}
@@ -436,6 +438,7 @@ export default function AutomationsPage() {
       {xa && xform ? (
         <AutomationCard
           title="Same property listed twice"
+          channelId="duplicate_listings"
           description="When a user publishes a listing that repeats one of their own, it is NOT published: it shows in My listings as “Under review — possible duplicate”, waits in Quarantine (Approve anyway publishes it) and the user gets this email right away."
           enabled={xa.enabled} enabledAt={xa.enabled_at} busy={busy.dups}
           onToggle={toggleDups} dirty={xDirty}
@@ -456,6 +459,7 @@ export default function AutomationsPage() {
       {ns && nform ? (
         <AutomationCard
           title="Signed up, no listing yet"
+          channelId="no_listing_nudge"
           description="Welcomes verified users who created an account but never posted a listing — “Welcome to Casa Libre — post your first listing for free now” — with a button to the sell wizard."
           enabled={ns.enabled} enabledAt={ns.enabledAt} busy={busy.nolist}
           onToggle={toggleNoListing} dirty={nDirty || !nl.setUp}

@@ -43,3 +43,11 @@ describe('validateChannels', () => {
     expect(validateChannels({ channel: 'whatsapp', wa_templates: { e1: 'cl_publicacion_vence' } }, { slots, relay, country: 'bo' }).error).toBe('whatsapp_not_for_country');
   });
 });
+
+describe('WhatsApp only', () => {
+  it('keeps the no-email-fallback choice only with the WhatsApp channel', () => {
+    const slots = automationSlots(paid, emails);
+    expect(validateChannels({ channel: 'whatsapp', wa_templates: { e3: 'cl_plan_agentes', __no_fallback: true } }, { slots, relay }).value.wa_templates).toEqual({ e3: 'cl_plan_agentes', __no_fallback: true });
+    expect(validateChannels({ channel: 'both', wa_templates: { e3: 'cl_plan_agentes', __no_fallback: true } }, { slots, relay }).value.wa_templates).toEqual({ e3: 'cl_plan_agentes' });
+  });
+});

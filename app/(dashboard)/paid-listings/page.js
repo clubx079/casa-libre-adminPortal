@@ -79,7 +79,7 @@ export default function PaidListingsPage() {
   const n = Number(form.freePerMonth);
   const tplOptions = (cur) => (
     <>
-      <option value="">— pick a template —</option>
+      <option value="">— don’t send this email —</option>
       {data.templates.map((t) => <option key={t.id} value={t.id}>{templateOptionLabel(t.name, enNames[t.id])}{t.is_active === false ? ' (inactive)' : ''}</option>)}
     </>
   );

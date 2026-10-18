@@ -19,12 +19,14 @@ describe('paid listings settings', () => {
     expect(paidConfig(v.value).freePerMonth).toBe(3);
   });
 
-  it('rejects bad numbers and switching on without the three emails', () => {
+  it('rejects bad numbers; each email is optional', () => {
     expect(validatePaidSettings({ freePerMonth: -1 }).errors.freePerMonth).toBeTruthy();
     expect(validatePaidSettings({ listPrice: 'abc' }).errors.listPrice).toBeTruthy();
     expect(validatePaidSettings({ listPrice: '1', discountPct: 95 }).errors.discountPct).toMatch(/0.50/);
     expect(validatePaidSettings({ remindDaysBefore: 40, extendDays: 30 }).errors.remindDaysBefore).toBeTruthy();
-    expect(validatePaidSettings({ enabled: true }).errors.enabled).toMatch(/template/);
+    // an email without a template just isn't sent (e.g. no 'plan for agents' email)
+    expect(validatePaidSettings({ enabled: true, endingTemplateId: 'a', endedTemplateId: 'b', agentTemplateId: '' }).ok).toBe(true);
+    expect(validatePaidSettings({ enabled: true, agentTemplateId: '' }).value.gift_template_id).toBe(null);
   });
 
   it('keeps enabled_at when it was already on', () => {

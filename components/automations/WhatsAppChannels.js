@@ -77,7 +77,14 @@ function Row({ a, relay, whatsappHere, note, onSaved }) {
               </div>
             );
           })}
-          <p className="text-[11px]" style={{ color: T.textMuted }}>{channel === 'whatsapp' ? 'People without a WhatsApp number or consent still get the email.' : 'Everyone gets the email; people with a number and consent also get the WhatsApp.'}</p>
+          {channel === 'whatsapp' ? (
+            <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: T.textBody }}>
+              <input type="checkbox" checked={wa.__no_fallback !== true} onChange={(e) => { setWa((m) => { const n = { ...m }; if (e.target.checked) delete n.__no_fallback; else n.__no_fallback = true; return n; }); setMsg(null); }} className="w-4 h-4 accent-ink" />
+              If WhatsApp can’t reach someone (no number or no consent), send the email instead
+            </label>
+          ) : (
+            <p className="text-[11px]" style={{ color: T.textMuted }}>Everyone gets the email; people with a number and consent also get the WhatsApp.</p>
+          )}
         </div>
       )}
       {msg && <div className="mt-2 text-[12px] font-medium" style={{ color: msg.bad ? T.danger : T.success }}>{msg.text}</div>}

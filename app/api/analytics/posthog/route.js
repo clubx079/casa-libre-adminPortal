@@ -622,7 +622,7 @@ export async function GET(request) {
       hogql(`SELECT countIf(event = '$pageview'), uniqExact(${UKEY}),
                countIf(event = '$pageview' AND toDate(timestamp) = today()), ${step('toDate(timestamp) = today()')},
                ${step("event = '$pageview'")}, ${step("event = 'search_applied'")}, ${step("event = 'property_viewed'")},
-               ${step("event = 'property_saved'")}, ${step(CONTACT_IN)}, ${step("event = 'listing_created'")}
+               ${step("event = 'property_saved'")}, ${step(CONTACT_IN)}, ${step("event = 'listing_created'")}, ${step("event = 'app_badge_clicked'")}
              FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
       hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter()}`),
     ]);
@@ -643,6 +643,8 @@ export async function GET(request) {
         { step: 'Saved a property', persons: v[7] || 0 },
         { step: 'Contacted a seller', persons: v[8] || 0 },
         { step: 'Listed a property', persons: v[9] || 0 },
+        // tapped the App Store / Google Play badge on the website (buyer components/AppBadges.js)
+        { step: 'Clicked an app button', persons: v[10] || 0 },
       ],
       project_url: `${POSTHOG_HOST}/project/${POSTHOG_PROJECT_ID}`,
     });

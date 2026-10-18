@@ -72,7 +72,7 @@ function RangeSelect({ range, options = RANGES, ariaLabel = 'Range', className =
   );
 }
 
-const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home];
+const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home, Smartphone];
 
 const EVENT_LABELS = {
   '$pageview': 'Viewed a page',
@@ -105,6 +105,7 @@ const EVENT_LABELS = {
   saved_viewed: 'Viewed saved',
   publish_started: 'Started a listing',
   listing_created: 'Listed a property',
+  app_badge_clicked: 'Clicked an app button',
   language_switched: 'Switched language',
 };
 // Events that represent real user intent (vs PostHog's automatic system events).
@@ -113,7 +114,7 @@ const PRODUCT_EVENTS = new Set([
   'contact_seller_clicked', 'contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'whatsapp_contact_clicked', 'phone_revealed', 'listing_created',
   'contact_whatsapp_click', 'contact_call_click', 'contact_copy_click', 'report_unresponsive',
   'publish_started', 'user_logged_in', 'user_signed_up', 'sort_changed', 'map_pin_clicked',
-  'photo_gallery_opened', 'property_share_opened', 'saved_viewed', 'oauth_login_clicked',
+  'photo_gallery_opened', 'property_share_opened', 'saved_viewed', 'oauth_login_clicked', 'app_badge_clicked',
 ]);
 // The user journey, in order — used to show where an individual user dropped off.
 const STAGES = [

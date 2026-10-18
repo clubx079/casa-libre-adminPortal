@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { dbError, q } from '@/lib/automationDb';
+import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
 import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DEFAULT_TEMPLATES, samePersonGroups, paidStats } from '@/lib/paidListingsAdmin';
 
 export const runtime = 'nodejs';
@@ -35,7 +35,7 @@ async function payload(db, cc) {
   const [payments, props, sent] = await Promise.all([
     db.select('payments', 'select=id,user_id,property_id,kind,amount_usd,status,created_at,highlight_until&kind=in.(listing,listing_extend,listing_free)&order=created_at.desc&limit=5000').catch(() => []),
     db.select('properties', `select=id,created_by,created_at,status,admin_status,raw_data,property_type,listing_type,neighborhood,city&origin=eq.user&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`).catch(() => []),
-    db.selectWithCount('email_log', `select=id&automation_id=eq.${PAID_LISTINGS_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 })),
+    db.selectWithCount('email_log', `select=id&automation_id=eq.${PAID_LISTINGS_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 })),
   ]);
   // Older paid listings (created before the 180-day window) still count as paid.
   const paidIds = [...new Set(payments.filter((p) => p.property_id && p.kind !== 'listing_free').map((p) => String(p.property_id)))];

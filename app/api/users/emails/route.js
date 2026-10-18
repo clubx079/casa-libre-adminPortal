@@ -4,6 +4,7 @@
 //   • Resend's list (needs RESEND_READ_API_KEY): every email, codes included.
 //   • email_log (our DB): names automation emails by template, and keeps automation
 //     emails Resend no longer lists. Without the Resend key only these show.
+import { EMAIL_ONLY } from '@/lib/automationDb';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
@@ -47,7 +48,7 @@ export async function GET(req) {
 
   try {
     const [logRows, templates, resend] = await Promise.all([
-      select('email_log', `select=id,to_email,template_key,subject,resend_id,status,created_at&to_email=eq.${encodeURIComponent(email)}&order=created_at.desc&limit=200`).catch(() => []),
+      select('email_log', `select=id,to_email,template_key,subject,resend_id,status,created_at&to_email=eq.${encodeURIComponent(email)}&order=created_at.desc&limit=200&${EMAIL_ONLY}`).catch(() => []),
       select('email_templates', 'select=key,name,subject').catch(() => []),
       countryEmails(country, HISTORY_DAYS).catch((e) => ({ error: String(e?.message || e) })),
     ]);

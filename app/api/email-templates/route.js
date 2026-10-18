@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { validateTemplate, templateUsage } from '@/lib/automationAdmin';
-import { dbError } from '@/lib/automationDb';
+import { dbError, EMAIL_ONLY } from '@/lib/automationDb';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ export async function GET() {
     const [templates, automations, logs] = await Promise.all([
       select('email_templates', 'select=*&order=created_at.asc'),
       select('automations', 'select=*'),
-      select('email_log', 'select=template_id,status,created_at&status=eq.sent&order=created_at.desc&limit=5000'),
+      select('email_log', `select=template_id,status,created_at&status=eq.sent&order=created_at.desc&limit=5000&${EMAIL_ONLY}`),
     ]);
     const sent = new Map();
     for (const l of logs) {

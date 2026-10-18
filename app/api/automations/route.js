@@ -11,7 +11,7 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, DUPLICATES_AUTOMATION_ID, validateSettings, validateViewsSettings, validateDraftSettings, validateDuplicateSettings, automationStats, draftStepCounts } from '@/lib/automationAdmin';
-import { dbError, q } from '@/lib/automationDb';
+import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
 import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoListing } from '@/lib/noListingAdmin';
 
 export const runtime = 'nodejs';
@@ -31,7 +31,7 @@ async function payload(db) {
   try {
     const [va] = await db.select('automations', `select=*&id=eq.${VIEWS_AUTOMATION_ID}&limit=1`);
     if (va && 'milestones' in va) {
-      const sent = await db.selectWithCount('email_log', `select=id&automation_id=eq.${VIEWS_AUTOMATION_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 }));
+      const sent = await db.selectWithCount('email_log', `select=id&automation_id=eq.${VIEWS_AUTOMATION_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 }));
       views = { automation: va, sent: sent.count || 0 };
     }
   } catch { views = null; }
@@ -41,8 +41,8 @@ async function payload(db) {
     const [da] = await db.select('automations', `select=*&id=eq.${DRAFTS_AUTOMATION_ID}&limit=1`);
     if (da && 'milestones' in da) {
       const [sent, logs, waiting] = await Promise.all([
-        db.selectWithCount('email_log', `select=id&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 })),
-        db.select('email_log', `select=dedupe_key&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=5000`).catch(() => []),
+        db.selectWithCount('email_log', `select=id&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 })),
+        db.select('email_log', `select=dedupe_key&automation_id=eq.${DRAFTS_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=5000&${EMAIL_ONLY}`).catch(() => []),
         db.selectWithCount('listing_drafts', 'select=id&limit=1').catch(() => null),
       ]);
       drafts = { automation: da, sent: sent.count || 0, perStep: draftStepCounts(logs), waiting: waiting ? waiting.count || 0 : null };
@@ -53,7 +53,7 @@ async function payload(db) {
   try {
     const [xa] = await db.select('automations', `select=*&id=eq.${DUPLICATES_AUTOMATION_ID}&limit=1`);
     if (xa) {
-      const sent = await db.selectWithCount('email_log', `select=id&automation_id=eq.${DUPLICATES_AUTOMATION_ID}&status=eq.sent&limit=1`).catch(() => ({ count: 0 }));
+      const sent = await db.selectWithCount('email_log', `select=id&automation_id=eq.${DUPLICATES_AUTOMATION_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 }));
       duplicates = { automation: xa, sent: sent.count || 0 };
     }
   } catch { duplicates = null; }
@@ -61,7 +61,7 @@ async function payload(db) {
   let noListing = null;
   try {
     const [na] = await db.select('automations', `select=*&id=eq.${NO_LISTING_AUTOMATION_ID}&limit=1`);
-    const logs = na ? await db.select('email_log', `select=dedupe_key&automation_id=eq.${NO_LISTING_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=10000`).catch(() => []) : [];
+    const logs = na ? await db.select('email_log', `select=dedupe_key&automation_id=eq.${NO_LISTING_AUTOMATION_ID}&status=eq.sent&order=created_at.desc&limit=10000&${EMAIL_ONLY}`).catch(() => []) : [];
     noListing = { setUp: !!na, settings: noListingConfig(na || null), sent: logs.length, perStep: noListingStepCounts(logs) };
   } catch { noListing = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);

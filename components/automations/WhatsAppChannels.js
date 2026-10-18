@@ -3,7 +3,7 @@
 // both — and which approved WhatsApp template (Relay) stands in for each of its emails.
 // Data: /api/automations/channels (migration 017). The website does the sending
 // (buyer lib/automations/whatsappSend.js); WhatsApp goes only to people with a number
-// and consent, everyone else still gets the email.
+// (anyone who hasn't opted out); everyone else still gets the email.
 import { useEffect, useState } from 'react';
 import { T, Pill, Banner, btnPrimary } from '@/components/automations/ui';
 
@@ -73,17 +73,17 @@ function Row({ a, relay, whatsappHere, note, onSaved }) {
                   {relay.map((r) => <option key={r.name} value={r.name} disabled={r.status !== 'APPROVED'}>{r.name} · {r.category}{r.status !== 'APPROVED' ? ` (${r.status.toLowerCase()})` : ''}{r.name === s.suggested ? ' · made for this email' : ''}</option>)}
                 </select>
                 {t && <Pill tone={t.category === 'marketing' ? 'warning' : 'info'}>{t.category}</Pill>}
-                {t && <span className="text-[11px]" style={{ color: T.textMuted }}>{PRICE[t.category] || ''}{t.category === 'marketing' ? ' · only people who accepted WhatsApp updates' : ''}</span>}
+                {t && <span className="text-[11px]" style={{ color: T.textMuted }}>{PRICE[t.category] || ''}</span>}
               </div>
             );
           })}
           {channel === 'whatsapp' ? (
             <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: T.textBody }}>
               <input type="checkbox" checked={wa.__no_fallback !== true} onChange={(e) => { setWa((m) => { const n = { ...m }; if (e.target.checked) delete n.__no_fallback; else n.__no_fallback = true; return n; }); setMsg(null); }} className="w-4 h-4 accent-ink" />
-              If WhatsApp can’t reach someone (no number or no consent), send the email instead
+              If WhatsApp can’t reach someone (no number, or they opted out), send the email instead
             </label>
           ) : (
-            <p className="text-[11px]" style={{ color: T.textMuted }}>Everyone gets the email; people with a number and consent also get the WhatsApp.</p>
+            <p className="text-[11px]" style={{ color: T.textMuted }}>Everyone gets the email; people with a WhatsApp number also get the WhatsApp.</p>
           )}
         </div>
       )}

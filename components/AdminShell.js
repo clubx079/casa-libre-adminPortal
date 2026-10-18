@@ -25,7 +25,7 @@ const NAV = [
   ['/marketing', 'Marketing', 'chart'],
   ['/app-updates', 'App updates', 'phone'],
   ['/app-installs', 'App installs', 'phone'],
-  ['/email-templates', 'Email templates', 'mail'],
+  ['/email-templates', 'Templates', 'mail'],
   ['/runs', 'Runs', 'runs'],
 ];
 

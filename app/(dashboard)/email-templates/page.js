@@ -1,14 +1,27 @@
 'use client';
+// Templates — two tabs: Email templates (below) and WhatsApp templates (from Relay,
+// components/automations/WhatsAppTemplatesTab.js; ?tab=whatsapp).
 // Email templates — list. Built-in templates (used by the automation) can be edited
 // but not deleted; custom templates can be created, duplicated and deleted. Each name
 // and subject shows its English version underneath (the emails stay in Spanish).
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail } from 'lucide-react';
 import { T, CARD, PageHeader, Pill, Banner, PendingMigration, btnPrimary, btnSecondary } from '@/components/automations/ui';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { fixedEnglish } from '@/lib/templateEnglish';
+import WhatsAppTemplatesTab from '@/components/automations/WhatsAppTemplatesTab';
+
+function Tabs({ tab, onTab }) {
+  return (
+    <div className="inline-flex rounded-full p-1" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }} data-testid="template-tabs">
+      {[['email', 'Email templates'], ['whatsapp', 'WhatsApp templates']].map(([v, l]) => (
+        <button key={v} onClick={() => onTab(v)} className="px-4 py-1.5 rounded-full text-[13px] font-semibold" style={tab === v ? { background: T.textPrimary, color: '#fff' } : { color: T.textSecondary }}>{l}</button>
+      ))}
+    </div>
+  );
+}
 
 export default function EmailTemplatesPage() {
   const router = useRouter();
@@ -18,6 +31,9 @@ export default function EmailTemplatesPage() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
   const enNames = useEnglishNames(rows);
+  const params = useSearchParams();
+  const [tab, setTab] = useState(params?.get('tab') === 'whatsapp' ? 'whatsapp' : 'email');
+  const switchTab = (v) => { setTab(v); router.replace(v === 'whatsapp' ? '/email-templates?tab=whatsapp' : '/email-templates'); };
 
   async function load() {
     setLoading(true); setError('');
@@ -60,10 +76,12 @@ export default function EmailTemplatesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Email templates"
-        sub="The emails Casa Libre sends automatically. Edit the wording here; the Casa Libre design is added for you."
-        action={!pending && <Link href="/email-templates/new" className={btnPrimary}>New template</Link>}
+        title="Templates"
+        sub={tab === 'whatsapp' ? 'The WhatsApp messages automations can send, from Relay.' : 'The emails Casa Libre sends automatically. Edit the wording here; the Casa Libre design is added for you.'}
+        action={tab === 'email' && !pending && <Link href="/email-templates/new" className={btnPrimary}>New template</Link>}
       />
+      <Tabs tab={tab} onTab={switchTab} />
+      {tab === 'whatsapp' ? <WhatsAppTemplatesTab /> : (<>
 
       {error && <Banner>{error}</Banner>}
       {pending && <PendingMigration />}
@@ -119,6 +137,7 @@ export default function EmailTemplatesPage() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }

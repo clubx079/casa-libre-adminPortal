@@ -12,6 +12,7 @@ import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
+import WhatsAppChannels from '@/components/automations/WhatsAppChannels';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -323,6 +324,9 @@ export default function AutomationsPage() {
       <PageHeader title="Automations" sub="Emails and rewards that run on their own, checked every hour." />
       {error && <Banner>{error}</Banner>}
       {notice && <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: T.successSurface, color: T.success }}>{notice}</div>}
+
+      {/* Email, WhatsApp or both — per automation (migration 017) */}
+      <WhatsAppChannels />
 
       <AutomationCard
         title="First listing → free home display"

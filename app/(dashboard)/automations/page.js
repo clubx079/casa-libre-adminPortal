@@ -209,6 +209,7 @@ export default function AutomationsPage() {
   const [dform, setDform] = useState(null);
   const [xform, setXform] = useState(null);
   const [nform, setNform] = useState(null);
+  const [hform, setHform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -227,6 +228,8 @@ export default function AutomationsPage() {
     setXform(x ? { template_id: x.template_id || '' } : null);
     const n = j.noListing?.settings;
     setNform(n ? { days: n.days, secondAfter: n.secondAfter, templateId: n.templateId, reminderTemplateId: n.reminderTemplateId } : null);
+    const hs = j.listingHeld?.settings;
+    setHform(hs ? { hours: hs.hours, reminderAfter: hs.reminderAfter } : null);
   }
 
   useEffect(() => {
@@ -243,7 +246,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -317,6 +320,16 @@ export default function AutomationsPage() {
     const on = !ns.enabled;
     if (on && !window.confirm(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`)) return;
     run('nolist', 'toggle', () => put('nolist', { enabled: on }, on ? '“Signed up, no listing yet” is on.' : '“Signed up, no listing yet” is off.'));
+  };
+  const hl = data.listingHeld;
+  const hs = hl?.settings;
+  const e6 = errors.held || {};
+  const hDirty = !!(hs && hform && ['hours', 'reminderAfter'].some((k) => String(hform[k] ?? '') !== String(hs[k] ?? '')));
+  const hHasReminder = !!(hform && hform.reminderAfter !== '' && Number(hform.reminderAfter) > 0);
+  const toggleHeld = () => {
+    const on = !hs.enabled;
+    if (on && !window.confirm(`Switch "Listing not published" on?\n\nOwners of user listings held off the site (waiting for payment, photos rejected, paused, missing details) get a message ${hs.hours} ${hs.hours === 1 ? 'hour' : 'hours'} later telling them why, with a button to My listings. Only listings created from now on.${hl.setUp ? '' : '\n\nThis also creates the four default emails (Spanish) — edit them in Templates.'}`)) return;
+    run('held', 'toggle', () => put('held', { enabled: on }, on ? '“Listing not published” is on.' : '“Listing not published” is off.'));
   };
   const nPerStep = nl?.perStep || {};
   const nStats = nl?.sent ? ` ${nl.sent.toLocaleString('en-US')} sent so far${nPerStep['2'] ? ` (welcome: ${nPerStep['1'] || 0} · second: ${nPerStep['2']})` : ''}.` : '';
@@ -483,6 +496,44 @@ export default function AutomationsPage() {
             <DayField value={nform.secondAfter} onChange={(v) => setNform((f) => ({ ...f, secondAfter: v }))} min={0} max={59} error={e5.secondAfter} suffix="more days later" />
             <p className="text-[11px]" style={{ color: T.textMuted }}>{nHasSecond ? `Sent ${Number(nform.days) + Number(nform.secondAfter)} days after sign-up.` : 'Leave empty (or 0) for no second email.'}</p>
             {nHasSecond && <TemplatePicker label="Email sent" value={nform.reminderTemplateId} templates={data.templates} onChange={(v) => setNform((f) => ({ ...f, reminderTemplateId: v }))} error={e5.reminderTemplateId} />}
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {hs && hform ? (
+        <AutomationCard
+          title="Listing not published"
+          channelId="listing_held"
+          description="When a seller's listing is held off the site — waiting for payment, photos rejected, paused, or missing details — they get a message telling them why, with a button to My listings to fix it or pay."
+          enabled={hs.enabled} enabledAt={hs.enabledAt} busy={busy.held}
+          onToggle={toggleHeld} dirty={hDirty || !hl.setUp}
+          onSave={() => run('held', 'save', () => put('held', hform, hl.setUp ? 'Changes saved.' : 'Saved — the four default emails were created (Templates).'))}
+          footnote={`Only listings created after it is switched on. Stops as soon as the listing goes live. Duplicates and ended paid listings have their own emails. Daytime only (9:00–21:00 local).${hl.setUp ? '' : ' Not set up for this country yet: saving creates it with four default emails.'}${hl.sent ? ` ${hl.sent.toLocaleString('en-US')} sent so far (${hl.reasons.filter((r) => hl.perReason[r.reason]).map((r) => `${r.label.toLowerCase()}: ${hl.perReason[r.reason]}`).join(' · ')}).` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A seller's listing is held — not on the site" />
+          <Connector />
+          <StepCard n={2} kind="Wait" title="Send the message this many hours later">
+            <DayField value={hform.hours} onChange={(v) => setHform((f) => ({ ...f, hours: v }))} min={1} max={720} error={e6.hours} suffix="hours after it was held" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>Gives them time to pay or fix it on the spot first.</p>
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Message" title="One message per reason, with a My listings button">
+            <div className="space-y-1.5">
+              {hl.reasons.map((r) => (
+                <div key={r.reason} className="flex items-center justify-between gap-2 text-[12px] px-2.5 py-1.5 rounded-[8px]" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
+                  <span style={{ color: T.textBody }}>{r.label}</span>
+                  {r.template
+                    ? <Link href={`/email-templates/${r.template.id}`} className="underline underline-offset-2 truncate max-w-[55%]" style={{ color: r.template.is_active === false ? T.textMuted : T.textSecondary }}>{r.template.is_active === false ? 'Off' : 'Edit email'}</Link>
+                    : <span style={{ color: T.textMuted }}>{hl.setUp ? 'missing' : 'created on save'}</span>}
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>Switch a reason off by switching its email off in Templates.</p>
+          </StepCard>
+          <Connector />
+          <StepCard n={4} kind="Optional" title="Reminder if it's still not published">
+            <DayField value={hform.reminderAfter} onChange={(v) => setHform((f) => ({ ...f, reminderAfter: v }))} min={0} max={719} error={e6.reminderAfter} suffix="more hours later" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>{hHasReminder ? `Sent ${Number(hform.hours) + Number(hform.reminderAfter)} hours after it was held (same message).` : 'Leave empty (or 0) for no reminder.'}</p>
           </StepCard>
         </AutomationCard>
       ) : null}

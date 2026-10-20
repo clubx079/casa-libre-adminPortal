@@ -1151,6 +1151,25 @@ const WhatsAppCard = ({ master }) => {
 
 // `master` is the page's date range: the summary (cards + funnel) always shows
 // it, and each card below starts from it but can pick its own.
+// One line on the User analytics tab: verified users by WhatsApp vs email (all time,
+// this country). /api/analytics/verified
+const VerifiedBy = () => {
+  const [v, setV] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/analytics/verified').then((r) => r.json()).then((j) => { if (alive && !j?.error) setV(j); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!v) return null;
+  return (
+    <div className="flex items-center gap-4 text-xs px-4 py-2.5 bg-white" style={CARD} data-testid="verified-by-line">
+      <span style={{ color: T.textSecondary }}>Verified users</span>
+      <span style={{ color: T.textPrimary }}><b>{v.whatsapp.toLocaleString('en-US')}</b> WhatsApp</span>
+      <span style={{ color: T.textPrimary }}><b>{v.email.toLocaleString('en-US')}</b> email</span>
+    </div>
+  );
+};
+
 const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => {
   const days = master;   // summary window (cards + funnel)
   const [data, setData] = useState(null);
@@ -1295,6 +1314,8 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
           </div>
         ))}
       </div>
+
+      <VerifiedBy />
 
       {/* User funnel + country donut, side by side */}
       <div className="grid lg:grid-cols-2 gap-4 items-start">
@@ -1675,8 +1696,7 @@ const EmailAnalytics = ({ master }) => {
   );
 };
 
-// ── WhatsApp analytics: how people verify (WhatsApp vs email), and what the site's
-// automations sent by WhatsApp — sent / delivered / read (Relay webhook) / clicked
+// ── WhatsApp analytics: what the site's automations sent by WhatsApp — sent / delivered / read (Relay webhook) / clicked
 // (PostHog visits from the button links, utm_source=whatsapp). /api/analytics/whatsapp.
 const WhatsAppAnalytics = ({ master }) => {
   const range = useSectionRange(master);
@@ -1700,8 +1720,6 @@ const WhatsAppAnalytics = ({ master }) => {
   const fmtAt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
   const statusColor = (st) => (st === 'read' ? T.success : st === 'delivered' ? T.info : st === 'failed' ? T.danger : T.textMuted);
   const t = data?.totals;
-  const v = data?.verifiedBy;
-  const n = data?.newInPeriod;
   const Tile = ([k, val, sub]) => (
     <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
       <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
@@ -1712,41 +1730,13 @@ const WhatsAppAnalytics = ({ master }) => {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white p-5" style={CARD} data-testid="wa-verified">
+      <div className="bg-white p-5" style={CARD} data-testid="wa-messages">
         <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>How users verify: WhatsApp vs email</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>WhatsApp messages from the automations</h2>
           <RangeSelect range={range} options={EMAIL_RANGES} ariaLabel="WhatsApp range" />
         </div>
-        <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>all verified accounts of this country · team / test accounts left out · a WhatsApp sign-up&apos;s email counts once its confirm link is clicked</p>
-        {loading ? <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p> : err ? <p className="text-xs" style={{ color: T.danger }}>Could not load: {err}</p> : (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
-              {[
-                ['WhatsApp only', v.whatsappOnly, 'verified number'],
-                ['Email only', v.emailOnly, 'email code, Google or Apple'],
-                ['Both', v.both, 'WhatsApp + confirmed email'],
-                ['Google', v.google, null],
-                ['Apple', v.apple, null],
-                ['Email not confirmed', v.unconfirmedEmail, 'WhatsApp sign-ups'],
-              ].map(Tile)}
-            </div>
-            <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>New in this period</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                ['Verified a WhatsApp', n.whatsapp, 'sign-ups + numbers added'],
-                ['Signed up by email', n.email, null],
-                ['Signed up with Google', n.google, null],
-                ['Signed up with Apple', n.apple, null],
-              ].map(Tile)}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="bg-white p-5" style={CARD} data-testid="wa-messages">
-        <h2 className="text-sm font-bold mb-1" style={{ color: T.textPrimary }}>WhatsApp messages from the automations</h2>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>status from Relay · clicks = visits from the message&apos;s button (PostHog, utm_source=whatsapp) · sign-in codes not included</p>
-        {loading ? <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p> : err ? null : (
+        {loading ? <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p> : err ? <p className="text-xs" style={{ color: T.danger }}>Could not load: {err}</p> : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
               {[
@@ -1809,7 +1799,7 @@ const TABS = [
   { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
   { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
-  { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'How users verify (WhatsApp vs email), and WhatsApp messages: sent, delivered, read, clicked' },
+  { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'WhatsApp messages from the automations: sent, delivered, read, clicked' },
 ];
 
 export default function AnalyticsPage() {

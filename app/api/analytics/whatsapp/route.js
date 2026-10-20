@@ -25,7 +25,7 @@ export async function GET(req) {
 
   try {
     const [rows, extra] = await Promise.all([
-      selectAll(db, 'email_log', `select=id,status,subject,to_email,to_phone,created_at&channel=eq.whatsapp&created_at=gte.${encodeURIComponent(since)}&order=id.asc`).catch(() => []),
+      selectAll(db, 'email_log', `select=id,status,subject,to_email,to_phone,created_at&channel=eq.whatsapp&or=(automation_id.is.null,automation_id.neq.wa_campaign)&created_at=gte.${encodeURIComponent(since)}&order=id.asc`).catch(() => []),
       internalEmails(country),
     ]);
     const mine = rows.filter((r) => !isInternalEmail(r.to_email, extra));

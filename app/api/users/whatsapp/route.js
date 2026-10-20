@@ -32,7 +32,8 @@ export async function GET(req) {
         const res = await hogql(`
           SELECT coalesce(properties.utm_campaign, 'other') AS t, count() AS n
           FROM events
-          WHERE event = '$pageview' AND properties.utm_source = 'whatsapp'
+          WHERE event = '$pageview' AND properties.utm_source = 'whatsapp' AND properties.utm_medium = 'whatsapp'
+            AND startsWith(coalesce(properties.utm_campaign, ''), 'cl_')
             AND lower(person.properties.email) = '${q(email)}'
             AND timestamp >= now() - INTERVAL 365 DAY
           GROUP BY t`);

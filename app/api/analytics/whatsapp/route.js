@@ -30,7 +30,9 @@ export async function GET(req) {
     ]);
     const mine = rows.filter((r) => !isInternalEmail(r.to_email, extra));
 
-    // Clicks per template, from PostHog (button links carry utm_source=whatsapp).
+    // Clicks per template, from PostHog: only our automation buttons (utm_medium=whatsapp,
+    // utm_campaign=<cl_ template>) — not buyers' WhatsApp contact links (utm_medium=seller_contact,
+    // utm_campaign=property_share), which also carry utm_source=whatsapp.
     let clicks = {};
     let clicksNote = null;
     if (posthogConfigured()) {
@@ -38,7 +40,8 @@ export async function GET(req) {
         const res = await hogql(`
           SELECT coalesce(properties.utm_campaign, 'other') AS t, count() AS n
           FROM events
-          WHERE event = '$pageview' AND properties.utm_source = 'whatsapp'
+          WHERE event = '$pageview' AND properties.utm_source = 'whatsapp' AND properties.utm_medium = 'whatsapp'
+            AND startsWith(coalesce(properties.utm_campaign, ''), 'cl_')
             AND timestamp >= now() - INTERVAL ${days} DAY${siteClause(country)}
           GROUP BY t`);
         clicks = Object.fromEntries(res.map(([t, n]) => [String(t), Number(n) || 0]));

@@ -10,7 +10,7 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
-import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DEFAULT_TEMPLATES, samePersonGroups, paidStats } from '@/lib/paidListingsAdmin';
+import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DEFAULT_TEMPLATES, samePersonGroups, paidStats, PHONE_PREFIX } from '@/lib/paidListingsAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,17 +34,19 @@ async function payload(db, cc) {
   const since = new Date(Date.now() - 180 * 86400000).toISOString();
   const [payments, props, sent] = await Promise.all([
     db.select('payments', 'select=id,user_id,property_id,kind,amount_usd,status,created_at,highlight_until&kind=in.(listing,listing_extend,listing_free)&order=created_at.desc&limit=5000').catch(() => []),
-    db.select('properties', `select=id,created_by,created_at,status,admin_status,raw_data,property_type,listing_type,neighborhood,city&origin=eq.user&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`).catch(() => []),
+    db.select('properties', `select=id,created_by,created_at,status,admin_status,raw_data,contact_phone,property_type,listing_type,neighborhood,city&origin=eq.user&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`).catch(() => []),
     db.selectWithCount('email_log', `select=id&automation_id=eq.${PAID_LISTINGS_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 })),
   ]);
   // Older paid listings (created before the 180-day window) still count as paid.
   const paidIds = [...new Set(payments.filter((p) => p.property_id && p.kind !== 'listing_free').map((p) => String(p.property_id)))];
   const have = new Set(props.map((p) => String(p.id)));
   const missing = paidIds.filter((id) => !have.has(id));
-  const older = missing.length ? await db.select('properties', `select=id,created_by,created_at,status,admin_status,raw_data,property_type,listing_type,neighborhood,city&id=${inList(missing.slice(0, 300))}`).catch(() => []) : [];
+  const older = missing.length ? await db.select('properties', `select=id,created_by,created_at,status,admin_status,raw_data,contact_phone,property_type,listing_type,neighborhood,city&id=${inList(missing.slice(0, 300))}`).catch(() => []) : [];
   const all = [...props, ...older];
 
-  const groups = samePersonGroups(all, cfg.samePersonMin);
+  // Verified WhatsApp numbers: a listing phone that is another account's number = same person.
+  const verified = await db.select('users', 'select=id,phone&phone_verified_at=not.is.null&limit=10000').catch(() => []);
+  const groups = samePersonGroups(all, cfg.samePersonMin, { prefix: PHONE_PREFIX[activeCountry()] || '', verified });
   const listed = all.filter((p) => p.status === 'payment_pending' || p.status === 'expired' || p.raw_data?.paid_listing).slice(0, 100);
   const userIds = [...new Set([...listed.map((p) => p.created_by), ...groups.flatMap((g) => g.users)].filter(Boolean).map(String))];
   const users = userIds.length ? await db.select('users', `select=id,email,full_name,created_at&id=${inList(userIds.slice(0, 300))}`).catch(() => []) : [];

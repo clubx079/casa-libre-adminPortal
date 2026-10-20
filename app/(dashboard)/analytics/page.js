@@ -1596,10 +1596,141 @@ const EmailAnalytics = ({ master }) => {
   );
 };
 
+// ── WhatsApp analytics: how people verify (WhatsApp vs email), and what the site's
+// automations sent by WhatsApp — sent / delivered / read (Relay webhook) / clicked
+// (PostHog visits from the button links, utm_source=whatsapp). /api/analytics/whatsapp.
+const WhatsAppAnalytics = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr('');
+    fetch(`/api/analytics/whatsapp?days=${days}`)
+      .then((r) => r.json())
+      .then((d) => { if (!alive) return; if (d?.error) { setErr(d.error); setData(null); } else setData(d); })
+      .catch(() => { if (alive) { setErr('failed'); setData(null); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days]);
+
+  const pct = (n, of) => (of ? `${Math.round((n / of) * 1000) / 10}%` : '—');
+  const fmtAt = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const statusColor = (st) => (st === 'read' ? T.success : st === 'delivered' ? T.info : st === 'failed' ? T.danger : T.textMuted);
+  const t = data?.totals;
+  const v = data?.verifiedBy;
+  const n = data?.newInPeriod;
+  const Tile = ([k, val, sub]) => (
+    <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
+      <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
+      <div className="text-xl font-bold mt-0.5" style={{ color: T.textPrimary }}>{Number(val || 0).toLocaleString('en-US')}</div>
+      {sub ? <div className="text-[10px] mt-0.5" style={{ color: T.textMuted }}>{sub}</div> : null}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white p-5" style={CARD} data-testid="wa-verified">
+        <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>How users verify: WhatsApp vs email</h2>
+          <RangeSelect range={range} options={EMAIL_RANGES} ariaLabel="WhatsApp range" />
+        </div>
+        <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>all verified accounts of this country · team / test accounts left out · a WhatsApp sign-up&apos;s email counts once its confirm link is clicked</p>
+        {loading ? <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p> : err ? <p className="text-xs" style={{ color: T.danger }}>Could not load: {err}</p> : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
+              {[
+                ['WhatsApp only', v.whatsappOnly, 'verified number'],
+                ['Email only', v.emailOnly, 'email code, Google or Apple'],
+                ['Both', v.both, 'WhatsApp + confirmed email'],
+                ['Google', v.google, null],
+                ['Apple', v.apple, null],
+                ['Email not confirmed', v.unconfirmedEmail, 'WhatsApp sign-ups'],
+              ].map(Tile)}
+            </div>
+            <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>New in this period</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                ['Verified a WhatsApp', n.whatsapp, 'sign-ups + numbers added'],
+                ['Signed up by email', n.email, null],
+                ['Signed up with Google', n.google, null],
+                ['Signed up with Apple', n.apple, null],
+              ].map(Tile)}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="bg-white p-5" style={CARD} data-testid="wa-messages">
+        <h2 className="text-sm font-bold mb-1" style={{ color: T.textPrimary }}>WhatsApp messages from the automations</h2>
+        <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>status from Relay · clicks = visits from the message&apos;s button (PostHog, utm_source=whatsapp) · sign-in codes not included</p>
+        {loading ? <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p> : err ? null : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              {[
+                ['Sent', t.sent, null],
+                ['Delivered', t.delivered, t.sent ? `${pct(t.delivered, t.sent)} of sent` : null],
+                ['Read', t.read, t.readRate != null ? `read rate ${t.readRate}%` : null],
+                ['Clicked', t.clicked, t.clickRate != null ? `click rate ${t.clickRate}%` : data.clicksNote ? 'PostHog not available' : null],
+                ['Failed', t.failed, t.sent ? `${pct(t.failed, t.sent)} of sent` : null],
+              ].map(Tile)}
+            </div>
+            {data.byTemplate.length === 0 ? (
+              <p className="text-xs" style={{ color: T.textMuted }}>No WhatsApp messages in this period. Automations send by WhatsApp once their &quot;Send by&quot; is set to WhatsApp or Both (Automations page).</p>
+            ) : (
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-xs">
+                  <thead><tr style={{ color: T.textMuted }}>{['Template', 'Sent', 'Delivered', 'Read', 'Clicked', 'Failed', 'Read rate'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {data.byTemplate.map((r) => (
+                      <tr key={r.template} className="border-t" style={{ borderColor: T.borderLight, color: T.textBody }}>
+                        <td className="py-1.5 font-medium font-mono" style={{ color: T.textPrimary }}>{r.template}</td>
+                        <td className="py-1.5 text-right">{r.sent}</td>
+                        <td className="py-1.5 text-right">{r.delivered}</td>
+                        <td className="py-1.5 text-right">{r.read}</td>
+                        <td className="py-1.5 text-right">{r.clicked}</td>
+                        <td className="py-1.5 text-right">{r.failed}</td>
+                        <td className="py-1.5 text-right font-semibold">{r.readRate != null ? `${r.readRate}%` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {data.recent?.length > 0 && (
+              <>
+                <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>Latest messages</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {data.recent.map((r) => (
+                        <tr key={r.id} className="border-t" style={{ borderColor: T.borderLight, color: T.textBody }}>
+                          <td className="py-1.5 whitespace-nowrap">{fmtAt(r.at)}</td>
+                          <td className="py-1.5 font-mono">{r.to}</td>
+                          <td className="py-1.5 font-mono">{r.template}</td>
+                          <td className="py-1.5 text-right font-semibold" style={{ color: statusColor(r.status) }}>{r.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const TABS = [
   { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
   { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
+  { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'How users verify (WhatsApp vs email), and WhatsApp messages: sent, delivered, read, clicked' },
 ];
 
 export default function AnalyticsPage() {
@@ -1613,6 +1744,8 @@ export default function AnalyticsPage() {
   // Resend lists are rate-limited: load the email tab only once it is opened.
   const [emailsSeen, setEmailsSeen] = useState(false);
   useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
+  const [waSeen, setWaSeen] = useState(false);
+  useEffect(() => { if (tab === 'whatsapp') setWaSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
 
   if (deep) {
@@ -1657,6 +1790,7 @@ export default function AnalyticsPage() {
       <div hidden={tab !== 'users'}><UsersAnalytics master={master} /></div>
       <div hidden={tab !== 'properties'}><PropertyAnalytics master={master} /></div>
       <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics master={master} /> : null}</div>
+      <div hidden={tab !== 'whatsapp'}>{waSeen ? <WhatsAppAnalytics master={master} /> : null}</div>
     </div>
   );
 }

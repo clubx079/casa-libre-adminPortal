@@ -215,6 +215,31 @@ export default function UsersPage() {
         ))}
       </div>
 
+      {/* How users verified — WhatsApp vs email (the main-identity question) */}
+      {stats?.verifiedBy && !loading && (
+        <div className="bg-white px-5 py-4" style={CARD} data-testid="verified-by">
+          <p className="text-xs font-medium mb-3" style={{ color: T.textSecondary }}>How verified users signed up</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              ['WhatsApp only', stats.verifiedBy.whatsappOnly, 'Verified a WhatsApp number, email not confirmed or not given'],
+              ['Email only', stats.verifiedBy.emailOnly, 'Email code, Google or Apple; no verified WhatsApp'],
+              ['Both', stats.verifiedBy.both, 'Verified WhatsApp and a confirmed email'],
+              ['Google', stats.verifiedBy.google, 'Signed up with Google'],
+              ['Apple', stats.verifiedBy.apple, 'Signed up with Apple (iPhone)'],
+              ['Email not confirmed', stats.verifiedBy.unconfirmedEmail, 'WhatsApp sign-ups that have not clicked the confirm-email link yet'],
+            ].map(([label, n, hint]) => (
+              <div key={label} title={hint}>
+                <p className="text-[22px] font-bold tracking-head" style={{ color: T.textPrimary }}>{Number(n || 0).toLocaleString()}</p>
+                <p className="text-[11.5px]" style={{ color: T.textMuted }}>{label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>
+            Accounts that look like the same person (same phone number, device or network) are listed on the <a href="/paid-listings" className="underline">Paid listings</a> page.
+          </p>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white overflow-hidden" style={CARD}>
         <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: T.borderLight }}>

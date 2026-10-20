@@ -320,6 +320,84 @@ const UserEmails = ({ email }) => {
   );
 };
 
+// This person's WhatsApp messages from the automations (next to their Emails): status
+// from Relay's webhook, clicks = visits from the button links (PostHog). /api/users/whatsapp
+const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
+const UserWhatsApp = ({ email }) => {
+  const [res, setRes] = useState(null);
+  useEffect(() => {
+    if (!email) return undefined;
+    let cancelled = false;
+    setRes(null);
+    fetch(`/api/users/whatsapp?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setRes(j); })
+      .catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
+    return () => { cancelled = true; };
+  }, [email]);
+  const s = res?.summary;
+  const pct = (v) => (v == null ? '—' : `${v}%`);
+  return (
+    <div className="bg-white p-5" style={CARD} data-testid="user-whatsapp">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <MessageCircle className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>WhatsApp messages</h2>
+        {s ? <span className="text-xs" style={{ color: T.textMuted }}>{s.sent}</span> : null}
+        {res && !res.error ? (
+          <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
+            {res.phone ? `${res.phone} · ${res.verified ? 'verified' : 'not verified'}` : 'no number'}{res.optedOut ? ' · opted out' : ''}
+          </span>
+        ) : null}
+      </div>
+      {res === null ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+      ) : res.error ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their WhatsApp messages.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            {[
+              ['Sent', s.sent, s.failed ? `${s.failed} failed` : ''],
+              ['Delivered', s.sent ? `${s.delivered} of ${s.sent}` : '—', ''],
+              ['Read rate', pct(s.readRate), s.delivered ? `${s.read} of ${s.delivered} read` : ''],
+              ['Clicks', s.clicked, res.clicksNote ? 'PostHog not available' : s.clicked ? 'visits from a message button' : ''],
+            ].map(([label, value, sub]) => (
+              <div key={label}>
+                <p className="text-lg font-bold" style={{ color: T.textPrimary }}>{value}</p>
+                <p className="text-[10px]" style={{ color: T.textMuted }}>{label}{sub ? ` · ${sub}` : ''}</p>
+              </div>
+            ))}
+          </div>
+          {res.messages.length === 0 ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>No WhatsApp messages sent to this person yet. Automations send by WhatsApp once their &quot;Send by&quot; is WhatsApp or Both.</p>
+          ) : (
+            <div className="overflow-x-auto cl-scroll">
+              <table className="w-full text-xs min-w-[520px]">
+                <thead><tr style={{ color: T.textMuted }}>{['Sent', 'Message', 'Template', 'Status'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i === 3 ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {res.messages.map((m) => (
+                    <tr key={m.id} className="border-t" style={{ borderColor: T.borderLight }}>
+                      <td className="py-2 pr-3 whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtDateOnly(m.at)} · {fmtTime(m.at)}</td>
+                      <td className="py-2 pr-3" style={{ color: T.textPrimary }}>
+                        {m.type}
+                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span>
+                      </td>
+                      <td className="py-2 pr-3 font-mono" style={{ color: T.textBody }}>{m.template}</td>
+                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap" style={{ color: WA_STATUS_COLOR(m.status) }}>
+                        {m.status}{m.clicked ? <span className="block text-[10px] font-normal normal-case" style={{ color: T.success }}>clicked</span> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
 // Who this is: where their first visit came from, IP + location, and — for
 // signed-up people — their account and the properties they listed (from the DB).
 const UserFacts = ({ user, profile, loading }) => {
@@ -416,6 +494,7 @@ const UserFacts = ({ user, profile, loading }) => {
       )}
 
       {acct?.found ? <UserEmails email={acct.user.email} /> : null}
+      {acct?.found ? <UserWhatsApp email={acct.user.email} /> : null}
     </>
   );
 };

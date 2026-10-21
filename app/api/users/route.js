@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { HIDE_DELETED_USERS, userListingStats, verificationStats } from '@/lib/userInsights';
+import { HIDE_DELETED_USERS, userListingStats } from '@/lib/userInsights';
 import { selectAll } from '@/lib/selectAll';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
@@ -16,13 +16,13 @@ export const dynamic = 'force-dynamic';
 // counted per owner the same way the Listings column does (lib/listingCount.js).
 async function summaryStats(db, extra) {
   const [all, props] = await Promise.all([
-    selectAll(db, 'users', `select=id,email,verified,auth_provider,phone_verified_at&${HIDE_DELETED_USERS}&order=id.asc`),
+    selectAll(db, 'users', `select=id,email,verified&${HIDE_DELETED_USERS}&order=id.asc`),
     selectAll(db, 'properties', 'select=id,created_by&origin=eq.user&created_by=not.is.null&order=id.asc'),
   ]);
   const listings = new Map();
   for (const r of props) listings.set(String(r.created_by), (listings.get(String(r.created_by)) || 0) + 1);
   const real = all.filter((u) => !isInternalEmail(u.email, extra));
-  return { ...userListingStats(real, listings), verifiedBy: verificationStats(real) };
+  return userListingStats(real, listings);
 }
 
 // All buyer-portal users who registered / logged in, read from the shared

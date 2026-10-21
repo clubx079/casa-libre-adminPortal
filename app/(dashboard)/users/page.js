@@ -51,6 +51,16 @@ const fmtWhen = (v) => {
   catch { return '—'; }
 };
 
+// How the person signs in: WhatsApp sign-ups are auth_provider 'whatsapp' (email not
+// confirmed yet) / 'whatsapp_email' (confirmed); an email or Google account that also
+// verified a WhatsApp shows both.
+function signInMethod(u) {
+  const p = String(u.auth_provider || '');
+  if (p === 'whatsapp' || p === 'whatsapp_email') return 'WhatsApp';
+  const base = p === 'google' ? 'Google' : p === 'apple' ? 'Apple' : 'Email';
+  return u.phone_verified_at ? `${base} + WhatsApp` : base;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [count, setCount] = useState(0);
@@ -315,7 +325,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>
-                        {u.auth_provider === 'google' ? 'Google' : 'Email'}
+                        {signInMethod(u)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

@@ -37,7 +37,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();
 
-  const cols = 'id,email,full_name,phone,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
+  const cols = 'id,email,full_name,phone,phone_verified_at,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
   let query = `select=${cols}&${HIDE_DELETED_USERS}&order=created_at.desc&limit=500`;
   if (q) {
     // case-insensitive match on email or name

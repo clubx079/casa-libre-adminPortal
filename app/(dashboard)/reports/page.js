@@ -15,6 +15,8 @@ const T = {
   successSurface: '#E4F1E9',
   warning: '#8A5A12',
   warningSurface: '#F5EAD5',
+  danger: '#B23A3A',
+  dangerBorder: '#E8C9C3',
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 
@@ -65,6 +67,18 @@ export default function ReportsPage() {
       setRows((prev) => prev.map((r) => (r.id === row.id ? json.row : r)));
     } catch {
       // leave row as-is; a subsequent manual refresh will reflect the true state
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  // Delete a report for good (e.g. a test report), after a confirm.
+  async function removeRow(row) {
+    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    setUpdatingId(row.id);
+    try {
+      const res = await fetch(`/api/reports/${row.id}`, { method: 'DELETE' });
+      if (res.ok) setRows((prev) => prev.filter((r) => r.id !== row.id));
     } finally {
       setUpdatingId(null);
     }
@@ -167,6 +181,14 @@ export default function ReportsPage() {
                           {updatingId === r.id ? '…' : s === 'open' ? 'Reopen' : `Mark ${s}`}
                         </button>
                       ))}
+                      <button
+                        onClick={() => removeRow(r)}
+                        disabled={updatingId === r.id}
+                        className="inline-flex items-center text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-60"
+                        style={{ borderColor: T.dangerBorder, color: T.danger }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>

@@ -284,7 +284,10 @@ export default function UsersPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{u.phone || '—'}</td>
+                    <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>
+                      {u.phone || '—'}
+                      {u.phone_source === 'listing' ? <span className="block text-[10px]" style={{ color: T.textMuted }}>from listing</span> : null}
+                    </td>
                     <td className="px-4 py-3">
                       {u.ip_address ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-mono" style={{ color: T.textBody }}>

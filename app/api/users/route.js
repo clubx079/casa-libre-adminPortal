@@ -7,6 +7,7 @@ import { selectAll } from '@/lib/selectAll';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
 import { listingCounts } from '@/lib/listingCount';
+import { listingPhones } from '@/lib/listingPhones';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,9 @@ export async function GET(request) {
     // How many listings each one published (lib/listingCount.js).
     const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => new Map());
     for (const u of users) u.listings = counts.get(String(u.id)) || 0;
+    // No phone on the profile → the one on their newest listing (shown as "from listing").
+    const fromListing = await listingPhones(dbFor(activeCountry()).select, users.filter((u) => !u.phone).map((u) => u.id)).catch(() => new Map());
+    for (const u of users) if (!u.phone && fromListing.has(String(u.id))) { u.phone = fromListing.get(String(u.id)); u.phone_source = 'listing'; }
     const stats = await statsP;
     return NextResponse.json({ users, count: Math.max(0, count - (rows.length - users.length)), stats });
   } catch (err) {

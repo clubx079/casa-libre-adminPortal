@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import LangSwitcher from '@/components/LangSwitcher';
 import CountrySwitcher from '@/components/CountrySwitcher';
+import { useUnreadCounts } from '@/components/unread';
 
 const NAV = [
   ['/', 'Overview', 'dash'],
@@ -158,6 +159,10 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
   // route, but the page only renders member management to superadmins).
   const nav = [...NAV, isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user']];
 
+  // Per-admin unread badges (each team member has their own — lib/unread.js).
+  const unread = useUnreadCounts(path);
+  const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox };
+
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 
   async function logout() {
@@ -245,6 +250,11 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
                   <Icon name={ic} />
                 </span>
                 {label}
+                {BADGE[href] > 0 ? (
+                  <span className={`ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums flex items-center justify-center ${on ? 'bg-paper text-ink' : 'bg-[#B23A3A] text-white'}`} aria-label={`${BADGE[href]} unread`}>
+                    {BADGE[href] > 99 ? '99+' : BADGE[href]}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

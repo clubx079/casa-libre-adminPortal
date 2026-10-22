@@ -51,3 +51,17 @@ describe('WhatsApp only', () => {
     expect(validateChannels({ channel: 'both', wa_templates: { e3: 'cl_plan_agentes', __no_fallback: true } }, { slots, relay }).value.wa_templates).toEqual({ e3: 'cl_plan_agentes' });
   });
 });
+
+describe('WhatsApp first, then email', () => {
+  const slots = automationSlots(paid, emails);
+  it('needs a WhatsApp template like the other WhatsApp channels; keeps the repeat days', () => {
+    expect(validateChannels({ channel: 'whatsapp_first', wa_templates: {} }, { slots, relay }).error).toBe('pick_a_whatsapp_template');
+    expect(validateChannels({ channel: 'whatsapp_first', wa_templates: { e1: 'cl_publicacion_vence' } }, { slots, relay }))
+      .toEqual({ ok: true, value: { channel: 'whatsapp_first', wa_templates: { e1: 'cl_publicacion_vence' } } });
+    expect(validateChannels({ channel: 'whatsapp_first', wa_templates: { e1: 'cl_publicacion_vence', __repeat_days: 30 } }, { slots, relay }).value.wa_templates.__repeat_days).toBe(30);
+    expect(validateChannels({ channel: 'whatsapp_first', wa_templates: { e1: 'cl_publicacion_vence', __repeat_days: '' } }, { slots, relay }).value.wa_templates.__repeat_days).toBeUndefined();
+    expect(validateChannels({ channel: 'whatsapp_first', wa_templates: { e1: 'cl_publicacion_vence', __repeat_days: 0 } }, { slots, relay }).error).toBe('bad_repeat_days');
+    // the repeat days only mean something for this channel
+    expect(validateChannels({ channel: 'both', wa_templates: { e1: 'cl_publicacion_vence', __repeat_days: 30 } }, { slots, relay }).value.wa_templates.__repeat_days).toBeUndefined();
+  });
+});

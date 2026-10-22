@@ -210,6 +210,7 @@ export default function AutomationsPage() {
   const [xform, setXform] = useState(null);
   const [nform, setNform] = useState(null);
   const [hform, setHform] = useState(null);
+  const [sform, setSform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -230,6 +231,8 @@ export default function AutomationsPage() {
     setNform(n ? { days: n.days, secondAfter: n.secondAfter, templateId: n.templateId, reminderTemplateId: n.reminderTemplateId } : null);
     const hs = j.listingHeld?.settings;
     setHform(hs ? { hours: hs.hours, reminderAfter: hs.reminderAfter } : null);
+    const ss = j.saves?.settings;
+    setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
 
   useEffect(() => {
@@ -246,7 +249,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -330,6 +333,15 @@ export default function AutomationsPage() {
     const on = !hs.enabled;
     if (on && !window.confirm(`Switch "Listing not published" on?\n\nOwners of user listings held off the site (waiting for payment, photos rejected, paused, missing details) get a message ${hs.hours} ${hs.hours === 1 ? 'hour' : 'hours'} later telling them why, with a button to My listings. Only listings created from now on.${hl.setUp ? '' : '\n\nThis also creates the four default emails (Spanish) — edit them in Templates.'}`)) return;
     run('held', 'toggle', () => put('held', { enabled: on }, on ? '“Listing not published” is on.' : '“Listing not published” is off.'));
+  };
+  const sv = data.saves;
+  const ssv = sv?.settings;
+  const e7 = errors.saves || {};
+  const sDirty = !!(ssv && sform && (sform.milestones.replace(/s/g, '') !== (ssv.milestones || []).join(',') || String(sform.template_id || '') !== String(ssv.templateId || '')));
+  const toggleSaves = () => {
+    const on = !ssv.enabled;
+    if (on && !window.confirm('Switch "Listing getting saved" on?\n\nSellers get a message when their listing reaches your numbers of saves (people with an account + visitors). Numbers a listing already passed before now are not sent.')) return;
+    run('saves', 'toggle', () => put('saves', { enabled: on, ...(sv.setUp ? {} : { milestones: sform.milestones }) }, on ? '“Listing getting saved” is on.' : '“Listing getting saved” is off.'));
   };
   const nPerStep = nl?.perStep || {};
   const nStats = nl?.sent ? ` ${nl.sent.toLocaleString('en-US')} sent so far${nPerStep['2'] ? ` (welcome: ${nPerStep['1'] || 0} · second: ${nPerStep['2']})` : ''}.` : '';
@@ -418,6 +430,40 @@ export default function AutomationsPage() {
           <b>“Listing getting views” isn’t set up for this country yet.</b> Apply <span className="font-mono">migrations/006_views_automation.sql</span> (buyer portal repo) in the AiroBase SQL editor, then reload.
         </Banner>
       )}
+
+      {ssv && sform ? (
+        <AutomationCard
+          title="Listing getting saved"
+          channelId="listing_saves_milestone"
+          description="Tells a seller that people are saving their listing — “10 personas guardaron tu propiedad” — with a button to it. Counts people with an account and visitors without one."
+          enabled={ssv.enabled} enabledAt={ssv.enabledAt} busy={busy.saves}
+          onToggle={toggleSaves} dirty={sDirty || !sv.setUp}
+          onSave={() => run('saves', 'save', () => put('saves', { milestones: sform.milestones, ...(sv.setUp ? { template_id: sform.template_id } : {}) }, sv.setUp ? 'Changes saved.' : 'Saved — the default email was created (Templates).'))}
+          footnote={`Only listings sellers published themselves. Each number is sent once per listing; a number already passed before it was switched on is skipped.${sv.setUp ? '' : ' Not set up for this country yet: saving creates it with a default email.'}${sv.sent ? ` ${sv.sent.toLocaleString('en-US')} sent so far.` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="People save a seller’s listing (♥)" />
+          <Connector />
+          <StepCard n={2} kind="Saves" title="Message at these numbers of saves">
+            <div>
+              <input value={sform.milestones} onChange={(e) => setSform((f) => ({ ...f, milestones: e.target.value }))} placeholder="5, 10, 25" aria-label="Save numbers" data-testid="saves-milestones"
+                className="w-full px-3 py-2 rounded-[10px] border text-[15px] font-bold outline-none focus:border-ink/60 tabular-nums"
+                style={{ borderColor: e7.milestones ? T.danger : 'rgba(17,17,17,.2)', color: T.textPrimary }} />
+              {e7.milestones
+                ? <p className="text-[11px] mt-1" style={{ color: T.danger }}>{e7.milestones}</p>
+                : <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>One number, or several separated by commas (e.g. 5, 10, 25). Each is sent once per listing.</p>}
+            </div>
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Message" title="Message to the seller">
+            {sv.setUp
+              ? <TemplatePicker label="Email sent" value={sform.template_id} templates={data.templates} onChange={(v) => setSform((f) => ({ ...f, template_id: v }))} />
+              : <p className="text-[12px]" style={{ color: T.textMuted }}>A default email (Spanish) is created on save — edit it in Templates.</p>}
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              Use <span className="font-mono">{'{{saves}}'}</span> for the number of saves and <span className="font-mono">{'{{property_url}}'}</span> for the listing link. Email / WhatsApp / Both: the channel picker above.
+            </p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
 
       {da && dform ? (
         <AutomationCard

@@ -7,6 +7,7 @@
 // itself every few seconds.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { T, Banner } from '@/components/automations/ui';
+import { refreshUnread } from '@/components/unread';
 
 const GREEN = '#0F6E4A';
 const BUBBLE_OUT = '#D9FDD3';
@@ -228,7 +229,7 @@ export default function InboxPage() {
     ]);
     if (c && c.phone) setConv(c);
     if (m && Array.isArray(m.data)) setMsgs([...m.data].reverse());
-    if (markRead && c?.unread_count) fetch(`/api/inbox/conversations/${p}/read?mode=${mode}`, { method: 'POST' }).then(() => loadList()).catch(() => {});
+    if (markRead && c?.unread_count) fetch(`/api/inbox/conversations/${p}/read?mode=${mode}`, { method: 'POST' }).then(() => { loadList(); refreshUnread(); }).catch(() => {});
   }, [mode, loadList]);
 
   useEffect(() => { setList(null); loadList(); const t = setInterval(loadList, 6000); return () => clearInterval(t); }, [loadList]);

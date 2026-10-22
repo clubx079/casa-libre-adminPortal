@@ -14,6 +14,7 @@ import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, DUPLICATES_AU
 import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
 import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoListing } from '@/lib/noListingAdmin';
 import { LISTING_HELD_ID, HELD_REASONS, listingHeldConfig, listingHeldCounts, saveListingHeld } from '@/lib/listingHeldAdmin';
+import { SAVES_AUTOMATION_ID, savesConfig, saveSavesAutomation } from '@/lib/savesAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,6 +77,13 @@ async function payload(db) {
       reasons: HELD_REASONS.map((r) => ({ ...r, template: byKey.get(r.key) || null })),
     };
   } catch { listingHeld = null; }
+  // "Listing getting saved" — no row until the first save on the card (defaults shown).
+  let saves = null;
+  try {
+    const [sa] = await db.select('automations', `select=*&id=eq.${SAVES_AUTOMATION_ID}&limit=1`);
+    const sent = sa ? await db.selectWithCount('email_log', `select=id&automation_id=eq.${SAVES_AUTOMATION_ID}&status=in.(sent,delivered,read)&limit=1`).catch(() => ({ count: 0 })) : { count: 0 };
+    saves = { setUp: !!sa, settings: savesConfig(sa || null), sent: sent.count || 0 };
+  } catch { saves = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -96,6 +104,7 @@ async function payload(db) {
     duplicates,
     noListing,
     listingHeld,
+    saves,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -156,6 +165,12 @@ export async function PUT(req) {
     if (body.id === LISTING_HELD_ID) {
       const { id, ...patch } = body;
       const v = await saveListingHeld(db, patch);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === SAVES_AUTOMATION_ID) {
+      const { id, ...patch } = body;
+      const v = await saveSavesAutomation(db, patch);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }

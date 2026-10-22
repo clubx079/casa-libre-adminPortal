@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useMarkSeen, isNewSince } from '@/components/unread';
+import PreviewEnglish from '@/components/PreviewEnglish';
 import { Star, MessageSquare, User } from 'lucide-react';
 
 const T = {
@@ -33,6 +35,8 @@ export default function FeedbacksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState('all');
+  // Opening the page clears MY unread badge; rows newer than my last visit get a New tag.
+  const seenSince = useMarkSeen('feedbacks');
 
   async function fetchRows() {
     setLoading(true); setError(false);
@@ -119,6 +123,7 @@ export default function FeedbacksPage() {
               ) : shown.map((r) => (
                 <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
                   <td className="px-4 py-3 text-xs max-w-[180px]">
+                    {isNewSince(r.created_at, seenSince) ? <span className="inline-block mb-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#B23A3A', color: '#fff' }}>New</span> : null}
                     {r.name || r.email ? (
                       <>
                         <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }} title={r.name || ''}>{r.name || '—'}</p>
@@ -131,6 +136,7 @@ export default function FeedbacksPage() {
                   <td className="px-4 py-3 whitespace-nowrap"><Stars n={Number(r.rating) || 0} /></td>
                   <td className="px-4 py-3 text-xs max-w-[360px]" style={{ color: T.textBody }}>
                     <p className="line-clamp-3" title={r.message || ''}>{r.message || '—'}</p>
+                    <PreviewEnglish text={r.message} />
                   </td>
                   <td className="px-4 py-3 text-xs capitalize" style={{ color: T.textMuted }}>{r.source || 'site'}</td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textMuted }}>{fmtDate(r.created_at)}</td>

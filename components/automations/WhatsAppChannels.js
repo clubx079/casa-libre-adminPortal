@@ -7,13 +7,14 @@
 import { useEffect, useState } from 'react';
 import { T, Pill, Banner, btnPrimary } from '@/components/automations/ui';
 
-const CHANNELS = [['email', 'Email'], ['whatsapp', 'WhatsApp'], ['both', 'Both']];
+const CHANNELS = [['email', 'Email'], ['whatsapp', 'WhatsApp'], ['both', 'Both'], ['whatsapp_first', 'WhatsApp first']];
 const PRICE = { utility: 'about US$0.011 / message', marketing: 'about US$0.074 / message' };
 const ERRORS = {
   pick_a_whatsapp_template: 'Pick a WhatsApp template for at least one email.',
   whatsapp_template_not_approved: 'That WhatsApp template is not approved by Meta yet.',
   whatsapp_not_for_country: 'WhatsApp templates link to the Paraguay site — available for Paraguay only for now.',
   migration_pending: 'This country’s database needs migration 017 first.',
+  bad_repeat_days: 'Use a whole number of days between 1 and 365, or leave it empty.',
 };
 
 function Segmented({ value, onChange, disabled }) {
@@ -82,6 +83,17 @@ function Row({ a, relay, whatsappHere, note, onSaved }) {
               <input type="checkbox" checked={wa.__no_fallback !== true} onChange={(e) => { setWa((m) => { const n = { ...m }; if (e.target.checked) delete n.__no_fallback; else n.__no_fallback = true; return n; }); setMsg(null); }} className="w-4 h-4 accent-ink" />
               If WhatsApp can’t reach someone (no number, or they opted out), send the email instead
             </label>
+          ) : channel === 'whatsapp_first' ? (
+            <div className="grid gap-1.5" data-testid="whatsapp-first">
+              <p className="text-[11.5px]" style={{ color: T.textBody }}>Each person’s <b>first</b> message from this automation goes on WhatsApp; the follow-ups go by email. People WhatsApp can’t reach get the email.</p>
+              <label className="flex items-center gap-2 text-[12px] flex-wrap" style={{ color: T.textBody }}>
+                WhatsApp again after
+                <input type="number" min={1} max={365} value={wa.__repeat_days ?? ''} placeholder="—" aria-label="WhatsApp again after this many days"
+                  onChange={(e) => { const v = e.target.value; setWa((m) => { const n = { ...m }; if (v === '') delete n.__repeat_days; else n.__repeat_days = Number(v); return n; }); setMsg(null); }}
+                  className="w-16 px-2 py-1 rounded-[8px] text-[12.5px] font-bold tabular-nums outline-none" style={{ border: `1px solid ${T.borderLight}`, background: '#fff' }} />
+                days <span style={{ color: T.textMuted }}>(empty = only one WhatsApp ever; e.g. 30 = weekly email, monthly WhatsApp)</span>
+              </label>
+            </div>
           ) : (
             <p className="text-[11px]" style={{ color: T.textMuted }}>Everyone gets the email; people with a WhatsApp number also get the WhatsApp.</p>
           )}

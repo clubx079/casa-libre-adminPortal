@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useMarkSeen, isNewSince } from '@/components/unread';
+import PreviewEnglish from '@/components/PreviewEnglish';
 import { Flag, User } from 'lucide-react';
 
 const T = {
@@ -36,6 +38,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
+  // Opening the page clears MY unread badge; rows newer than my last visit get a New tag.
+  const seenSince = useMarkSeen('reports');
 
   async function fetchRows() {
     setLoading(true);
@@ -139,6 +143,7 @@ export default function ReportsPage() {
               ) : rows.map((r) => (
                 <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
                   <td className="px-4 py-3 text-xs max-w-[160px]">
+                    {isNewSince(r.created_at, seenSince) ? <span className="inline-block mb-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#B23A3A', color: '#fff' }}>New</span> : null}
                     <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }} title={r.listing_ref || ''}>{r.listing_ref || '—'}</p>
                     <p className="text-[11px] font-mono truncate" style={{ color: T.textMuted }}>{shortId(r.property_id)}</p>
                   </td>
@@ -159,8 +164,9 @@ export default function ReportsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs max-w-[240px] truncate" style={{ color: T.textBody }} title={r.message || ''}>
-                    {r.message || '—'}
+                  <td className="px-4 py-3 text-xs max-w-[260px]" style={{ color: T.textBody }}>
+                    <p className="truncate" title={r.message || ''}>{r.message || '—'}</p>
+                    <PreviewEnglish text={r.message} />
                   </td>
                   <td className="px-4 py-3 text-xs" style={{ color: T.textMuted }}>{fmtDate(r.created_at)}</td>
                   <td className="px-4 py-3">

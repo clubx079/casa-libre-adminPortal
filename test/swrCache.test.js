@@ -63,4 +63,23 @@ describe('swr (stale-while-revalidate cache)', () => {
     await swr('held:py', loader, opts);
     expect(loader).toHaveBeenCalledTimes(2);
   });
+  it('a refresh that never answers is replaced after 3 minutes, and its late answer is ignored', async () => {
+    let release;
+    const hung = new Promise((r) => { release = r; });
+    const loader = vi.fn()
+      .mockResolvedValueOnce('v1')        // first load
+      .mockReturnValueOnce(hung)          // background refresh that hangs
+      .mockResolvedValueOnce('v3');       // the replacement
+    expect(await swr('stuck', loader, opts)).toBe('v1');
+    vi.setSystemTime(Date.now() + 2000);
+    expect(await swr('stuck', loader, opts)).toBe('v1');      // stale → background refresh starts (hangs)
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await swr('stuck', loader, { fresh: 1000, stale: 600_000 })).toBe('v1');
+    expect(loader).toHaveBeenCalledTimes(2);                  // still waiting on the hung one
+    vi.setSystemTime(Date.now() + 3 * 60_000);
+    expect(await swr('stuck', loader, { fresh: 1000, stale: 0 })).toBe('v3'); // stuck → a new load
+    release('v2-late');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await swr('stuck', loader, { fresh: 600_000, stale: 600_000 })).toBe('v3'); // late answer ignored
+  });
 });

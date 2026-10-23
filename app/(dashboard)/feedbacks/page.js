@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMarkSeen, isNewSince } from '@/components/unread';
 import PreviewEnglish from '@/components/PreviewEnglish';
+import { botReason } from '@/lib/feedbackBot';
 import { Star, MessageSquare, User } from 'lucide-react';
 
 const T = {
@@ -35,6 +36,9 @@ export default function FeedbacksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState('all');
+  // Bots (Google Play's pre-launch robot and similar, lib/feedbackBot.js) stay on the page with a
+  // Bot tag, but are hidden by default and never count in the numbers.
+  const [who, setWho] = useState('people');
   // Opening the page clears MY unread badge; rows newer than my last visit get a New tag.
   const seenSince = useMarkSeen('feedbacks');
 
@@ -50,14 +54,18 @@ export default function FeedbacksPage() {
   }
   useEffect(() => { fetchRows(); }, []);
 
+  const tagged = useMemo(() => rows.map((r) => ({ ...r, bot: botReason(r) })), [rows]);
+  const people = useMemo(() => tagged.filter((r) => !r.bot), [tagged]);
+  const botCount = tagged.length - people.length;
   const stats = useMemo(() => {
-    const total = rows.length;
-    const sum = rows.reduce((a, r) => a + (Number(r.rating) || 0), 0);
+    const total = people.length;
+    const sum = people.reduce((a, r) => a + (Number(r.rating) || 0), 0);
     const avg = total ? (sum / total).toFixed(1) : '—';
     return { total, avg };
-  }, [rows]);
+  }, [people]);
 
-  const shown = tab === 'all' ? rows : rows.filter((r) => Number(r.rating) === Number(tab));
+  const pool = who === 'bots' ? tagged.filter((r) => r.bot) : who === 'everyone' ? tagged : people;
+  const shown = tab === 'all' ? pool : pool.filter((r) => Number(r.rating) === Number(tab));
 
   const Stat = ({ label, value }) => (
     <div className="bg-white px-4 py-3" style={CARD}>
@@ -73,15 +81,23 @@ export default function FeedbacksPage() {
         <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>What users think of Casa Libre — star ratings and comments from the buyer portal.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 max-w-[360px]">
+      <div className="grid grid-cols-3 gap-3 max-w-[540px]">
         <Stat label="Responses" value={stats.total} />
         <Stat label="Average rating" value={stats.avg} />
+        <Stat label="Bots left out" value={botCount} />
+      </div>
+
+      <div role="group" aria-label="Who" className="inline-flex gap-1 p-1 rounded-full" style={{ background: '#fff', border: `1px solid ${T.borderLight}` }}>
+        {[['people', 'Real feedback', people.length], ['bots', 'Bots', botCount], ['everyone', 'Everything', tagged.length]].map(([k, label, n]) => (
+          <button key={k} type="button" aria-pressed={who === k} onClick={() => setWho(k)} className="text-[12.5px] font-medium px-3.5 py-1.5 rounded-full"
+            style={who === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textSecondary }}>{label} <span className="tabular-nums opacity-70">{n}</span></button>
+        ))}
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap">
         {[['all', 'All'], ['5', '5★'], ['4', '4★'], ['3', '3★'], ['2', '2★'], ['1', '1★']].map(([k, label]) => {
           const on = tab === k;
-          const n = k === 'all' ? rows.length : rows.filter((r) => Number(r.rating) === Number(k)).length;
+          const n = k === 'all' ? pool.length : pool.filter((r) => Number(r.rating) === Number(k)).length;
           return (
             <button key={k} onClick={() => setTab(k)}
               className="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-1.5 rounded-full border transition-colors"
@@ -124,6 +140,7 @@ export default function FeedbacksPage() {
                 <tr key={r.id} className="border-b transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }}>
                   <td className="px-4 py-3 text-xs max-w-[180px]">
                     {isNewSince(r.created_at, seenSince) ? <span className="inline-block mb-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#B23A3A', color: '#fff' }}>New</span> : null}
+                    {r.bot ? <span className="inline-block mb-1 ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary, border: `1px solid ${T.borderLight}` }} title={r.bot}>Bot</span> : null}
                     {r.name || r.email ? (
                       <>
                         <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }} title={r.name || ''}>{r.name || '—'}</p>
@@ -137,6 +154,7 @@ export default function FeedbacksPage() {
                   <td className="px-4 py-3 text-xs max-w-[360px]" style={{ color: T.textBody }}>
                     <p className="line-clamp-3" title={r.message || ''}>{r.message || '—'}</p>
                     <PreviewEnglish text={r.message} />
+                    {r.bot ? <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Detected as a bot: {r.bot}</p> : null}
                   </td>
                   <td className="px-4 py-3 text-xs capitalize" style={{ color: T.textMuted }}>{r.source || 'site'}</td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: T.textMuted }}>{fmtDate(r.created_at)}</td>

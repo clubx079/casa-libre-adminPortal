@@ -12,6 +12,7 @@ const NAV = [
   ['/users', 'Users', 'users'],
   ['/properties', 'Properties', 'home'],
   ['/analytics', 'Analytics', 'chart'],
+  ['/manager', 'Admin Manager', 'bolt'],
   ['/utm-links', 'UTM Links', 'link'],
   ['/scrape', 'Scrapers', 'scrape'],
   ['/scraper-status', 'Scraper Status', 'scrape'],

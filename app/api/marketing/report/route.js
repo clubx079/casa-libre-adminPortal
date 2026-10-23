@@ -16,8 +16,9 @@ import { BUYER_ORIGIN } from '@/lib/buyerSite';
 import { HIDE_DELETED_USERS } from '@/lib/userInsights';
 import { internalEmails } from '@/lib/internalAudience';
 import { isInternalEmail } from '@/lib/internalTraffic';
-import { googleSetup, adsSearch, ga4Report, gscQuery, GSC_SITE } from '@/lib/googleApi';
-import { rangeFor, adsReport, adsAcquisition, ga4Section, gscSection, outcomes } from '@/lib/marketingReport';
+import { googleSetup, ga4Report, gscQuery, GSC_SITE } from '@/lib/googleApi';
+import { rangeFor, ga4Section, gscSection, outcomes } from '@/lib/marketingReport';
+import { adsAll } from '@/lib/marketingFetch';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,22 +29,6 @@ const TTL = 10 * 60 * 1000;
 const ADS_COUNTRIES = ['py'];
 const cache = new Map();
 const settle = async (fn) => { try { return { ok: true, data: await fn() } } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; } };
-
-async function adsAll(range) {
-  const when = `segments.date BETWEEN '${range.start}' AND '${range.end}'`;
-  const q = async (gaql) => (await adsSearch(gaql)).results || [];
-  const [campaigns, daily, keywords, terms, actions, adActions] = await Promise.all([
-    q(`SELECT campaign.id, campaign.name, campaign.status, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE ${when}`),
-    q(`SELECT segments.date, metrics.cost_micros, metrics.clicks, metrics.conversions FROM customer WHERE ${when}`),
-    q(`SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions FROM keyword_view WHERE ${when} AND metrics.impressions > 0 ORDER BY metrics.clicks DESC LIMIT 15`),
-    q(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions FROM search_term_view WHERE ${when} AND metrics.impressions > 0 ORDER BY metrics.clicks DESC LIMIT 15`),
-    q(`SELECT segments.conversion_action_name, metrics.conversions FROM campaign WHERE ${when} AND metrics.conversions > 0`),
-    // "From Google Ads": contacts / sign-ups Google attributes to ad clicks, per campaign
-    // (all_conversions so secondary actions count too).
-    q(`SELECT campaign.id, campaign.name, segments.conversion_action_name, metrics.all_conversions FROM campaign WHERE ${when} AND metrics.all_conversions > 0`),
-  ]);
-  return { ...adsReport({ campaigns, daily, keywords, terms, actions }, range), acquisition: adsAcquisition({ campaigns, actions: adActions, daily }, range) };
-}
 
 async function ga4All(range, host) {
   const base = {

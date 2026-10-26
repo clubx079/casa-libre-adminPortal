@@ -21,6 +21,7 @@ export async function GET() {
     return NextResponse.json({
       country,
       configured: !!process.env.ANTHROPIC_API_KEY,
+      periodFrom: 'previous report',   // each report continues from the previous one (lib/manager/run.js)
       // AiroBase's PostgREST can't select a JSON path (report->>headline): read the report, keep the headline.
       reports: rows.map(({ actions, report, ...r }) => ({
         ...r,

@@ -2,7 +2,8 @@
 // Paid listings — the free-listings limit and the price of extra listings, for the active
 // country. The buyer portal applies it (publish + hourly cron); this page sets it and shows
 // what is happening: this month's numbers, listings waiting for payment / paid / ended, and
-// accounts that look like the same person. Settings: lib/paidListingsAdmin.js.
+// accounts that look like the same person, and the people who started paying but didn't
+// finish (with the pay-screen funnel). Settings: lib/paidListingsAdmin.js.
 import { useEffect, useMemo, useState } from 'react';
 import { T, CARD, PageHeader, Banner, Pill, fmtDate, inputCls, btnPrimary } from '@/components/automations/ui';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
@@ -32,6 +33,56 @@ function Stat({ label, value, hint }) {
 }
 
 const STATE = { pending: ['warning', 'Waiting for payment'], active: ['success', 'Paid · live'], expired: ['neutral', 'Ended · off the site'] };
+
+const waLink = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length >= 8 ? `https://wa.me/${d}` : null; };
+const ago = (iso) => {
+  const h = Math.round((Date.now() - Date.parse(iso)) / 3600000);
+  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
+
+// Started paying, didn't finish: the funnel (PostHog) + who (payments 'started' rows).
+function Checkouts({ c, site }) {
+  if (!c) return null;
+  const f = c.funnel;
+  const open = c.list.filter((x) => !x.paidLater);
+  return (
+    <div className="rounded-[14px] p-5" style={CARD} data-testid="checkouts">
+      <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>Started paying, didn&apos;t finish</div>
+      <p className="text-[12.5px] mb-4" style={{ color: T.textSecondary }}>Last {c.days} days. People who opened the card form and left without paying — a short, kind message often brings them back.</p>
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 mb-4">
+        <Stat label="Opened the pay screen" value={f ? f.opened : '—'} hint={f ? 'people · PostHog' : 'PostHog not connected'} />
+        <Stat label="Tapped pay" value={f ? f.started : c.started} hint={f ? 'people · PostHog' : 'card forms opened'} />
+        <Stat label="Paid" value={f ? f.paid : '—'} hint="people" />
+        <Stat label="Didn't finish" value={c.abandoned} hint="checkouts, 1 h+ ago" />
+      </div>
+      {open.length === 0 ? <p className="text-[13px]" style={{ color: T.textMuted }}>Nobody left a checkout unpaid in this period.</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Person</th><th className="py-2 pr-3 font-medium">For</th><th className="py-2 pr-3 font-medium">Listing</th><th className="py-2 pr-3 font-medium">When</th><th className="py-2 font-medium">Contact</th></tr></thead>
+            <tbody>
+              {open.map((x) => {
+                const wa = waLink(x.person.phone);
+                return (
+                  <tr key={x.id} className="border-t" style={{ borderColor: T.borderLight }}>
+                    <td className="py-2 pr-3"><span className="font-medium" style={{ color: T.textPrimary }}>{x.person.name || x.person.email || String(x.person.id).slice(0, 8)}</span>{x.person.name && x.person.email ? <span className="block text-[11.5px]" style={{ color: T.textMuted }}>{x.person.email}</span> : null}</td>
+                    <td className="py-2 pr-3">{x.what} · US${x.amount.toFixed(2).replace(/\.00$/, '')}</td>
+                    <td className="py-2 pr-3">{x.listing ? <a href={`${site}/propiedad/${x.listing.slug || x.listing.id}`} target="_blank" rel="noreferrer" className="underline underline-offset-2">{x.listing.title || 'Open'}</a> : '—'}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap" title={fmtDate(x.at, true)}>{ago(x.at)}</td>
+                    <td className="py-2 whitespace-nowrap">
+                      {wa ? <a href={wa} target="_blank" rel="noreferrer" className="underline underline-offset-2 mr-3">WhatsApp</a> : null}
+                      {x.person.email ? <a href={`mailto:${x.person.email}`} className="underline underline-offset-2">Email</a> : null}
+                      {!wa && !x.person.email ? <span style={{ color: T.textMuted }}>—</span> : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PaidListingsPage() {
   const [data, setData] = useState(null);
@@ -126,6 +177,8 @@ export default function PaidListingsPage() {
         <Stat label="Paid and live" value={s.activePaid} />
         <Stat label="Ended" value={s.ended} hint="off the site until extended" />
       </div>
+
+      <Checkouts c={data.checkouts} site={data.site} />
 
       {/* Settings */}
       {/* Send the paid-listing emails by Email | WhatsApp | Both (migration 017) */}

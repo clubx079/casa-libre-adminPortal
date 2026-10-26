@@ -54,6 +54,19 @@ describe('agent tools are read-only and private', () => {
 });
 
 describe('pack maths', () => {
+  it('since the last report: Mon → Wed is 2 days, compared with the 2 days before', () => {
+    const p = periods(new Date('2026-10-28T10:00:00Z'), '2026-10-26T10:00:00Z');
+    expect(p.cur).toEqual({ start: '2026-10-26T10:00:00.000Z', end: '2026-10-28T10:00:00.000Z' });
+    expect(p.prev).toEqual({ start: '2026-10-24T10:00:00.000Z', end: '2026-10-26T10:00:00.000Z' });
+    expect(p.days).toBe(2);
+    expect(p.matured).toEqual({ start: '2026-10-14T10:00:00.000Z', end: '2026-10-21T10:00:00.000Z' });
+    // Fri → Mon is 3 days
+    expect(periods(new Date('2026-10-26T10:00:00Z'), '2026-10-23T10:00:00Z').days).toBe(3);
+  });
+  it('no earlier report, a missed run (> 8 days) or a rerun (< 12 h) → the last 7 days', () => {
+    const now = new Date('2026-10-28T10:00:00Z');
+    for (const since of [null, '2026-10-10T10:00:00Z', '2026-10-28T02:00:00Z']) expect(periods(now, since).days).toBe(7);
+  });
   it('two back-to-back 7-day periods', () => {
     const p = periods(new Date('2026-10-26T10:00:00Z'));
     expect(p.cur).toEqual({ start: '2026-10-19T10:00:00.000Z', end: '2026-10-26T10:00:00.000Z' });
@@ -93,6 +106,16 @@ describe('pack maths', () => {
     ], p);
     expect(pay).toMatchObject({ succeeded: 1, failed: 1, revenueUsd: 5.8 });
     expect(pay.failures[0].reason).toBe('card_declined');
+    // checkouts: started + paid = fine; started + nothing after 1 h = abandoned; under 1 h = still deciding
+    const now = Date.parse('2026-10-07T12:00:00Z');
+    const co = paymentSummary([
+      { status: 'started', kind: 'listing', user_id: 'a', stripe_payment_intent_id: 'pi_1', amount_usd: 5.8, created_at: '2026-10-02T00:00:00Z' },
+      { status: 'succeeded', kind: 'listing', user_id: 'a', stripe_payment_intent_id: 'pi_1', amount_usd: 5.8, created_at: '2026-10-02T00:03:00Z' },
+      { status: 'started', kind: 'listing', user_id: 'b', property_id: 'p2', stripe_payment_intent_id: 'pi_2', amount_usd: 5.8, created_at: '2026-10-04T00:00:00Z' },
+      { status: 'started', kind: 'highlight', user_id: 'c', stripe_payment_intent_id: 'pi_3', amount_usd: 5, created_at: '2026-10-07T11:30:00Z' },
+    ], p, now);
+    expect(co).toMatchObject({ succeeded: 1, other: 0, checkoutsStarted: 3, checkoutsAbandoned: 1 });
+    expect(co.abandonedCheckouts).toEqual([{ user_id: 'b', property_id: 'p2', kind: 'listing', plan: null, amount_usd: 5.8, at: '2026-10-04T00:00:00Z' }]);
     expect(listingSummary([{ created_by: U1, created_at: '2026-10-02T00:00:00Z', listing_type: 'rent', is_complete: false }], p)).toMatchObject({ total: 1, sellers: 1, incomplete: 1, byOperation: { rent: 1 } });
     const h = scraperHealth([{ id: 's1', key: 'remax_py', is_active: true, last_run_at: '2026-08-28T00:00:00Z' }], [
       { source_id: 's1', status: 'completed', started_at: '2026-10-20T00:00:00Z', inserted_count: 4, updated_count: 10 },

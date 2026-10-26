@@ -1,11 +1,13 @@
 'use client';
 
-// UTM Links — two tabs:
+// UTM Links — three tabs:
 //  · Our links: one link per channel (lib/campaigns.js) that WE post or send. Times
 //    opened + people who landed. Data: /api/analytics/posthog?type=links.
 //  · WhatsApp contacts: the link inside each buyer's WhatsApp message to a seller
 //    (property page button), who contacted whom and whether the seller opened it.
 //    Data: /api/contacts (components/WhatsAppContacts.js).
+//  · Automation emails: per automation, emails sent → clicked → people who landed on the
+//    site → what they did next (signed up, listed, paid). Data: /api/email-results.
 // Links shared with a listing's Share button carry no tags, so they aren't here.
 import { useEffect, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
@@ -17,7 +19,65 @@ const T = {
 };
 const CARD = { border: `1px solid ${T.borderLight}`, borderRadius: '14px' };
 const RANGES = [[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '12 months']];
-const TABS = [['links', 'Our links'], ['contacts', 'WhatsApp contacts']];
+const TABS = [['links', 'Our links'], ['emails', 'Automation emails'], ['contacts', 'WhatsApp contacts']];
+
+const pctText = (v) => (v == null ? '—' : `${v}%`);
+
+// Automation emails: what each one leads to. Clicks come from Resend; landings and what
+// people did next from PostHog (the buyer site tags every email link with utm_campaign).
+function EmailResults({ days }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setData(null); setError('');
+    fetch(`/api/email-results?days=${days}`).then((r) => r.json())
+      .then((j) => { if (cancelled) return; if (j.error) setError(j.error); else setData(j); })
+      .catch(() => { if (!cancelled) setError('Couldn’t load the numbers right now. Try again in a minute.'); });
+    return () => { cancelled = true; };
+  }, [days]);
+  const num = (v, strong) => <span style={{ color: v ? T.textPrimary : T.textMuted, fontWeight: strong ? 600 : 500 }}>{v}</span>;
+  return (
+    <>
+      <p className="text-[13px] leading-relaxed max-w-[900px]" style={{ color: T.textSecondary }}>
+        Every automation email links back to the site with its own tag, so we can see who came from it and what they did next.
+        Opens are left out: Apple Mail opens every email by itself. Emails sent before Oct 26 have no tag, so they show clicks but no visits.
+      </p>
+      <div className="bg-white overflow-hidden" style={CARD}>
+        {error ? <p className="p-10 text-center text-sm" style={{ color: T.textMuted }}>{error}</p>
+          : !data ? <p className="p-10 text-center text-sm" style={{ color: T.textMuted }}>Loading…</p>
+            : !data.rows.length ? <p className="p-10 text-center text-sm" style={{ color: T.textMuted }}>No automation emails in this period.</p> : (
+              <div className="overflow-x-auto cl-scroll">
+                <table className="w-full min-w-[820px] text-sm tabular-nums">
+                  <thead style={{ background: T.bgSurface }}>
+                    <tr style={{ color: T.textSecondary }}>
+                      {['Automation', 'Emails sent', 'Clicked', 'Came to the site', 'Signed up', 'Listed', 'Paid', 'WhatsApp read'].map((h, i) => (
+                        <th key={h} className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-wider ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rows.map((r) => (
+                      <tr key={r.automation} className="border-t" style={{ borderColor: T.borderLight }}>
+                        <td className="px-5 py-3 font-semibold" style={{ color: T.textPrimary }}>{r.label}</td>
+                        <td className="px-5 py-3 text-right">{num(r.sent, true)}{r.failed ? <span className="block text-[11px]" style={{ color: '#B42318' }}>{r.failed} failed</span> : null}</td>
+                        <td className="px-5 py-3 text-right">{num(r.clicked, true)}<span className="block text-[11px]" style={{ color: T.textMuted }}>{pctText(r.clickRate)}</span></td>
+                        <td className="px-5 py-3 text-right">{num(r.landed, true)}<span className="block text-[11px]" style={{ color: T.textMuted }}>{r.visits ? `${r.visits} visits` : '—'}</span></td>
+                        <td className="px-5 py-3 text-right">{num(r.signedUp)}</td>
+                        <td className="px-5 py-3 text-right">{num(r.listed)}</td>
+                        <td className="px-5 py-3 text-right">{num(r.paid)}</td>
+                        <td className="px-5 py-3 text-right">{r.whatsappSent ? <>{num(r.whatsappRead)}<span className="block text-[11px]" style={{ color: T.textMuted }}>of {r.whatsappSent} · {pctText(r.readRate)}</span></> : <span style={{ color: T.textMuted }}>—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+      </div>
+      {data?.notes?.length ? <p className="text-[12px]" style={{ color: T.textMuted }}>{data.notes.join(' ')}</p> : null}
+    </>
+  );
+}
 
 const fmtWhen = (v) => {
   if (!v) return '—';
@@ -43,12 +103,13 @@ export default function UtmLinksPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
-  // /utm-links?tab=contacts opens the contacts tab (the old Contacts page sends people here).
+  // /utm-links?tab=contacts (the old Contacts page) or ?tab=emails opens that tab.
   useEffect(() => {
-    try { if (new URLSearchParams(window.location.search).get('tab') === 'contacts') setTab('contacts'); } catch { /* noop */ }
+    try { const t = new URLSearchParams(window.location.search).get('tab'); if (t === 'contacts' || t === 'emails') setTab(t); } catch { /* noop */ }
   }, []);
 
   useEffect(() => {
+    if (tab !== 'links') return undefined;
     let cancelled = false;
     setData(null); setError('');
     (async () => {
@@ -65,7 +126,7 @@ export default function UtmLinksPage() {
       if (!cancelled) setError('Couldn’t load the numbers right now. Try again in a minute.');
     })();
     return () => { cancelled = true; };
-  }, [days]);
+  }, [days, tab]);
 
   const rangeLabel = (RANGES.find(([d]) => d === days) || [0, ''])[1].replace('12 months', 'year');
 
@@ -74,7 +135,7 @@ export default function UtmLinksPage() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-head" style={{ color: T.textPrimary }}>UTM Links</h1>
-          <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>Tracked links to the site: the ones we post, and the ones buyers send to sellers on WhatsApp.</p>
+          <p className="text-[13px] mt-0.5" style={{ color: T.textSecondary }}>Tracked links to the site: the ones we post, our automation emails, and the ones buyers send to sellers on WhatsApp.</p>
         </div>
         <div className="flex gap-1.5">
           {RANGES.map(([d, label]) => (
@@ -130,6 +191,8 @@ export default function UtmLinksPage() {
             )}
           </div>
         </>
+      ) : tab === 'emails' ? (
+        <EmailResults days={days} />
       ) : (
         <>
           <p className="text-[13px] leading-relaxed max-w-[900px]" style={{ color: T.textSecondary }}>

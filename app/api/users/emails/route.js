@@ -48,7 +48,7 @@ export async function GET(req) {
 
   try {
     const [logRows, templates, resend] = await Promise.all([
-      select('email_log', `select=id,to_email,template_key,subject,resend_id,status,created_at&to_email=eq.${encodeURIComponent(email)}&order=created_at.desc&limit=200&${EMAIL_ONLY}`).catch(() => []),
+      select('email_log', `select=id,to_email,template_key,subject,resend_id,status,run_id,created_at&to_email=eq.${encodeURIComponent(email)}&order=created_at.desc&limit=200&${EMAIL_ONLY}`).catch(() => []),
       select('email_templates', 'select=key,name,subject').catch(() => []),
       countryEmails(country, HISTORY_DAYS).catch((e) => ({ error: String(e?.message || e) })),
     ]);

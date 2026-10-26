@@ -1,7 +1,8 @@
 // GET /api/paid-listings → the active country's paid-listings settings (lib/paidListingsAdmin.js),
 //                          the email templates to pick from, this month's numbers, the
 //                          listings waiting for payment / paid / ended, and the accounts
-//                          that look like the same person.
+//                          that look like the same person, and the checkouts people started
+//                          but did not finish (lib/checkouts.js) with the PostHog payment funnel.
 // PUT /api/paid-listings → save the settings / switch the paywall on or off. The first
 //                          save creates the settings row and the three default emails.
 // Nothing is written to a country's database until an admin saves here.
@@ -10,6 +11,12 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
+import { abandonedCheckouts, checkoutLabel } from '@/lib/checkouts';
+import { countryInfo } from '@/lib/automationAdmin';
+import { hogql, posthogConfigured } from '@/lib/posthogHogql';
+import { UKEY, GEO_BASE } from '@/lib/posthogSql';
+import { siteClause } from '@/lib/analyticsSite';
+import { isInternalEmail } from '@/lib/internalTraffic';
 import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DEFAULT_TEMPLATES, samePersonGroups, paidStats, PHONE_PREFIX } from '@/lib/paidListingsAdmin';
 
 export const runtime = 'nodejs';
@@ -22,6 +29,48 @@ function monthStartIso(cc, now = new Date()) {
   return new Date(Date.UTC(+p.year, +p.month - 1, 1) - offset).toISOString();
 }
 const inList = (ids) => `in.(${ids.map((id) => `"${String(id).replace(/"/g, '')}"`).join(',')})`;
+
+const CHECKOUT_DAYS = 30;
+
+// The payment funnel in PostHog (buyer components/ListingPaymentModal.js): people who opened
+// the pay screen → tapped Pay → paid, last 30 days. Best effort: no PostHog → null.
+async function payFunnel(cc) {
+  if (!posthogConfigured()) return null;
+  const step = (e) => `uniqExactIf(${UKEY}, event = '${e}')`;
+  const rows = await hogql(`SELECT ${step('payment_screen_opened')}, ${step('payment_started')}, ${step('payment_succeeded')}
+    FROM events WHERE timestamp >= now() - INTERVAL ${CHECKOUT_DAYS} DAY AND event IN ('payment_screen_opened', 'payment_started', 'payment_succeeded') AND ${GEO_BASE}${siteClause(cc)}`);
+  const v = (Array.isArray(rows?.[0]) ? rows[0] : Object.values(rows?.[0] || {})).map((x) => Number(x) || 0);
+  return { opened: v[0] || 0, started: v[1] || 0, paid: v[2] || 0 };
+}
+
+// Checkouts started in the last 30 days that never got paid, with who and what.
+async function checkouts(db) {
+  const since = new Date(Date.now() - CHECKOUT_DAYS * 86400000).toISOString();
+  const rows = await db.select('payments', `select=id,user_id,property_id,kind,plan,amount_usd,status,stripe_payment_intent_id,created_at&status=in.(started,succeeded)&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`).catch(() => []);
+  const { started, abandoned } = abandonedCheckouts(rows);
+  const uIds = [...new Set(abandoned.map((p) => p.user_id).filter(Boolean).map(String))];
+  const pIds = [...new Set(abandoned.map((p) => p.property_id).filter(Boolean).map(String))];
+  const [users, props] = await Promise.all([
+    uIds.length ? db.select('users', `select=id,email,full_name,phone&id=${inList(uIds.slice(0, 300))}`).catch(() => []) : [],
+    pIds.length ? db.select('properties', `select=id,slug,property_type,listing_type,neighborhood,city,status&id=${inList(pIds.slice(0, 300))}`).catch(() => []) : [],
+  ]);
+  const uBy = new Map(users.map((u) => [String(u.id), u]));
+  const pBy = new Map(props.map((p) => [String(p.id), p]));
+  const list = abandoned
+    .filter((p) => !isInternalEmail(uBy.get(String(p.user_id))?.email))
+    .map((p) => {
+      const u = uBy.get(String(p.user_id)) || {};
+      const l = pBy.get(String(p.property_id));
+      return {
+        id: p.id, at: p.created_at, what: checkoutLabel(p.kind, p.plan), amount: Number(p.amount_usd) || 0,
+        person: { id: p.user_id, email: u.email || null, name: u.full_name || null, phone: u.phone || null },
+        listing: l ? { id: l.id, slug: l.slug, title: [l.property_type, l.listing_type === 'rent' ? 'rent' : 'sale', l.neighborhood || l.city].filter(Boolean).join(' · '), status: l.status } : null,
+        // paid later with a new attempt for the same listing?
+        paidLater: rows.some((x) => x.status === 'succeeded' && p.property_id && String(x.property_id) === String(p.property_id) && x.created_at > p.created_at),
+      };
+    });
+  return { days: CHECKOUT_DAYS, started: started.length, abandoned: list.filter((x) => !x.paidLater).length, list };
+}
 
 async function payload(db, cc) {
   const [rows, templates] = await Promise.all([
@@ -70,13 +119,14 @@ async function payload(db, cc) {
       owner: who(p.created_by),
     })),
     samePerson: groups.map((g) => ({ matched: g.matched, users: g.users.map((id) => ({ ...who(id), freeThisMonth: freeThisMonthBy.get(String(id)) || 0 })) })),
+    checkouts: { ...(await checkouts(db)), funnel: await payFunnel(cc).catch(() => null) },
   };
 }
 
 export async function GET() {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const cc = activeCountry();
-  try { return NextResponse.json({ ...(await payload(dbFor(cc), cc)), country: cc }); }
+  try { return NextResponse.json({ ...(await payload(dbFor(cc), cc)), country: cc, site: countryInfo(cc).site }); }
   catch (e) { return dbError(e); }
 }
 

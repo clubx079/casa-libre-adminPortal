@@ -292,7 +292,13 @@ const UserEmails = ({ email }) => {
                       <td className="py-2 pr-3 align-top" style={{ color: T.textPrimary }}>
                         <span className="whitespace-nowrap">
                           {e.type_en || e.type}
-                          {e.automation ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
+                          {e.manager ? (
+                            <>
+                              <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: T.infoSurface || T.bgSurface, color: T.info || T.textPrimary }}>Admin Manager</span>
+                              {e.testSend ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textMuted }}>test send</span> : null}
+                              {e.reportId ? <a href={`/manager/${e.reportId}#emails`} className="ml-1.5 text-[10.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>report</a> : null}
+                            </>
+                          ) : e.automation ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
                         </span>
                         {e.type_en && e.type_en !== e.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{e.type}</span> : null}
                       </td>
@@ -1218,6 +1224,8 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
     return () => { cancelled = true; };
   }, []);
 
+  // the deep link's email: its emails show even when PostHog has no activity for them
+  const [deepEmail] = useState(() => { try { return new URLSearchParams(window.location.search).get('email') || ''; } catch { return ''; } });
   // Deep-link from the users page: ?user=<id>&email=<email> → open that
   // user's drilldown directly.
   useEffect(() => {
@@ -1257,6 +1265,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
           <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} />
           <p className="text-sm mt-3" style={{ color: T.textSecondary }}>Loading this user&apos;s activity…</p>
         </> : <p className="text-sm" style={{ color: T.textSecondary }}>{resolveNote || 'No activity found for this user.'}</p>)}
+        {/* no website activity tracked — the emails we sent them (automations, Admin Manager)
+            still show */}
+        {resolved && deepEmail ? <UserEmails email={deepEmail} /> : null}
       </div>
     );
   }

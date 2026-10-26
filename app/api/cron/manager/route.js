@@ -1,7 +1,8 @@
-// Weekly Admin Manager report. Called by AiroBase Cron every Monday 07:00 Paraguay time
-// (cron "0 10 * * 1" UTC) with `Authorization: Bearer {{secrets.CRON_SECRET}}`.
+// Admin Manager report. Called by AiroBase Cron Monday, Wednesday and Friday 07:00 Paraguay
+// time (cron "0 10 * * 1,3,5" UTC) with `Authorization: Bearer {{secrets.CRON_SECRET}}`.
+// Each report covers the time since the previous one (lib/manager/packMath.js periods).
 // ?country=<code> (default py). Starts the run and answers at once; the report appears
-// on /manager when it is done (a few minutes). A cron call within 5 days of the last
+// on /manager when it is done (a few minutes). A cron call within 20 hours of the last
 // cron report is skipped, so a retried or doubled call doesn't pay twice.
 import { NextResponse } from 'next/server';
 import { dbFor } from '@/lib/db';
@@ -19,9 +20,9 @@ async function handle(req) {
   const country = (new URL(req.url).searchParams.get('country') || 'py').toLowerCase();
   if (!/^[a-z]{2}$/.test(country)) return NextResponse.json({ error: 'bad country' }, { status: 400 });
   try {
-    const since = new Date(Date.now() - 5 * 86400000).toISOString();
+    const since = new Date(Date.now() - 20 * 3600000).toISOString();
     const [recent] = await dbFor(country).select(TABLE, `select=id,created_at&trigger=eq.cron&status=in.(running,done)&country=eq.${country}&created_at=gte.${encodeURIComponent(since)}&limit=1`);
-    if (recent) return NextResponse.json({ ok: true, skipped: 'A weekly report was already made in the last 5 days.', id: recent.id });
+    if (recent) return NextResponse.json({ ok: true, skipped: 'A report was already made in the last 20 hours.', id: recent.id });
     const res = await startRun(country, { trigger: 'cron', by: 'cron' });
     return NextResponse.json(res, { status: res.ok ? 202 : 409 });
   } catch (e) {

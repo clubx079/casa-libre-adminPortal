@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automations/ui';
+import MemoryPanel from '@/components/manager/MemoryPanel';
 
 const STATUS ={ running: ['info', 'Writing…'], done: ['success', 'Ready'], failed: ['danger', 'Failed'] };
 
@@ -33,7 +34,7 @@ export default function ManagerPage() {
     <div className="space-y-5">
       <PageHeader
         title="Admin Manager"
-        sub="Weekly AI report, every Monday 07:00. Drafted emails are sent only after you approve them."
+        sub="AI report every Monday, Wednesday and Friday 07:00, covering the days since the last one. Its personal emails are sent automatically."
       />
       {data?.configured === false && <Banner tone="warning">Set <span className="font-mono">ANTHROPIC_API_KEY</span> on the server to turn the Admin Manager on.</Banner>}
       {err === 'migration_pending' || data?.pending ? (
@@ -44,14 +45,14 @@ export default function ManagerPage() {
         {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (
           <div className="p-10 text-center">
             <p className="text-sm font-semibold" style={{ color: T.textPrimary }}>No reports yet</p>
-            <p className="text-xs mt-1" style={{ color: T.textMuted }}>The first one is written next Monday at 07:00.</p>
+            <p className="text-xs mt-1" style={{ color: T.textMuted }}>The first one is written at the next Monday, Wednesday or Friday 07:00.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs min-w-[760px]">
               <thead>
                 <tr style={{ color: T.textMuted }}>
-                  {['Week', 'Headline', 'Emails to review', 'Status', 'Cost', 'Made'].map((h, i) => <th key={h} className={`px-4 py-2.5 font-semibold ${i === 2 || i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>)}
+                  {['Period', 'Headline', 'Emails to review', 'Status', 'Cost', 'Made'].map((h, i) => <th key={h} className={`px-4 py-2.5 font-semibold ${i === 2 || i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -77,6 +78,8 @@ export default function ManagerPage() {
           </div>
         )}
       </div>
+
+      <MemoryPanel compact />
     </div>
   );
 }

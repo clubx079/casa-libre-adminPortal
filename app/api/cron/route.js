@@ -9,6 +9,9 @@ export const maxDuration = 300;
 // Country is chosen by ?country=<code> (or body.country); the scheduler fans out
 // one call per registry country. Defaults to 'py'. Body (optional):
 // { "sourceKey": "remax_py" } to run one source; otherwise every cron_enabled source.
+// Answers at once (202) and scrapes in the background: a big source (RE/MAX) takes longer
+// than AiroBase Cron's 5-minute timeout, which showed "Failed" while the scrape went on and
+// finished fine. Each source's result is in scrape_runs. ?wait=1 = old behaviour (wait for it).
 async function handle(req) {
   const auth = req.headers.get('authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '');
@@ -34,16 +37,24 @@ async function handle(req) {
     : `cron_enabled=eq.true&is_active=eq.true`;
   const sources = await select('scrape_sources', `select=key&${q}`);
 
-  const results = [];
-  for (const s of sources) {
-    try {
-      const summary = await runScrape({ sourceKey: s.key, filters: {}, trigger: 'cron', country });
-      results.push({ source: s.key, ...summary });
-    } catch (e) {
-      results.push({ source: s.key, error: String(e.message || e) });
+  const runAll = async () => {
+    const results = [];
+    for (const s of sources) {
+      try {
+        const summary = await runScrape({ sourceKey: s.key, filters: {}, trigger: 'cron', country });
+        results.push({ source: s.key, ...summary });
+      } catch (e) {
+        results.push({ source: s.key, error: String(e.message || e) });
+      }
     }
+    return results;
+  };
+  if (url.searchParams.get('wait') === '1') {
+    const results = await runAll();
+    return NextResponse.json({ ok: true, country, ran: results.length, results });
   }
-  return NextResponse.json({ ok: true, country, ran: results.length, results });
+  runAll().catch((e) => console.error('[cron scrape]', country, e));
+  return NextResponse.json({ ok: true, country, started: sources.map((s) => s.key) }, { status: 202 });
 }
 
 export const POST = handle;

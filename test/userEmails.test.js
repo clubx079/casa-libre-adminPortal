@@ -108,3 +108,20 @@ describe('templateValues with regex characters in the template', () => {
     expect(templateValues('¿{{name}} (prueba)?', 'Ana prueba')).toBe(null);
   });
 });
+
+describe('Admin Manager emails on the person’s page', () => {
+  it('labelled, linked to their report; a local test send shows (marked), other test sends do not', () => {
+    const rows = mergeUserEmails({
+      email: 'ana@x.com',
+      resendRows: [{ id: 'r1', to: ['ana@x.com'], subject: 'Revisá tu publicación', created_at: '2026-10-26T10:00:00Z', last_event: 'delivered' }],
+      logRows: [
+        { id: 'l1', to_email: 'ana@x.com', template_key: 'manager_listing_fix', resend_id: 'r1', status: 'sent', run_id: 'rep-1', created_at: '2026-10-26T10:00:00Z' },
+        { id: 'l2', to_email: 'ana@x.com', template_key: 'manager_negative_feedback', resend_id: 'r2', status: 'test', run_id: 'rep-2', subject: 'Gracias', created_at: '2026-10-26T11:00:00Z' },
+        { id: 'l3', to_email: 'ana@x.com', template_key: 'listing-views', resend_id: 'r3', status: 'test', created_at: '2026-10-26T12:00:00Z' },
+      ],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['r2', 'r1']);
+    expect(rows[1]).toMatchObject({ manager: true, reportId: 'rep-1', type: 'Admin Manager: Listing needs a fix', status: 'delivered' });
+    expect(rows[0]).toMatchObject({ manager: true, reportId: 'rep-2', testSend: true, type: 'Admin Manager: Reply to feedback' });
+  });
+});

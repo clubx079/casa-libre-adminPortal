@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { botReason } from '../lib/feedbackBot.js';
 import { claimFacts, listingDataFlags, messageTiming, isPaymentClaim } from '../lib/manager/checks.js';
 import { buildActions, blockedTargets } from '../lib/manager/actions.js';
-import { slicePack, RESEARCHERS } from '../lib/manager/team.js';
 
 describe('bots', () => {
   it("flags Google Play's pre-launch robot and random names, not people", () => {
@@ -86,15 +85,5 @@ describe('no drafts for false flags or bots', () => {
     const { actions, dropped } = buildActions([d({ feedback_id: 'f1' }), d({ user_id: '11111111-1111-1111-1111-111111111111' }), d({ feedback_id: 'f2' }), d({ feedback_id: 'f3' })], { site: 'https://casa-libre.com.py', newId: () => 'x', blocked });
     expect(actions.map((a) => a.feedback_id)).toEqual(['f2']);
     expect(dropped.filter((x) => x.reason === 'false flag or bot')).toHaveLength(3);
-  });
-});
-
-describe('research team', () => {
-  it('each researcher gets its slice plus the basics', () => {
-    const pack = { country: 'py', kpis: [], period: {}, feedback: { a: 1 }, scrapers: { b: 2 }, claimChecks: {} };
-    const fbSlice = slicePack(pack, RESEARCHERS.find((r) => r.id === 'feedback').keys);
-    expect(fbSlice.feedback).toEqual({ a: 1 });
-    expect(fbSlice.scrapers).toBeUndefined();
-    expect(RESEARCHERS.map((r) => r.id)).toEqual(['feedback', 'listings', 'followups', 'growth', 'catalog']);
   });
 });

@@ -2,17 +2,19 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
+import { isTestDomain } from '@/lib/internalTraffic';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET /api/feedbacks -> user feedback (rating + message), newest first.
+// GET /api/feedbacks -> user feedback (rating + message), newest first. Test accounts
+// (@airosofts.com, @ableman.co) are left out; the site no longer saves theirs either.
 export async function GET() {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const { select } = dbFor(activeCountry());
   try {
     const rows = await select('feedback', 'select=*&order=created_at.desc&limit=1000');
-    return NextResponse.json({ rows });
+    return NextResponse.json({ rows: rows.filter((r) => !isTestDomain(r.email)) });
   } catch (e) {
     const msg = String(e?.message || e);
     // Table not registered yet (migration/schema-cache pending) → render empty

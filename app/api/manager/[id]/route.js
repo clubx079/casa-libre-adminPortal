@@ -4,7 +4,8 @@
 //   op 'edit'     { actionId, subject?, heading?, body?, button_label?, button_url? }
 //   op 'dismiss'  { actionId }      op 'restore' { actionId }
 //   op 'send'     { actionId }      → emails the person (lib/manager/send.js)
-//   op 'feedback' { item, vote: 'up'|'down'|null, note? } → read by next week's run
+//   op 'feedback' { item, vote?: 'up'|'down'|null, note?, done? } → read by the next runs (an action's
+//                 item is `action:<key>`; done = an admin says it is handled — the next run checks)
 //   op 'compose'  { source: 'claim'|'suspicious', index } → a draft email for an item the report
 //                 did not draft for (false flag, unclear, flagged listing), into the review queue
 import { NextResponse } from 'next/server';
@@ -54,11 +55,13 @@ export async function PATCH(req, { params }) {
     if (body.op === 'feedback') {
       const item = String(body.item || '').slice(0, 300);
       if (!item) return NextResponse.json({ error: 'item required' }, { status: 400 });
-      const vote = body.vote === 'up' || body.vote === 'down' ? body.vote : null;
-      const note = String(body.note || '').trim().slice(0, 1000);
+      const prev = (row.feedback || {})[item] || {};
+      const vote = body.vote === undefined ? prev.vote || null : body.vote === 'up' || body.vote === 'down' ? body.vote : null;
+      const note = body.note === undefined ? prev.note || '' : String(body.note || '').trim().slice(0, 1000);
+      const done = body.done === undefined ? !!prev.done : !!body.done;
       const feedback = { ...(row.feedback || {}) };
-      if (!vote && !note) delete feedback[item];
-      else feedback[item] = { item, vote, note, by, at: new Date().toISOString() };
+      if (!vote && !note && !done) delete feedback[item];
+      else feedback[item] = { item, vote, note, done, by, at: new Date().toISOString() };
       await db.update(TABLE, `id=eq.${q(params.id)}`, { feedback }, { returning: 'minimal' });
       return NextResponse.json({ ok: true, feedback });
     }

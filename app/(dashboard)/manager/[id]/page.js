@@ -25,7 +25,7 @@ const OWNERS = ['Omar', 'Tahir', 'Roland'];
 const ROLE = { Omar: 'Lead developer', Tahir: 'Google Ads', Roland: 'CEO' };
 // the specialist areas (lib/manager/brief.js SECTIONS) and which action areas belong to each
 const SECTION_TABS = [['feedback', 'Feedback'], ['listings', 'Listings & payments'], ['messages', 'Messages'], ['growth', 'Traffic & ads'], ['catalog', 'Scrapers']];
-const SECTION_OF = { feedback: 'feedback', listings: 'listings', payments: 'listings', messages: 'messages', growth: 'growth', ads: 'growth', catalog: 'catalog' };
+const SECTION_OF = { feedback: 'feedback', listings: 'listings', payments: 'listings', messages: 'messages', followups: 'messages', growth: 'growth', ads: 'growth', catalog: 'catalog' };
 const TREND = { better: [T.success, T.successSurface, 'Better'], worse: [T.danger, T.dangerSurface, 'Worse'], steady: [T.textSecondary, T.bgSurface, 'Steady'], mixed: [T.warning, T.warningSurface, 'Mixed'], too_early: [T.textSecondary, T.bgSurface, 'Too early'] };
 const AREA = { feedback: 'Feedback', listings: 'Listings', payments: 'Payments', messages: 'Messages', growth: 'Traffic', ads: 'Google Ads', catalog: 'Scrapers', data: 'Data' };
 const STATUS = {
@@ -371,12 +371,18 @@ export default function ManagerReportPage({ params }) {
   const [tab, setTabState] = useState('overview');
   // the open tab lives in the URL hash (#emails), so links and reloads keep it
   useEffect(() => {
-    const read = () => { const h = window.location.hash.slice(1); if (h) setTabState(h); };
+    const read = () => setTabState(window.location.hash.slice(1) || 'overview');
     read();
     window.addEventListener('hashchange', read);
-    return () => window.removeEventListener('hashchange', read);
+    window.addEventListener('popstate', read);
+    return () => { window.removeEventListener('hashchange', read); window.removeEventListener('popstate', read); };
   }, []);
-  const setTab = useCallback((id) => { setTabState(id); window.history.replaceState(null, '', `#${id}`); }, []);
+  // each tab switch is its own step in the browser history: Back returns to the tab before
+  // (and to Overview), not straight out of the report
+  const setTab = useCallback((id) => {
+    setTabState(id);
+    if (window.location.hash.slice(1) !== id) window.history.pushState(null, '', id === 'overview' ? window.location.pathname : `#${id}`);
+  }, []);
 
   const load = useCallback(() => {
     fetch(`/api/manager/${params.id}`).then((r) => r.json())
@@ -476,10 +482,11 @@ export default function ManagerReportPage({ params }) {
   const scorecard = pack.automations?.followUpsPreviousWeekFullResults || [];
   const scrapers = pack.scrapers?.last14Days || [];
   const guard = r.guard;
-  const sections = new Map((r.sections || []).map((x) => [x.id, x]));
-  const areaTabs = r.version >= 2 ? SECTION_TABS : [];
+  // old reports (5 researchers) call the messages area 'followups'
+  const sections = new Map((r.sections || []).map((x) => [SECTION_OF[x.id] || x.id, x]));
+  const areaTabs = sections.size ? SECTION_TABS : [];
   const tabs = [['overview', 'Overview'], ...areaTabs, ['emails', 'Emails'], ...(r.tracker ? [['loop', 'Earlier actions']] : []), ...(areaTabs.length ? [] : [['numbers', 'Numbers']]), ['memory', 'Memory'], ['method', 'How it was made']];
-  const actionsIn = (id) => actions.filter((a) => SECTION_OF[a.area] === id);
+  const actionsIn = (id) => actions.filter((a) => SECTION_OF[a.area || a.section] === id);
   const funnelBlock = Array.isArray(pack.traffic?.funnel) ? <Funnel funnel={pack.traffic.funnel} /> : <Empty>No visitor data in this report.</Empty>;
   const messagesTables = (
               timing.length || scorecard.length ? (
@@ -543,7 +550,8 @@ export default function ManagerReportPage({ params }) {
       </div>
     </Panel>
   ) : null;
-  const panel = (id) => ({ id: `panel-${id}`, role: 'tabpanel', 'aria-labelledby': `tab-${id}`, hidden: tab !== id, className: 'space-y-5' });
+  const shownTab = tabs.some(([id]) => id === tab) ? tab : 'overview';
+  const panel = (id) => ({ id: `panel-${id}`, role: 'tabpanel', 'aria-labelledby': `tab-${id}`, hidden: shownTab !== id, className: 'space-y-5' });
 
   return (
     <div className="pb-16 space-y-6">
@@ -576,7 +584,7 @@ export default function ManagerReportPage({ params }) {
         </Panel>
       ) : (
         <>
-          <TabBar tabs={tabs} tab={tab} setTab={setTab} />
+          <TabBar tabs={tabs} tab={shownTab} setTab={setTab} />
           {msg ? <Banner tone="warning">{msg}</Banner> : null}
 
           <div {...panel('overview')}>

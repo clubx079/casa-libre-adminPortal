@@ -109,10 +109,10 @@ export default function LeadsPage() {
 
       <div className="bg-white overflow-hidden" style={CARD}>
         <div className="cl-scroll" style={{ maxHeight: 640, overflow: 'auto' }}>
-          <table className="w-full min-w-[1020px]">
+          <table className="w-full min-w-[920px]">
             <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['Lead', 'Phone', 'WhatsApp', 'Email', 'Location', 'Type', 'Source'].map((h, i) => (
+                {['Lead', 'Phone / WhatsApp', 'Email', 'Location', 'Type', 'Source'].map((h, i) => (
                   <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-left`} style={{ color: T.textSecondary, background: T.bgSurface }}>{h}</th>
                 ))}
               </tr>
@@ -121,16 +121,16 @@ export default function LeadsPage() {
               {loading ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i} className="border-b animate-pulse" style={{ borderColor: T.borderLight }}>
-                    {[...Array(7)].map((__, j) => (<td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '150px' : '80px', background: T.bgSurface }} /></td>))}
+                    {[...Array(6)].map((__, j) => (<td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '150px' : '80px', background: T.bgSurface }} /></td>))}
                   </tr>
                 ))
               ) : error ? (
-                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load leads. Check the DB connection.</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load leads. Check the DB connection.</td></tr>
               ) : pending ? (
-                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textSecondary }}>The leads table isn&apos;t set up on the {country.toUpperCase() || 'current'} database yet (migration 006_potential_leads.sql).</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm" style={{ color: T.textSecondary }}>The leads table isn&apos;t set up on the {country.toUpperCase() || 'current'} database yet (migration 006_potential_leads.sql).</td></tr>
               ) : shown.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={6} className="px-6 py-12 text-center">
                     <Target className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>{rows.length ? 'No leads match these filters' : 'No leads yet'}</p>
                   </td>
@@ -142,13 +142,15 @@ export default function LeadsPage() {
                     {r.legal_name && <p className="text-[11px] truncate" style={{ color: T.textMuted }} title={r.legal_name}>{r.category === 'agent' ? `Agency: ${r.legal_name}` : r.legal_name}</p>}
                   </td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">
-                    {r.phone ? <a href={`tel:${r.phone.replace(/\s/g, '')}`} className="hover:underline" style={{ color: T.textBody }}>{r.phone}</a> : <span style={{ color: T.textMuted }}>—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">
-                    {r.whatsapp ? (
-                      <a href={`https://wa.me/${waDigits(r.whatsapp)}`} target="_blank" rel="noreferrer" title="Open in WhatsApp" className="inline-flex items-center gap-1.5 hover:underline" style={{ color: T.textBody }}>
-                        {r.whatsapp}<span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: T.successSurface, color: T.success }}>WA</span>
-                      </a>
+                    {r.phone || r.whatsapp ? (
+                      <div className="space-y-0.5">
+                        {[...new Set([r.whatsapp, r.phone].filter(Boolean))].map((p) => (
+                          <div key={p} className="flex items-center gap-1.5">
+                            <a href={`tel:${p.replace(/\s/g, '')}`} className="hover:underline" style={{ color: T.textBody }}>{p}</a>
+                            {p === r.whatsapp && <a href={`https://wa.me/${waDigits(p)}`} target="_blank" rel="noreferrer" title="Open in WhatsApp" className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: T.successSurface, color: T.success }}>WA</a>}
+                          </div>
+                        ))}
+                      </div>
                     ) : <span style={{ color: T.textMuted }}>—</span>}
                   </td>
                   <td className="px-4 py-3 text-xs max-w-[220px] truncate">

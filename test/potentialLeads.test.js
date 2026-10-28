@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toLeadRow, waDigits, hasContact, filterLeads, LEAD_STATUSES } from '../lib/potentialLeads.js';
+import { toLeadRow, waDigits, hasContact, filterLeads, LEAD_STATUSES, leadsCsv } from '../lib/potentialLeads.js';
 
 describe('toLeadRow', () => {
   it('maps a scraped HolaCasa row, keeping the source link', () => {
@@ -48,5 +48,25 @@ describe('filterLeads', () => {
     expect(filterLeads(rows, { status: 'new' }).length).toBe(2);
     expect(filterLeads(rows, { contact: 'with' }).map((r) => r.name)).toEqual(['Álamo Desarrollos', 'Cima']);
     expect(filterLeads(rows, { contact: 'without' }).map((r) => r.name)).toEqual(['Bosque Group']);
+  });
+});
+
+describe('leads CSV (one column per way to reach them)', () => {
+  const rows = [
+    { name: 'Ana "La" Pérez', legal_name: 'C21, Asunción', category: 'agent', phone: '0981 123 456', whatsapp: '+595981123456', email: ' Ana@C21.com.py ', location: 'Asunción', source: 'ubicaprop', source_url: 'https://ubicaprop.com.py/a' },
+    { name: 'Dev SA', category: 'developer', source: 'holacasa', source_url: 'https://holacasa.com.py/d' },
+  ];
+  it('has a header, phone / WhatsApp / email in their own columns, international numbers', () => {
+    const lines = leadsCsv(rows).replace(/^\uFEFF/, '').trim().split('\r\n');
+    expect(lines[0]).toBe('"Name","Agency / company","Type","Phone","WhatsApp","WhatsApp link","Email","Location","Source","Source page"');
+    expect(lines[1]).toBe('"Ana ""La"" Pérez","C21, Asunción","Agent","+595981123456","+595981123456","https://wa.me/595981123456","ana@c21.com.py","Asunción","Ubicaprop","https://ubicaprop.com.py/a"');
+    expect(lines[2]).toBe('"Dev SA","","Developer","","","","","","HolaCasa","https://holacasa.com.py/d"');
+  });
+  it('starts with a BOM so Excel reads accents', () => {
+    expect(leadsCsv(rows).charCodeAt(0)).toBe(0xFEFF);
+  });
+  it('filters: has WhatsApp / has email', () => {
+    expect(filterLeads(rows, { contact: 'whatsapp' }).map((r) => r.name)).toEqual(['Ana "La" Pérez']);
+    expect(filterLeads(rows, { contact: 'email' }).map((r) => r.name)).toEqual(['Ana "La" Pérez']);
   });
 });

@@ -15,6 +15,7 @@ import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
 import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoListing } from '@/lib/noListingAdmin';
 import { LISTING_HELD_ID, HELD_REASONS, listingHeldConfig, listingHeldCounts, saveListingHeld } from '@/lib/listingHeldAdmin';
 import { SAVES_AUTOMATION_ID, savesConfig, saveSavesAutomation } from '@/lib/savesAdmin';
+import { PAYMENT_FOLLOWUP_ID, paymentFollowupConfig, paymentFollowupCounts, savePaymentFollowup } from '@/lib/paymentFollowupAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,6 +78,20 @@ async function payload(db) {
       reasons: HELD_REASONS.map((r) => ({ ...r, template: byKey.get(r.key) || null })),
     };
   } catch { listingHeld = null; }
+  // "Waiting for payment → free listing" — no row until the first save on the card.
+  let paymentFollowup = null;
+  try {
+    const [pa] = await db.select('automations', `select=*&id=eq.${PAYMENT_FOLLOWUP_ID}&limit=1`);
+    const [logs, waiting, userListings] = await Promise.all([
+      pa ? db.select('email_log', `select=dedupe_key&automation_id=eq.${PAYMENT_FOLLOWUP_ID}&status=in.(sent,delivered,read)&order=created_at.desc&limit=10000`).catch(() => []) : [],
+      db.selectWithCount('properties', 'select=id&origin=eq.user&status=eq.payment_pending&limit=1').catch(() => ({ count: null })),
+      // AiroBase can't filter inside raw_data: the gift records are picked out here
+      pa ? db.select('properties', 'select=id,raw_data&origin=eq.user&order=created_at.desc&limit=5000').catch(() => []) : [],
+    ]);
+    const gifted = userListings.map((p) => p.raw_data?.paid_listing?.gift).filter((g) => g?.offered_at);
+    const claimed = gifted.filter((g) => g.claimed_at).length;
+    paymentFollowup = { setUp: !!pa, settings: paymentFollowupConfig(pa || null), ...paymentFollowupCounts(logs), waiting: waiting.count, offered: gifted.length, claimed };
+  } catch { paymentFollowup = null; }
   // "Listing getting saved" — no row until the first save on the card (defaults shown).
   let saves = null;
   try {
@@ -104,6 +119,7 @@ async function payload(db) {
     duplicates,
     noListing,
     listingHeld,
+    paymentFollowup,
     saves,
     templates,
     stats: automationStats(runs, payments),
@@ -165,6 +181,12 @@ export async function PUT(req) {
     if (body.id === LISTING_HELD_ID) {
       const { id, ...patch } = body;
       const v = await saveListingHeld(db, patch);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === PAYMENT_FOLLOWUP_ID) {
+      const { id, ...patch } = body;
+      const v = await savePaymentFollowup(db, patch);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }

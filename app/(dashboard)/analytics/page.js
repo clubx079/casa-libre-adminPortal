@@ -215,47 +215,69 @@ const SOURCE_LABELS = {
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
 const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
 
-// Every email this person was sent (Resend + our automation log), newest first,
-// with its latest status and their open / click rates.
+// Every message this person was sent — emails (Resend + our automation log) and WhatsApp
+// (automations, status from Relay's webhook) — in ONE list, newest first, with each
+// channel's open / read / click rates. /api/users/emails + /api/users/whatsapp.
 const EMAIL_STATUS_COLOR = (s) => (s === 'opened' || s === 'clicked' ? T.success
   : s === 'delivered' ? T.info
   : ['bounced', 'complained', 'failed', 'suppressed'].includes(s) ? T.danger
   : T.textMuted);
-const UserEmails = ({ email }) => {
-  const [res, setRes] = useState(null); // API body, or { error } — null while loading
+const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
+const ChannelChip = ({ ch }) => (
+  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : { background: T.bgSurface, color: T.textSecondary }}>
+    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : 'Email'}
+  </span>
+);
+const UserMessages = ({ email }) => {
+  const [em, setEm] = useState(null);   // /api/users/emails body or { error }
+  const [wa, setWa] = useState(null);   // /api/users/whatsapp body or { error }
+  const [only, setOnly] = useState('all');
   useEffect(() => {
     if (!email) return undefined;
     let cancelled = false;
-    setRes(null);
-    fetch(`/api/users/emails?email=${encodeURIComponent(email)}`)
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled) setRes(j); })
-      .catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
+    setEm(null); setWa(null);
+    const get = (path, set) => fetch(`${path}?email=${encodeURIComponent(email)}`).then((r) => r.json())
+      .then((j) => { if (!cancelled) set(j); }).catch(() => { if (!cancelled) set({ error: 'unavailable' }); });
+    get('/api/users/emails', setEm);
+    get('/api/users/whatsapp', setWa);
     return () => { cancelled = true; };
   }, [email]);
 
-  const s = res?.summary;
   const pct = (v) => (v == null ? '—' : `${v}%`);
+  const loading = em === null || wa === null;
+  const es = em && !em.error ? em.summary : null;
+  const ws = wa && !wa.error ? wa.summary : null;
+  const rows = [
+    ...(em && !em.error ? em.emails.map((e) => ({ ...e, ch: 'email' })) : []),
+    ...(wa && !wa.error ? wa.messages.map((m) => ({ ...m, ch: 'whatsapp' })) : []),
+  ].filter((r) => only === 'all' || r.ch === only).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+
   return (
-    <div className="bg-white p-5" style={CARD}>
-      <div className="flex items-center gap-2 mb-3">
+    <div className="bg-white p-5" style={CARD} data-testid="user-messages">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Mail className="w-4 h-4" style={{ color: T.primary }} />
-        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Emails</h2>
-        {s ? <span className="text-xs" style={{ color: T.textMuted }}>{s.total}</span> : null}
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Messages sent</h2>
+        <span className="text-xs" style={{ color: T.textMuted }}>emails and WhatsApp, newest first</span>
+        {wa && !wa.error ? (
+          <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
+            WhatsApp: {wa.phone ? `${wa.phone} · ${wa.verified ? 'verified' : 'not verified'}` : 'no number'}{wa.optedOut ? ' · opted out' : ''}
+          </span>
+        ) : null}
       </div>
 
-      {res === null ? (
+      {loading ? (
         <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
-      ) : res.error ? (
-        <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their emails.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
             {[
-              ['Emails sent', s.total, s.codes ? `${s.codes} sign-in / reset code${s.codes === 1 ? '' : 's'}` : ''],
-              ['Delivered', s.listed ? `${s.delivered} of ${s.listed}` : '—', ''],
-              ['Open rate', pct(s.openRate), s.measured ? `${s.opened} of ${s.measured} opened` : 'none tracked yet'],
-              ['Click rate', pct(s.clickRate), s.measured ? `${s.clicked} of ${s.measured} clicked` : 'none tracked yet'],
+              ['Emails sent', es ? es.total : '—', es?.codes ? `${es.codes} code${es.codes === 1 ? '' : 's'}` : ''],
+              ['Email open rate', es ? pct(es.openRate) : '—', es?.measured ? `${es.opened} of ${es.measured}` : ''],
+              ['Email click rate', es ? pct(es.clickRate) : '—', es?.measured ? `${es.clicked} of ${es.measured}` : ''],
+              ['WhatsApp sent', ws ? ws.sent : '—', ws?.failed ? `${ws.failed} failed` : ''],
+              ['WhatsApp read rate', ws ? pct(ws.readRate) : '—', ws?.delivered ? `${ws.read} of ${ws.delivered}` : ''],
+              ['WhatsApp clicks', ws ? ws.clicked : '—', wa?.clicksNote ? 'PostHog not available' : ''],
             ].map(([label, value, sub]) => (
               <div key={label}>
                 <p className="text-lg font-bold" style={{ color: T.textPrimary }}>{value}</p>
@@ -265,52 +287,61 @@ const UserEmails = ({ email }) => {
           </div>
           <p className="text-[11px] mb-3" style={{ color: T.textMuted }}>
             Rates leave out sign-in / password-reset codes and test sends.
-            {res.emails.some((e) => e.untracked === 'before') && res.trackingSince
-              ? ` Opens and clicks are only recorded since open tracking was switched on in Resend (${fmtDateOnly(res.trackingSince)}): earlier emails can only show Delivered.` : ''}
-            {res.emails.some((e) => e.untracked === 'off') ? ' Open and click tracking is off for this country’s email domain in Resend.' : ''}
-            {res.tracking === 'no_key' ? ' Opens and clicks need a full-access Resend key (RESEND_READ_API_KEY) in the admin env: only automation emails from our own log are shown.' : ''}
-            {res.tracking === 'error' ? ` Resend couldn't be read right now (${res.trackingError}): only automation emails from our own log are shown.` : ''}
-            {res.truncated ? ' Resend history was cut at 4,000 emails.' : ''}
+            {em?.error ? ' Couldn’t load their emails right now.' : ''}
+            {wa?.error ? ' Couldn’t load their WhatsApp messages right now.' : ''}
+            {em?.emails?.some((e) => e.untracked === 'before') && em.trackingSince ? ` Email opens and clicks are only recorded since ${fmtDateOnly(em.trackingSince)}.` : ''}
+            {em?.tracking === 'no_key' ? ' Email opens/clicks need RESEND_READ_API_KEY: only automation emails from our own log are shown.' : ''}
+            {em?.tracking === 'error' ? ` Resend couldn't be read right now (${em.trackingError}).` : ''}
           </p>
-
-          {res.emails.length === 0 ? (
-            <p className="text-xs" style={{ color: T.textMuted }}>No emails sent to this person in the last {Math.round(res.days / 30)} months.</p>
+          <div className="inline-flex rounded-full p-0.5 mb-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
+            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp']].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-full text-[11px] font-medium" style={only === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
+            ))}
+          </div>
+          {rows.length === 0 ? (
+            <p className="text-xs" style={{ color: T.textMuted }}>No messages sent to this person yet.</p>
           ) : (
             <div className="overflow-x-auto cl-scroll">
-              <table className="w-full text-xs min-w-[560px]">
+              <table className="w-full text-xs min-w-[620px]">
                 <thead>
                   <tr style={{ color: T.textMuted }}>
-                    {['Sent', 'Email', 'Subject', 'Status'].map((h, i) => (
-                      <th key={h} className={`py-1.5 font-semibold ${i === 3 ? 'text-right' : 'text-left'}`}>{h}</th>
+                    {['Sent', 'Channel', 'Message', 'Subject / template', 'Status'].map((h, i) => (
+                      <th key={h} className={`py-1.5 font-semibold ${i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {res.emails.map((e) => (
-                    <tr key={e.id} className="border-t" style={{ borderColor: T.borderLight }}>
-                      <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(e.at)} · {fmtTime(e.at)}</td>
+                  {rows.map((r) => (
+                    <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight }}>
+                      <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
+                      <td className="py-2 pr-3 align-top"><ChannelChip ch={r.ch} /></td>
                       <td className="py-2 pr-3 align-top" style={{ color: T.textPrimary }}>
                         <span className="whitespace-nowrap">
-                          {e.type_en || e.type}
-                          {e.manager ? (
+                          {r.ch === 'email' ? (r.type_en || r.type) : r.type}
+                          {r.manager ? (
                             <>
                               <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: T.infoSurface || T.bgSurface, color: T.info || T.textPrimary }}>Admin Manager</span>
-                              {e.testSend ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textMuted }}>test send</span> : null}
-                              {e.reportId ? <a href={`/manager/${e.reportId}#emails`} className="ml-1.5 text-[10.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>report</a> : null}
+                              {r.testSend ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textMuted }}>test send</span> : null}
+                              {r.reportId ? <a href={`/manager/${r.reportId}#emails`} className="ml-1.5 text-[10.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>report</a> : null}
                             </>
-                          ) : e.automation ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
+                          ) : (r.automation || r.ch === 'whatsapp') ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
                         </span>
-                        {e.type_en && e.type_en !== e.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{e.type}</span> : null}
+                        {r.ch === 'email' && r.type_en && r.type_en !== r.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{r.type}</span> : null}
                       </td>
                       <td className="py-2 pr-3 max-w-[320px] align-top" style={{ color: T.textBody }}>
-                        <span className="block truncate" title={e.subject}>{e.subject}</span>
-                        {e.subject_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={e.subject_en}>EN · {e.subject_en}</span> : null}
+                        {r.ch === 'email' ? (
+                          <>
+                            <span className="block truncate" title={r.subject}>{r.subject}</span>
+                            {r.subject_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={r.subject_en}>EN · {r.subject_en}</span> : null}
+                          </>
+                        ) : <span className="font-mono">{r.template}</span>}
                       </td>
-                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap align-top" style={{ color: EMAIL_STATUS_COLOR(e.status) }}>
-                        {e.status}
-                        {e.untracked ? (
+                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap align-top" style={{ color: r.ch === 'email' ? EMAIL_STATUS_COLOR(r.status) : WA_STATUS_COLOR(r.status) }}>
+                        {r.status}
+                        {r.ch === 'whatsapp' && r.clicked ? <span className="block text-[10px] font-normal normal-case" style={{ color: T.success }}>clicked</span> : null}
+                        {r.ch === 'email' && r.untracked ? (
                           <span className="block text-[10px] font-normal normal-case" style={{ color: T.textMuted }}>
-                            {e.untracked === 'before' ? 'before open tracking' : e.untracked === 'off' ? 'not tracked' : 'from our log'}
+                            {r.untracked === 'before' ? 'before open tracking' : r.untracked === 'off' ? 'not tracked' : 'from our log'}
                           </span>
                         ) : null}
                       </td>
@@ -326,80 +357,43 @@ const UserEmails = ({ email }) => {
   );
 };
 
-// This person's WhatsApp messages from the automations (next to their Emails): status
-// from Relay's webhook, clicks = visits from the button links (PostHog). /api/users/whatsapp
-const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
-const UserWhatsApp = ({ email }) => {
+// Paid listings: each time this person wanted to publish more listings than the free ones of
+// the month, the payment came up — what they did next. /api/users/paywall
+const PAYWALL_DOT = { paywall: T.warning, checkout: T.info, paid: T.success, gift: T.info, gift_taken: T.success, gift_lapsed: T.textMuted };
+const UserPaywall = ({ userId, email }) => {
   const [res, setRes] = useState(null);
   useEffect(() => {
-    if (!email) return undefined;
+    if (!userId && !email) return undefined;
     let cancelled = false;
-    setRes(null);
-    fetch(`/api/users/whatsapp?email=${encodeURIComponent(email)}`)
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled) setRes(j); })
-      .catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
+    const qs = new URLSearchParams();
+    if (userId) qs.set('userId', userId);
+    if (email) qs.set('email', email);
+    fetch(`/api/users/paywall?${qs}`).then((r) => r.json())
+      .then((j) => { if (!cancelled) setRes(j); }).catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
     return () => { cancelled = true; };
-  }, [email]);
-  const s = res?.summary;
-  const pct = (v) => (v == null ? '—' : `${v}%`);
+  }, [userId, email]);
+  if (!res || res.error || !res.found || !res.rows.length) return null;   // only for people who hit the paywall
+  const waiting = res.rows.filter((r) => ['waiting', 'gift_open', 'gift_lapsed'].includes(r.state)).length;
   return (
-    <div className="bg-white p-5" style={CARD} data-testid="user-whatsapp">
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <MessageCircle className="w-4 h-4" style={{ color: T.primary }} />
-        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>WhatsApp messages</h2>
-        {s ? <span className="text-xs" style={{ color: T.textMuted }}>{s.sent}</span> : null}
-        {res && !res.error ? (
-          <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
-            {res.phone ? `${res.phone} · ${res.verified ? 'verified' : 'not verified'}` : 'no number'}{res.optedOut ? ' · opted out' : ''}
-          </span>
-        ) : null}
+    <div className="bg-white p-5" style={CARD} data-testid="user-paywall">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <Home className="w-4 h-4" style={{ color: T.primary }} />
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Paid listings — the payment step</h2>
+        <span className="text-xs" style={{ color: T.textMuted }}>{res.rows.length} time{res.rows.length === 1 ? '' : 's'}{waiting ? ` · ${waiting} still not paid` : ''}</span>
       </div>
-      {res === null ? (
-        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
-      ) : res.error ? (
-        <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their WhatsApp messages.</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            {[
-              ['Sent', s.sent, s.failed ? `${s.failed} failed` : ''],
-              ['Delivered', s.sent ? `${s.delivered} of ${s.sent}` : '—', ''],
-              ['Read rate', pct(s.readRate), s.delivered ? `${s.read} of ${s.delivered} read` : ''],
-              ['Clicks', s.clicked, res.clicksNote ? 'PostHog not available' : s.clicked ? 'visits from a message button' : ''],
-            ].map(([label, value, sub]) => (
-              <div key={label}>
-                <p className="text-lg font-bold" style={{ color: T.textPrimary }}>{value}</p>
-                <p className="text-[10px]" style={{ color: T.textMuted }}>{label}{sub ? ` · ${sub}` : ''}</p>
-              </div>
-            ))}
-          </div>
-          {res.messages.length === 0 ? (
-            <p className="text-xs" style={{ color: T.textMuted }}>No WhatsApp messages sent to this person yet. Automations send by WhatsApp once their &quot;Send by&quot; is WhatsApp or Both.</p>
-          ) : (
-            <div className="overflow-x-auto cl-scroll">
-              <table className="w-full text-xs min-w-[520px]">
-                <thead><tr style={{ color: T.textMuted }}>{['Sent', 'Message', 'Template', 'Status'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i === 3 ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {res.messages.map((m) => (
-                    <tr key={m.id} className="border-t" style={{ borderColor: T.borderLight }}>
-                      <td className="py-2 pr-3 whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtDateOnly(m.at)} · {fmtTime(m.at)}</td>
-                      <td className="py-2 pr-3" style={{ color: T.textPrimary }}>
-                        {m.type}
-                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span>
-                      </td>
-                      <td className="py-2 pr-3 font-mono" style={{ color: T.textBody }}>{m.template}</td>
-                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap" style={{ color: WA_STATUS_COLOR(m.status) }}>
-                        {m.status}{m.clicked ? <span className="block text-[10px] font-normal normal-case" style={{ color: T.success }}>clicked</span> : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <p className="text-[11px] mb-3" style={{ color: T.textMuted }}>When they wanted to publish more than the free listings of the month and what they did next. Reminders and the gift email show in Messages sent.</p>
+      <div className="space-y-2.5">
+        {res.events.map((e, i) => (
+          <div key={`${e.kind}-${e.listingId}-${i}`} className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: PAYWALL_DOT[e.kind] || T.textMuted }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12.5px] font-medium" style={{ color: T.textPrimary }}>{e.title}</p>
+              {e.detail ? <p className="text-[11.5px]" style={{ color: T.textSecondary }}>{e.detail}</p> : null}
             </div>
-          )}
-        </>
-      )}
+            <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: T.textMuted }}>{fmtDateOnly(e.at)} · {fmtTime(e.at)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -499,8 +493,8 @@ const UserFacts = ({ user, profile, loading }) => {
         </div>
       )}
 
-      {acct?.found ? <UserEmails email={acct.user.email} /> : null}
-      {acct?.found ? <UserWhatsApp email={acct.user.email} /> : null}
+      {acct?.found ? <UserPaywall userId={acct.user.id} email={acct.user.email} /> : null}
+      {acct?.found ? <UserMessages email={acct.user.email} /> : null}
     </>
   );
 };
@@ -1267,7 +1261,8 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
         </> : <p className="text-sm" style={{ color: T.textSecondary }}>{resolveNote || 'No activity found for this user.'}</p>)}
         {/* no website activity tracked — the emails we sent them (automations, Admin Manager)
             still show */}
-        {resolved && deepEmail ? <UserEmails email={deepEmail} /> : null}
+        {resolved && deepEmail ? <UserPaywall email={deepEmail} /> : null}
+        {resolved && deepEmail ? <UserMessages email={deepEmail} /> : null}
       </div>
     );
   }

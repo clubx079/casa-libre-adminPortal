@@ -8,6 +8,8 @@ import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
 import { listingCounts } from '@/lib/listingCount';
 import { listingPhones } from '@/lib/listingPhones';
+import { phoneCores, phoneMatches } from '@/lib/phoneSearch';
+import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,9 +42,24 @@ export async function GET(request) {
   const cols = 'id,email,full_name,phone,phone_verified_at,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
   let query = `select=${cols}&${HIDE_DELETED_USERS}&order=created_at.desc&limit=500`;
   if (q) {
-    // case-insensitive match on email or name
+    // case-insensitive match on email or name — and, when the search has digits, on the phone:
+    // the profile phone or the phone on any of their listings (lib/phoneSearch.js).
     const safe = encodeURIComponent(`%${q}%`);
-    query += `&or=(email.ilike.${safe},full_name.ilike.${safe})`;
+    const ors = [`email.ilike.${safe}`, `full_name.ilike.${safe}`];
+    const cores = phoneCores(q, PHONE_PREFIX[activeCountry()] || '');
+    if (cores.length) {
+      const db = dbFor(activeCountry());
+      const [withPhone, listed] = await Promise.all([
+        selectAll(db, 'users', `select=id,phone&phone=not.is.null&${HIDE_DELETED_USERS}&order=id.asc`).catch(() => []),
+        selectAll(db, 'properties', 'select=id,created_by,contact_phone&origin=eq.user&created_by=not.is.null&contact_phone=not.is.null&order=id.asc').catch(() => []),
+      ]);
+      const ids = [...new Set([
+        ...withPhone.filter((u) => phoneMatches(u.phone, cores)).map((u) => String(u.id)),
+        ...listed.filter((p) => phoneMatches(p.contact_phone, cores)).map((p) => String(p.created_by)),
+      ])].slice(0, 300);
+      if (ids.length) ors.push(`id.in.(${ids.map((id) => `"${id}"`).join(',')})`);
+    }
+    query += `&or=(${ors.join(',')})`;
   }
 
   try {

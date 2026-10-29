@@ -40,6 +40,67 @@ const ago = (iso) => {
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 };
 
+// Stopped at the paywall: someone wanted to publish one more listing this month, the payment
+// came up, and what happened next (lib/paywallActivity.js). Click a person → their activity.
+const STOP_TONE = { waiting: 'warning', gift_open: 'info', gift_lapsed: 'neutral', gift_taken: 'success', paid: 'success', ended: 'neutral', other: 'neutral' };
+const STOP_LABEL = { waiting: 'Stopped at payment', gift_open: 'Free gift offered', gift_lapsed: 'Gift not taken', gift_taken: 'Published free (gift)', paid: 'Paid', ended: 'Ended', other: '—' };
+const ord = (n) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`; };
+const hrs = (h) => (h == null ? '' : h < 24 ? `${h} h` : `${Math.round(h / 24)} d`);
+function PaywallStops({ rows }) {
+  const [only, setOnly] = useState('stopped');
+  if (!rows) return null;
+  const stopped = rows.filter((r) => ['waiting', 'gift_open', 'gift_lapsed'].includes(r.state));
+  const list = only === 'stopped' ? stopped : rows;
+  return (
+    <div className="rounded-[14px] p-5" style={CARD} data-testid="paywall-stops">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>Stopped at the paywall</div>
+        <div className="inline-flex rounded-[10px] p-0.5" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
+          {[['stopped', `Still not paid ${stopped.length}`], ['all', `Everyone who hit it ${rows.length}`]].map(([v, l]) => (
+            <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-[8px] text-[12.5px]" style={only === v ? { background: '#fff', fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[12.5px] mt-1 mb-4" style={{ color: T.textSecondary }}>People who wanted to publish one more listing this month, saw the price and what they did next. &quot;Stopped at payment&quot; with no card form opened = they likely didn&apos;t want to pay. Last 180 days.</p>
+      {list.length === 0 ? <p className="text-[13px]" style={{ color: T.textMuted }}>{only === 'stopped' ? 'Nobody is stuck at the paywall right now.' : 'Nobody has hit the paywall yet.'}</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Person</th><th className="py-2 pr-3 font-medium">Wanted to publish</th><th className="py-2 pr-3 font-medium">What happened</th><th className="py-2 pr-3 font-medium">Reminders</th><th className="py-2 font-medium">When</th></tr></thead>
+            <tbody>
+              {list.map((r) => {
+                const o = r.owner || {};
+                const href = `/analytics?user=${encodeURIComponent(r.ownerId)}${o.email ? `&email=${encodeURIComponent(o.email)}` : ''}`;
+                return (
+                  <tr key={r.id} className="border-t align-top" style={{ borderColor: T.borderLight }} data-testid="paywall-row">
+                    <td className="py-2 pr-3"><a href={href} className="font-medium underline underline-offset-2" style={{ color: T.textPrimary }}>{o.name || o.email || String(r.ownerId).slice(0, 8)}</a>{o.name && o.email ? <span className="block text-[11.5px]" style={{ color: T.textMuted }}>{o.email}</span> : null}</td>
+                    <td className="py-2 pr-3">
+                      <span className="font-medium" style={{ color: T.textPrimary }}>Their {ord(r.nth)} listing this month</span>
+                      <span className="block text-[11.5px]" style={{ color: T.textMuted }}>{r.title}{r.price ? ` · ${r.price}` : ''}</span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Pill tone={STOP_TONE[r.state] || 'neutral'}>{STOP_LABEL[r.state] || r.state}</Pill>
+                      <span className="block text-[11.5px] mt-1" style={{ color: T.textSecondary }}>
+                        {r.state === 'waiting' ? (r.triedToPay ? 'Opened the card form, didn’t pay' : 'Didn’t open the card form — likely didn’t want to pay')
+                          : r.state === 'paid' ? `Paid ${r.paidAfterH < 1 ? 'right away' : `after ${hrs(r.paidAfterH)}`}`
+                            : r.state === 'gift_open' ? `Offered ${fmtDate(r.gift.offeredAt)} · open until ${fmtDate(r.gift.expiresAt)}`
+                              : r.state === 'gift_taken' ? `Took the gift ${fmtDate(r.gift.claimedAt)}`
+                                : r.state === 'gift_lapsed' ? `Offered ${fmtDate(r.gift.offeredAt)}, never taken` : ''}
+                        {r.waitingH != null ? ` · waiting ${hrs(r.waitingH)}` : ''}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums">{r.reminders || '—'}</td>
+                    <td className="py-2 whitespace-nowrap" title={fmtDate(r.at, true)}>{ago(r.at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Started paying, didn't finish: the funnel (PostHog) + who (payments 'started' rows).
 function Checkouts({ c, site }) {
   if (!c) return null;
@@ -178,6 +239,8 @@ export default function PaidListingsPage() {
         <Stat label="Ended" value={s.ended} hint="off the site until extended" />
       </div>
 
+      <PaywallStops rows={data.stops} />
+
       <Checkouts c={data.checkouts} site={data.site} />
 
       {/* Settings */}
@@ -246,7 +309,7 @@ export default function PaidListingsPage() {
               <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Listing</th><th className="py-2 pr-3 font-medium">Owner</th><th className="py-2 pr-3 font-medium">State</th><th className="py-2 pr-3 font-medium">Listed</th><th className="py-2 font-medium">Paid until</th></tr></thead>
               <tbody>
                 {data.listings.map((l) => {
-                  const [tone, label] = STATE[l.state] || ['neutral', l.state || '—'];
+                  const [tone, label] = l.gift && l.state === 'active' ? ['success', 'Free gift · live'] : STATE[l.state] || ['neutral', l.state || '—'];
                   return (
                     <tr key={l.id} className="border-t" style={{ borderColor: T.borderLight }}>
                       <td className="py-2 pr-3">{l.title || String(l.id).slice(0, 8)}</td>

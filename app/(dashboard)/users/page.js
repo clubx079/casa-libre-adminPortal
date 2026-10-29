@@ -233,7 +233,7 @@ export default function UsersPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by name or email…"
+              placeholder="Search by name, email or phone…"
               className="w-full outline-none"
               style={{
                 paddingLeft: '34px', paddingRight: term ? '34px' : '10px',

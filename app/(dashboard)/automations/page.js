@@ -90,7 +90,7 @@ function DayField({ value, onChange, min, max, error, suffix }) {
 }
 
 // The draft reminders: 1–5 rows of "Reminder n · after [N] [hours|days]" — add / remove.
-function DraftSteps({ steps, errors, onChange }) {
+function DraftSteps({ steps, errors, onChange, note }) {
   const set = (i, k) => (v) => onChange(steps.map((s, j) => (j === i ? { ...s, [k]: v } : s)));
   const add = () => {
     const last = steps[steps.length - 1];
@@ -129,7 +129,7 @@ function DraftSteps({ steps, errors, onChange }) {
       {steps.length < DRAFT_STEPS.max && (
         <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add reminder</button>
       )}
-      <p className="text-[11px]" style={{ color: T.textMuted }}>Counted from the last time the seller opened or changed the draft. Each reminder goes once per draft (up to {DRAFT_STEPS.max}); coming back to the draft pushes the next one back.</p>
+      <p className="text-[11px]" style={{ color: T.textMuted }}>{note || <>Counted from the last time the seller opened or changed the draft. Each reminder goes once per draft (up to {DRAFT_STEPS.max}); coming back to the draft pushes the next one back.</>}</p>
     </div>
   );
 }
@@ -211,6 +211,7 @@ export default function AutomationsPage() {
   const [nform, setNform] = useState(null);
   const [hform, setHform] = useState(null);
   const [sform, setSform] = useState(null);
+  const [pform, setPform] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -231,6 +232,8 @@ export default function AutomationsPage() {
     setNform(n ? { days: n.days, secondAfter: n.secondAfter, templateId: n.templateId, reminderTemplateId: n.reminderTemplateId } : null);
     const hs = j.listingHeld?.settings;
     setHform(hs ? { hours: hs.hours, reminderAfter: hs.reminderAfter } : null);
+    const ps = j.paymentFollowup?.settings;
+    setPform(ps ? { steps: stepsFromHours(ps.steps), reminderTemplateId: ps.reminderTemplateId || '', giftAfterDays: ps.giftAfterDays, giftTemplateId: ps.giftTemplateId || '', giftsPerPerson: ps.giftsPerPerson, giftWindowDays: ps.giftWindowDays, giftDays: ps.giftDays } : null);
     const ss = j.saves?.settings;
     setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
@@ -249,7 +252,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -343,6 +346,25 @@ export default function AutomationsPage() {
     if (on && !window.confirm('Switch "Listing getting saved" on?\n\nSellers get a message when their listing reaches your numbers of saves (people with an account + visitors). Numbers a listing already passed before now are not sent.')) return;
     run('saves', 'toggle', () => put('saves', { enabled: on, ...(sv.setUp ? {} : { milestones: sform.milestones }) }, on ? '“Listing getting saved” is on.' : '“Listing getting saved” is off.'));
   };
+  // "Waiting for payment → free listing"
+  const pf = data.paymentFollowup;
+  const pfs = pf?.settings;
+  const e8 = errors.pay || {};
+  const toHours = (steps) => steps.map((s) => Number(s.value) * (s.unit === 'days' ? 24 : 1));
+  const pPatch = () => pform && ({ steps: toHours(pform.steps), reminderTemplateId: pform.reminderTemplateId, giftAfterDays: pform.giftAfterDays === '' ? 0 : Number(pform.giftAfterDays), giftTemplateId: pform.giftTemplateId, giftsPerPerson: Number(pform.giftsPerPerson), giftWindowDays: Number(pform.giftWindowDays), giftDays: Number(pform.giftDays) });
+  const pDirty = !!(pfs && pform && (JSON.stringify(toHours(pform.steps)) !== JSON.stringify(pfs.steps)
+    || ['reminderTemplateId', 'giftAfterDays', 'giftTemplateId', 'giftsPerPerson', 'giftWindowDays', 'giftDays'].some((k) => String(pform[k] ?? '') !== String(pfs[k] ?? ''))));
+  const pGift = !!(pform && Number(pform.giftAfterDays) > 0);
+  const togglePay = () => {
+    const on = !pfs.enabled;
+    if (on && !window.confirm(`Switch "Waiting for payment → free listing" on?\n\nSellers whose listing is saved over the free listings of the month and not paid get payment reminders${pGift ? `, and after ${pform.giftAfterDays} days one email offering THAT listing for free (up to ${pform.giftsPerPerson} per person)` : ''}. Only listings saved from now on. While it is on, "Listing not published" stops sending its own payment message.${pf.setUp ? '' : '\n\nThis also creates the gift email (Spanish) — edit it in Templates.'}`)) return;
+    run('pay', 'toggle', () => put('pay', { enabled: on, ...(pf.setUp ? {} : pPatch()) }, on ? '“Waiting for payment → free listing” is on.' : '“Waiting for payment → free listing” is off.'));
+  };
+  const pStats = pf ? [
+    pf.reminders ? `${pf.reminders.toLocaleString('en-US')} reminders sent` : '',
+    pf.offered ? `${pf.offered} ${pf.offered === 1 ? 'gift' : 'gifts'} offered · ${pf.claimed} taken` : '',
+    pf.waiting != null ? `${pf.waiting} ${pf.waiting === 1 ? 'listing' : 'listings'} waiting for payment right now` : '',
+  ].filter(Boolean).join(' · ') : '';
   const nPerStep = nl?.perStep || {};
   const nStats = nl?.sent ? ` ${nl.sent.toLocaleString('en-US')} sent so far${nPerStep['2'] ? ` (welcome: ${nPerStep['1'] || 0} · second: ${nPerStep['2']})` : ''}.` : '';
 
@@ -580,6 +602,46 @@ export default function AutomationsPage() {
           <StepCard n={4} kind="Optional" title="Reminder if it's still not published">
             <DayField value={hform.reminderAfter} onChange={(v) => setHform((f) => ({ ...f, reminderAfter: v }))} min={0} max={719} error={e6.reminderAfter} suffix="more hours later" />
             <p className="text-[11px]" style={{ color: T.textMuted }}>{hHasReminder ? `Sent ${Number(hform.hours) + Number(hform.reminderAfter)} hours after it was held (same message).` : 'Leave empty (or 0) for no reminder.'}</p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {pfs && pform ? (
+        <AutomationCard
+          title="Waiting for payment → free listing"
+          channelId="payment_followup"
+          description="A seller went over the free listings of the month, saw the payment and stopped. They get payment reminders; if they still don't pay, one email offers THAT listing for free (a gift that builds trust), with a limit per person so waiting doesn't become the way to skip paying."
+          enabled={pfs.enabled} enabledAt={pfs.enabledAt} busy={busy.pay}
+          onToggle={togglePay} dirty={pDirty || !pf.setUp}
+          onSave={() => run('pay', 'save', () => put('pay', pPatch(), pf.setUp ? 'Changes saved.' : 'Saved — the gift email was created (Templates).'))}
+          footnote={`Only listings saved after it is switched on. Stops the moment they pay. While this is on, "Listing not published" doesn't send its payment message. Daytime only.${pf.setUp ? '' : ' Not set up for this country yet: saving creates it and the gift email.'}${pStats ? ` ${pStats}.` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A listing is saved over the free limit and not paid" />
+          <Connector />
+          <StepCard n={2} kind="Reminders" title="Payment reminders, after the listing was saved">
+            <DraftSteps steps={pform.steps} errors={e8} onChange={(list) => setPform((f) => ({ ...f, steps: list }))}
+              note="Each reminder goes once per listing (up to 5), only while it is still unpaid — e.g. 1, 3 and 7 days." />
+            <TemplatePicker label="Reminder email" value={pform.reminderTemplateId} templates={data.templates} onChange={(v) => setPform((f) => ({ ...f, reminderTemplateId: v }))} error={e8.reminderTemplateId} />
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Gift" title="Still not paid: publish THAT listing for free">
+            <DayField value={pform.giftAfterDays} onChange={(v) => setPform((f) => ({ ...f, giftAfterDays: v }))} min={0} max={60} error={e8.giftAfterDays} suffix="days after it was saved" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>{pGift ? 'One email with a button that publishes that listing for free (only that seller, only that listing; valid 14 days). After it, no more reminders.' : '0 = no gift: reminders only.'}</p>
+            {pGift && <TemplatePicker label="Gift email" value={pform.giftTemplateId} templates={data.templates} onChange={(v) => setPform((f) => ({ ...f, giftTemplateId: v }))} error={e8.giftTemplateId} />}
+            {pGift && <DayField value={pform.giftDays} onChange={(v) => setPform((f) => ({ ...f, giftDays: v }))} min={1} max={365} error={e8.giftDays} suffix="days live (then it ends like a paid one)" />}
+          </StepCard>
+          <Connector />
+          <StepCard n={4} kind="Limit" title="How many free gifts one person can get">
+            <div className="flex flex-wrap items-center gap-2">
+              <DayField value={pform.giftsPerPerson} onChange={(v) => setPform((f) => ({ ...f, giftsPerPerson: v }))} min={1} max={100} error={e8.giftsPerPerson} suffix={Number(pform.giftsPerPerson) === 1 ? 'gift' : 'gifts'} />
+              <select value={pform.giftWindowDays} onChange={(e) => setPform((f) => ({ ...f, giftWindowDays: Number(e.target.value) }))} aria-label="Gift limit period"
+                className="px-2 py-1.5 rounded-[10px] border text-[13px] font-medium outline-none focus:border-ink/60" style={{ borderColor: 'rgba(17,17,17,.2)', color: T.textPrimary, background: T.bgWhite }}>
+                {[[0, 'ever'], [30, 'every 30 days'], [90, 'every 90 days'], [180, 'every 6 months'], [365, 'every year']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+              </select>
+            </div>
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              Per person = their account plus any listing with the same phone. Over the limit, later listings only get the reminders — so a seller can&apos;t wait out every listing to get it free. Open and taken gifts count; an offer that expired untaken doesn&apos;t.
+            </p>
           </StepCard>
         </AutomationCard>
       ) : null}

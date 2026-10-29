@@ -17,6 +17,7 @@ import { hogql, posthogConfigured } from '@/lib/posthogHogql';
 import { UKEY, GEO_BASE } from '@/lib/posthogSql';
 import { siteClause } from '@/lib/analyticsSite';
 import { isInternalEmail } from '@/lib/internalTraffic';
+import { paywallRows, remindersByListing } from '@/lib/paywallActivity';
 import { PAID_LISTINGS_ID, paidConfig, priceCents, usd, validatePaidSettings, DEFAULT_TEMPLATES, samePersonGroups, paidStats, PHONE_PREFIX } from '@/lib/paidListingsAdmin';
 
 export const runtime = 'nodejs';
@@ -97,12 +98,18 @@ async function payload(db, cc) {
   const verified = await db.select('users', 'select=id,phone&phone_verified_at=not.is.null&limit=10000').catch(() => []);
   const groups = samePersonGroups(all, cfg.samePersonMin, { prefix: PHONE_PREFIX[activeCountry()] || '', verified });
   const listed = all.filter((p) => p.status === 'payment_pending' || p.status === 'expired' || p.raw_data?.paid_listing).slice(0, 100);
-  const userIds = [...new Set([...listed.map((p) => p.created_by), ...groups.flatMap((g) => g.users)].filter(Boolean).map(String))];
-  const users = userIds.length ? await db.select('users', `select=id,email,full_name,created_at&id=${inList(userIds.slice(0, 300))}`).catch(() => []) : [];
+  // Stopped at the paywall: each paywalled listing, what happened next (lib/paywallActivity.js).
+  const [started, remLogs] = await Promise.all([
+    db.select('payments', `select=property_id,status,created_at&kind=eq.listing&status=eq.started&created_at=gte.${encodeURIComponent(since)}&order=created_at.asc&limit=5000`).catch(() => []),
+    db.select('email_log', 'select=dedupe_key&automation_id=in.(payment_followup,listing_held)&status=in.(sent,delivered,read)&limit=10000').catch(() => []),
+  ]);
+  const stops = paywallRows({ listings: props, payments: started, reminders: remindersByListing(remLogs), cc }).slice(0, 200);
+  const userIds = [...new Set([...listed.map((p) => p.created_by), ...stops.map((r) => r.ownerId), ...groups.flatMap((g) => g.users)].filter(Boolean).map(String))];
+  const users = userIds.length ? await db.select('users', `select=id,email,full_name,phone,created_at&id=${inList(userIds.slice(0, 300))}`).catch(() => []) : [];
   const uById = new Map(users.map((u) => [String(u.id), u]));
   const freeThisMonthBy = new Map();
   for (const p of all) if (String(p.created_at) >= monthStart && !p.raw_data?.paid_listing) freeThisMonthBy.set(String(p.created_by), (freeThisMonthBy.get(String(p.created_by)) || 0) + 1);
-  const who = (id) => { const u = uById.get(String(id)) || {}; return { id, email: u.email || null, name: u.full_name || null }; };
+  const who = (id) => { const u = uById.get(String(id)) || {}; return { id, email: u.email || null, name: u.full_name || null, phone: u.phone || null }; };
 
   return {
     setUp: !!row,
@@ -114,10 +121,12 @@ async function payload(db, cc) {
     listings: listed.map((p) => ({
       id: p.id, created_at: p.created_at, status: p.status, admin_status: p.admin_status,
       state: p.status === 'payment_pending' ? 'pending' : p.raw_data?.paid_listing?.state || null,
+      gift: !!p.raw_data?.paid_listing?.gift?.claimed_at,
       until: p.raw_data?.paid_listing?.until || null,
       title: [p.property_type, p.listing_type === 'rent' ? 'rent' : 'sale', p.neighborhood || p.city].filter(Boolean).join(' · '),
       owner: who(p.created_by),
     })),
+    stops: stops.filter((r) => !isInternalEmail(uById.get(String(r.ownerId))?.email)).map((r) => ({ ...r, owner: who(r.ownerId) })),
     samePerson: groups.map((g) => ({ matched: g.matched, users: g.users.map((id) => ({ ...who(id), freeThisMonth: freeThisMonthBy.get(String(id)) || 0 })) })),
     checkouts: { ...(await checkouts(db)), funnel: await payFunnel(cc).catch(() => null) },
   };

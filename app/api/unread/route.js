@@ -11,21 +11,25 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { isMissingTable } from '@/lib/automationDb';
 import { adminKey, unreadCounts, markSeen, UNREAD_PAGES } from '@/lib/unread';
-import { relay } from '@/lib/relayInbox';
+import { conversationsWithCountry } from '@/lib/inboxData';
+import { isUnread } from '@/lib/inboxRules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Unread WhatsApp conversations (up to 100 — the badge shows 99+); 0 without a Relay key.
-async function inboxUnread() {
-  const r = await relay('live', '/conversations?status=all&unread=true&limit=100').catch(() => null);
-  return r?.ok && Array.isArray(r.data?.data) ? r.data.data.filter((c) => c.unread_count > 0).length : 0;
+// Unread WhatsApp conversations of this country — new messages or "marked unread" (lib/inboxRules.js);
+// 0 without a Relay key.
+async function inboxUnread(cc) {
+  try {
+    const list = await conversationsWithCountry('live');
+    return list.filter((c) => c.country === cc && isUnread(c)).length;
+  } catch { return 0; }
 }
 
 export async function GET() {
   const key = adminKey(getSession());
   if (!key) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const inbox = inboxUnread();
+  const inbox = inboxUnread(activeCountry());
   try {
     return NextResponse.json({ ...(await unreadCounts(dbFor(activeCountry()), key)), inbox: await inbox });
   } catch (e) {

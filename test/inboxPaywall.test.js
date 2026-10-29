@@ -140,3 +140,16 @@ describe('Waiting for payment → free listing settings', () => {
       .toEqual({ perStep: { 1: 2, 2: 1 }, reminders: 3, gifts: 1 });
   });
 });
+
+describe('Users page listing count', async () => {
+  const { countListings } = await import('../lib/listingCount.js');
+  it('counts only published listings; waiting for payment is counted apart', () => {
+    const { published, waiting } = countListings([
+      { created_by: 'm', status: 'published' }, { created_by: 'm', status: 'published' }, { created_by: 'm', status: 'payment_pending' },
+      { created_by: 'x', status: 'scanning' }, { created_by: 'x', status: 'rejected' }, { created_by: 'x', status: 'duplicate_review' }, { created_by: 'x', status: 'expired' },
+    ]);
+    expect(published.get('m')).toBe(2);
+    expect(waiting.get('m')).toBe(1);
+    expect(published.get('x')).toBe(1);   // only the ended (expired) one was ever on the site
+  });
+});

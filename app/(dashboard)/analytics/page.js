@@ -225,32 +225,38 @@ const EMAIL_STATUS_COLOR = (s) => (s === 'opened' || s === 'clicked' ? T.success
 const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
 const ChannelChip = ({ ch }) => (
   <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : { background: T.bgSurface, color: T.textSecondary }}>
-    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : 'Email'}
+    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : ch === 'activity' ? { background: '#F5EAD5', color: '#8A5A12' } : { background: T.bgSurface, color: T.textSecondary }}>
+    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : ch === 'activity' ? <Home className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : ch === 'activity' ? 'Paid listing' : 'Email'}
   </span>
 );
-const UserMessages = ({ email }) => {
+// Paid-listing steps (/api/users/paywall, lib/paywallActivity.js) shown in the same list, by time.
+const STEP_STATUS = { paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted] };
+const UserMessages = ({ email, userId }) => {
   const [em, setEm] = useState(null);   // /api/users/emails body or { error }
   const [wa, setWa] = useState(null);   // /api/users/whatsapp body or { error }
+  const [pw, setPw] = useState(null);   // /api/users/paywall body or { error }
   const [only, setOnly] = useState('all');
   useEffect(() => {
     if (!email) return undefined;
     let cancelled = false;
-    setEm(null); setWa(null);
-    const get = (path, set) => fetch(`${path}?email=${encodeURIComponent(email)}`).then((r) => r.json())
+    setEm(null); setWa(null); setPw(null);
+    const get = (path, set) => fetch(`${path}${path.includes('?') ? '&' : '?'}email=${encodeURIComponent(email)}`).then((r) => r.json())
       .then((j) => { if (!cancelled) set(j); }).catch(() => { if (!cancelled) set({ error: 'unavailable' }); });
     get('/api/users/emails', setEm);
     get('/api/users/whatsapp', setWa);
+    get(`/api/users/paywall${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`, setPw);
     return () => { cancelled = true; };
-  }, [email]);
+  }, [email, userId]);
 
   const pct = (v) => (v == null ? '—' : `${v}%`);
-  const loading = em === null || wa === null;
+  const loading = em === null || wa === null || pw === null;
+  const steps = pw && !pw.error && pw.found ? pw.events.map((e, i) => ({ ...e, id: `${e.kind}-${e.listingId}-${i}`, ch: 'activity' })) : [];
   const es = em && !em.error ? em.summary : null;
   const ws = wa && !wa.error ? wa.summary : null;
   const rows = [
     ...(em && !em.error ? em.emails.map((e) => ({ ...e, ch: 'email' })) : []),
     ...(wa && !wa.error ? wa.messages.map((m) => ({ ...m, ch: 'whatsapp' })) : []),
+    ...steps,
   ].filter((r) => only === 'all' || r.ch === only).sort((a, b) => String(b.at).localeCompare(String(a.at)));
 
   return (
@@ -258,7 +264,7 @@ const UserMessages = ({ email }) => {
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Mail className="w-4 h-4" style={{ color: T.primary }} />
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Messages sent</h2>
-        <span className="text-xs" style={{ color: T.textMuted }}>emails and WhatsApp, newest first</span>
+        <span className="text-xs" style={{ color: T.textMuted }}>emails, WhatsApp and paid-listing steps, newest first</span>
         {wa && !wa.error ? (
           <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
             WhatsApp: {wa.phone ? `${wa.phone} · ${wa.verified ? 'verified' : 'not verified'}` : 'no number'}{wa.optedOut ? ' · opted out' : ''}
@@ -294,7 +300,7 @@ const UserMessages = ({ email }) => {
             {em?.tracking === 'error' ? ` Resend couldn't be read right now (${em.trackingError}).` : ''}
           </p>
           <div className="inline-flex rounded-full p-0.5 mb-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp']].map(([v, l]) => (
+            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp'], ...(steps.length ? [['activity', 'Paid listing']] : [])].map(([v, l]) => (
               <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-full text-[11px] font-medium" style={only === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
             ))}
           </div>
@@ -312,6 +318,17 @@ const UserMessages = ({ email }) => {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
+                    r.ch === 'activity' ? (
+                      <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight, background: '#FFFBF3' }} data-testid="paywall-step">
+                        <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
+                        <td className="py-2 pr-3 align-top"><ChannelChip ch="activity" /></td>
+                        <td className="py-2 pr-3 align-top font-medium" style={{ color: T.textPrimary }} colSpan={2}>
+                          {r.title}
+                          {r.detail ? <span className="block text-[11px] font-normal" style={{ color: T.textSecondary }}>{r.detail}</span> : null}
+                        </td>
+                        <td className="py-2 text-right font-semibold whitespace-nowrap align-top" style={{ color: (STEP_STATUS[r.kind] || [])[1] || T.textMuted }}>{(STEP_STATUS[r.kind] || [r.kind])[0]}</td>
+                      </tr>
+                    ) : (
                     <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight }}>
                       <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
                       <td className="py-2 pr-3 align-top"><ChannelChip ch={r.ch} /></td>
@@ -346,6 +363,7 @@ const UserMessages = ({ email }) => {
                         ) : null}
                       </td>
                     </tr>
+                    )
                   ))}
                 </tbody>
               </table>
@@ -357,46 +375,6 @@ const UserMessages = ({ email }) => {
   );
 };
 
-// Paid listings: each time this person wanted to publish more listings than the free ones of
-// the month, the payment came up — what they did next. /api/users/paywall
-const PAYWALL_DOT = { paywall: T.warning, checkout: T.info, paid: T.success, gift: T.info, gift_taken: T.success, gift_lapsed: T.textMuted };
-const UserPaywall = ({ userId, email }) => {
-  const [res, setRes] = useState(null);
-  useEffect(() => {
-    if (!userId && !email) return undefined;
-    let cancelled = false;
-    const qs = new URLSearchParams();
-    if (userId) qs.set('userId', userId);
-    if (email) qs.set('email', email);
-    fetch(`/api/users/paywall?${qs}`).then((r) => r.json())
-      .then((j) => { if (!cancelled) setRes(j); }).catch(() => { if (!cancelled) setRes({ error: 'unavailable' }); });
-    return () => { cancelled = true; };
-  }, [userId, email]);
-  if (!res || res.error || !res.found || !res.rows.length) return null;   // only for people who hit the paywall
-  const waiting = res.rows.filter((r) => ['waiting', 'gift_open', 'gift_lapsed'].includes(r.state)).length;
-  return (
-    <div className="bg-white p-5" style={CARD} data-testid="user-paywall">
-      <div className="flex items-center gap-2 mb-1 flex-wrap">
-        <Home className="w-4 h-4" style={{ color: T.primary }} />
-        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Paid listings — the payment step</h2>
-        <span className="text-xs" style={{ color: T.textMuted }}>{res.rows.length} time{res.rows.length === 1 ? '' : 's'}{waiting ? ` · ${waiting} still not paid` : ''}</span>
-      </div>
-      <p className="text-[11px] mb-3" style={{ color: T.textMuted }}>When they wanted to publish more than the free listings of the month and what they did next. Reminders and the gift email show in Messages sent.</p>
-      <div className="space-y-2.5">
-        {res.events.map((e, i) => (
-          <div key={`${e.kind}-${e.listingId}-${i}`} className="flex items-start gap-3">
-            <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: PAYWALL_DOT[e.kind] || T.textMuted }} />
-            <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-medium" style={{ color: T.textPrimary }}>{e.title}</p>
-              {e.detail ? <p className="text-[11.5px]" style={{ color: T.textSecondary }}>{e.detail}</p> : null}
-            </div>
-            <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: T.textMuted }}>{fmtDateOnly(e.at)} · {fmtTime(e.at)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 // Who this is: where their first visit came from, IP + location, and — for
 // signed-up people — their account and the properties they listed (from the DB).
@@ -493,8 +471,7 @@ const UserFacts = ({ user, profile, loading }) => {
         </div>
       )}
 
-      {acct?.found ? <UserPaywall userId={acct.user.id} email={acct.user.email} /> : null}
-      {acct?.found ? <UserMessages email={acct.user.email} /> : null}
+      {acct?.found ? <UserMessages email={acct.user.email} userId={acct.user.id} /> : null}
     </>
   );
 };
@@ -1261,7 +1238,6 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
         </> : <p className="text-sm" style={{ color: T.textSecondary }}>{resolveNote || 'No activity found for this user.'}</p>)}
         {/* no website activity tracked — the emails we sent them (automations, Admin Manager)
             still show */}
-        {resolved && deepEmail ? <UserPaywall email={deepEmail} /> : null}
         {resolved && deepEmail ? <UserMessages email={deepEmail} /> : null}
       </div>
     );

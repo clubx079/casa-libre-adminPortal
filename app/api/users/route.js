@@ -6,7 +6,7 @@ import { HIDE_DELETED_USERS, userListingStats } from '@/lib/userInsights';
 import { selectAll } from '@/lib/selectAll';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
-import { listingCounts } from '@/lib/listingCount';
+import { listingCounts, countListings } from '@/lib/listingCount';
 import { listingPhones } from '@/lib/listingPhones';
 import { phoneCores, phoneMatches } from '@/lib/phoneSearch';
 import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
@@ -20,10 +20,9 @@ export const dynamic = 'force-dynamic';
 async function summaryStats(db, extra) {
   const [all, props] = await Promise.all([
     selectAll(db, 'users', `select=id,email,verified&${HIDE_DELETED_USERS}&order=id.asc`),
-    selectAll(db, 'properties', 'select=id,created_by&origin=eq.user&created_by=not.is.null&order=id.asc'),
+    selectAll(db, 'properties', 'select=id,created_by,status&origin=eq.user&created_by=not.is.null&order=id.asc'),
   ]);
-  const listings = new Map();
-  for (const r of props) listings.set(String(r.created_by), (listings.get(String(r.created_by)) || 0) + 1);
+  const listings = countListings(props).published;
   const real = all.filter((u) => !isInternalEmail(u.email, extra));
   return userListingStats(real, listings);
 }
@@ -68,8 +67,9 @@ export async function GET(request) {
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
     // How many listings each one published (lib/listingCount.js).
-    const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => new Map());
-    for (const u of users) u.listings = counts.get(String(u.id)) || 0;
+    // Only published ones; a listing waiting for payment is counted apart (listings_waiting).
+    const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => ({ published: new Map(), waiting: new Map() }));
+    for (const u of users) { u.listings = counts.published.get(String(u.id)) || 0; u.listings_waiting = counts.waiting.get(String(u.id)) || 0; }
     // No phone on the profile → the one on their newest listing (shown as "from listing").
     const fromListing = await listingPhones(dbFor(activeCountry()).select, users.filter((u) => !u.phone).map((u) => u.id)).catch(() => new Map());
     for (const u of users) if (!u.phone && fromListing.has(String(u.id))) { u.phone = fromListing.get(String(u.id)); u.phone_source = 'listing'; }

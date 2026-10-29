@@ -4,8 +4,8 @@
 //   • per site (the switcher's country, or All): one number serves every site; each
 //     conversation shows under the site(s) whose verification code it got (tag site-xx,
 //     lib/inboxRules.js) — a number used on two sites shows in both
-//   • Everything, Unread (new messages or "Mark as unread") and Unresponded (the
-//     contact wrote last) with counts
+//   • All, Unread (new messages or "Mark as unread"), Unresponded (the contact wrote last)
+//     and 24h open (they wrote in the last 24 h: free text can still go out) with counts
 //   • the thread: ticks, media, template buttons, Translate (one message or all), "Reply with
 //     AI" on a message, the contact's Casa Libre account → their activity page
 //   • the reply: one slim row (text / photo / file inside the 24h window; outside it a
@@ -302,7 +302,7 @@ function AiPanel({ conv, mode, text, onUse, onClose, request, onRequestDone }) {
 export default function InboxPage() {
   const [mode, setMode] = useState('live');
   const status = 'all';   // no Done state: Roland — "mark as unread, not mark as done"
-  const [view, setView] = useState('all');          // all | unread | unresponded
+  const [view, setView] = useState('all');          // all | unread | unresponded | window
   const country = '';   // the admin's country switcher decides (server side); "General" chats show in every country
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
@@ -409,9 +409,9 @@ export default function InboxPage() {
     window.location.href = contact.profileUrl;
   };
 
-  const seg = (cur, set, v, label, n, testid) => (
-    <button key={v} type="button" onClick={() => set(v)} data-testid={testid} className="flex-1 px-2.5 py-1.5 rounded-[8px] text-[13px] whitespace-nowrap" style={cur === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)', fontWeight: 600 } : { color: T.textSecondary }}>
-      {label}{n != null ? <span className="ml-1 tabular-nums" style={{ color: v !== 'all' && v !== 'open' && v !== 'done' && n > 0 ? (v === 'unread' ? GREEN : T.danger) : T.textMuted, fontWeight: 600 }}>{n}</span> : null}
+  const seg = (cur, set, v, label, n, testid, title) => (
+    <button key={v} type="button" onClick={() => set(v)} data-testid={testid} title={title} className="flex-1 px-2 py-1.5 rounded-[8px] text-[13px] whitespace-nowrap" style={cur === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)', fontWeight: 600 } : { color: T.textSecondary }}>
+      {label}{n != null ? <span className="ml-1 tabular-nums" style={{ color: v !== 'all' && v !== 'open' && v !== 'done' && n > 0 ? (v === 'unresponded' ? T.danger : GREEN) : T.textMuted, fontWeight: 600 }}>{n}</span> : null}
     </button>
   );
   // day separators in the thread
@@ -441,12 +441,13 @@ export default function InboxPage() {
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or number" className="w-full pl-9 pr-3 py-2.5 rounded-[10px] text-[14px] outline-none" style={{ border: `1px solid ${T.borderLight}`, background: T.bgSurface }} />
             </div>
             <div className="flex rounded-[10px] p-0.5 w-full" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-              {seg(view, setView, 'all', 'Everything', null, 'view-all')}{seg(view, setView, 'unread', 'Unread', counts.unread, 'view-unread')}{seg(view, setView, 'unresponded', 'Unresponded', counts.unresponded, 'view-unresponded')}
+              {seg(view, setView, 'all', 'All', null, 'view-all')}{seg(view, setView, 'unread', 'Unread', counts.unread, 'view-unread')}{seg(view, setView, 'unresponded', 'Unresponded', counts.unresponded, 'view-unresponded')}
+              {seg(view, setView, 'window', '24h open', counts.window, 'view-window', 'They wrote in the last 24 hours, so we can still send a normal message (no template). After that only templates.')}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {list === null ? <p className="p-4 text-[13px]" style={{ color: T.textMuted }}>Loading…</p>
-              : list.length === 0 ? <p className="p-6 text-center text-[13px]" style={{ color: T.textMuted }}>{view === 'unread' ? 'Nothing unread.' : view === 'unresponded' ? 'Every conversation has an answer.' : 'No conversations here.'}</p>
+              : list.length === 0 ? <p className="p-6 text-center text-[13px]" style={{ color: T.textMuted }}>{view === 'unread' ? 'Nothing unread.' : view === 'unresponded' ? 'Every conversation has an answer.' : view === 'window' ? 'No chat has its 24h window open — only templates can go out.' : 'No conversations here.'}</p>
                 : list.map((c) => {
                   const lm = c.last_message || {};
                   const active = sel === c.phone;
@@ -467,6 +468,7 @@ export default function InboxPage() {
                         </div>
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
                           {(c.sites || [])[0] === 'none' && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.infoSurface, color: T.info }} title="This number never asked a site for a code and is not a user on any site, so it shows in every country's inbox" data-testid="general-tag">General</span>}
+                          {c.window_hours_left != null && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#E7F5EC', color: GREEN }} title="They wrote in the last 24 hours: a normal message can still go out" data-testid="window-tag">24h open · {c.window_hours_left < 1 ? `${Math.max(1, Math.round(c.window_hours_left * 60))} min left` : `${Math.floor(c.window_hours_left)}h left`}</span>}
                           {c.unresponded && !c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#FBEAEA', color: T.danger }}>needs an answer</span>}
                           {c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.danger, color: '#fff' }}>do not contact</span>}
                           {c.tags?.map((t) => <span key={t} className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>{t}</span>)}

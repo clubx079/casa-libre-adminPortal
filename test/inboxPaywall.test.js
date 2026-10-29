@@ -58,7 +58,7 @@ describe('inbox rules', () => {
     ];
     const py = filterConversations(list, { country: 'py' });
     expect(py.data.map((c) => c.phone)).toEqual(['+595981000001', '+595981000002']);
-    expect(py.counts).toEqual({ open: 2, done: 1, unread: 2, unresponded: 1 });
+    expect(py.counts).toEqual({ open: 2, done: 1, unread: 2, unresponded: 1, window: 0 });
     expect(filterConversations(list, { country: 'py', view: 'unresponded', status: 'all' }).data).toHaveLength(2);
     expect(filterConversations(list, { country: 'all', view: 'unresponded' }).data).toHaveLength(2);
     expect(filterConversations(list, { country: 'all', q: '1234567' }).data.map((c) => c.country)).toEqual(['bo']);
@@ -165,6 +165,32 @@ describe('chats with no site', async () => {
     expect(filterConversations(list, { country: 'bo', status: 'all' }).counts.unread).toBe(1);
     expect(inSite(list[0], 'none')).toBe(true);
     expect(inSite(list[1], 'none')).toBe(false);
+  });
+});
+
+describe('24h window open filter', async () => {
+  const { filterConversations, isWindowOpen, windowHoursLeft } = await import('../lib/inboxRules.js');
+  it('lists the chats we can still send free text to, per site, with the time left', () => {
+    const now = Date.now();
+    const list = [
+      { phone: '+59167988835', sites: ['bo'], tags: [], window: { open: true, expires_at: new Date(now + 5.5 * 3600000).toISOString() }, last_message: {} },
+      { phone: '+595981000001', sites: ['py'], tags: [], window: { open: false, expires_at: null }, last_message: {} },
+      { phone: '+595981000002', sites: ['py'], tags: [], window: { open: true, expires_at: new Date(now - 60000).toISOString() }, last_message: {} },   // stale "open"
+      { phone: '+923362771289', sites: ['none'], tags: [], window: { open: true, expires_at: new Date(now + 3600000).toISOString() }, last_message: {} },
+    ];
+    expect(isWindowOpen(list[0], now)).toBe(true);
+    expect(isWindowOpen(list[2], now)).toBe(false);
+    expect(windowHoursLeft(list[0], now)).toBeCloseTo(5.5);
+    expect(windowHoursLeft(list[1], now)).toBeNull();
+    const bo = filterConversations(list, { country: 'bo', status: 'all', view: 'window' });
+    expect(bo.data.map((c) => c.phone)).toEqual(['+59167988835', '+923362771289']);
+    expect(bo.counts.window).toBe(2);
+    expect(filterConversations(list, { country: 'py', status: 'all', view: 'window' }).data.map((c) => c.phone)).toEqual(['+923362771289']);
+  });
+  it('matches DB phones typed with spaces / dashes to the chat', async () => {
+    const { phoneKey } = await import('../lib/inboxRules.js');
+    expect(phoneKey('+595 981 123-456')).toBe(phoneKey('+595981123456'));
+    expect(phoneKey('0981 123 456')).toBe('81123456');
   });
 });
 

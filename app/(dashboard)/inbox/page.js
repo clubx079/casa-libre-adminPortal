@@ -4,13 +4,14 @@
 //   • per site (the switcher's country, or All): one number serves every site; each
 //     conversation shows under the site(s) whose verification code it got (tag site-xx,
 //     lib/inboxRules.js) — a number used on two sites shows in both
-//   • Open / Done / All, plus Unread (new messages or "Mark as unread") and Unresponded (the
+//   • Everything, Unread (new messages or "Mark as unread") and Unresponded (the
 //     contact wrote last) with counts
 //   • the thread: ticks, media, template buttons, Translate (one message or all), "Reply with
 //     AI" on a message, the contact's Casa Libre account → their activity page
 //   • the reply: text / photo / file inside the 24h window, or an approved template outside
 //     it; "Write with AI" drafts it (Claude, in the contact's language, English shown to us)
-//   • Mark as unread, Do not contact (+ note), tags, Mark as done
+//   • Mark as unread (no "Mark as done": the dot is how the team knows to come back),
+//     Do not contact (+ note), tags
 // Live = the real number, Test keys = Relay's simulated traffic. Data: /api/inbox/* → Relay
 // (lib/relayInbox.js). Refreshes itself every few seconds.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -273,7 +274,7 @@ function Composer({ conv, mode, onSent, aiRequest, onAiDone }) {
 
 export default function InboxPage() {
   const [mode, setMode] = useState('live');
-  const [status, setStatus] = useState('open');
+  const status = 'all';   // no Done state: Roland — "mark as unread, not mark as done"
   const [view, setView] = useState('all');          // all | unread | unresponded
   const [country, setCountry] = useState('');       // '' = the admin's active country (server decides)
   const [q, setQ] = useState('');
@@ -410,9 +411,6 @@ export default function InboxPage() {
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or number" className="w-full pl-9 pr-3 py-2.5 rounded-[10px] text-[14px] outline-none" style={{ border: `1px solid ${T.borderLight}`, background: T.bgSurface }} />
             </div>
             <div className="flex rounded-[10px] p-0.5 w-full" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-              {seg(status, setStatus, 'open', 'Open', counts.open)}{seg(status, setStatus, 'done', 'Done', counts.done)}{seg(status, setStatus, 'all', 'All', null)}
-            </div>
-            <div className="flex rounded-[10px] p-0.5 w-full" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
               {seg(view, setView, 'all', 'Everything', null, 'view-all')}{seg(view, setView, 'unread', 'Unread', counts.unread, 'view-unread')}{seg(view, setView, 'unresponded', 'Unresponded', counts.unresponded, 'view-unresponded')}
             </div>
           </div>
@@ -477,10 +475,9 @@ export default function InboxPage() {
                   <button type="button" onClick={addTag} className="text-[13px] px-3 py-1.5 rounded-full" style={{ border: `1px dashed ${T.borderLight}`, color: T.textSecondary }}>+ Tag</button>
                   <button type="button" onClick={() => setAllEnglish((v) => !v)} className="text-[13px] px-3 py-1.5 rounded-full" style={allEnglish ? { background: T.textPrimary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary }} data-testid="translate-all">{allEnglish ? 'English on' : 'Translate all'}</button>
                   <button type="button" onClick={setDnc} className="text-[13px] px-3 py-1.5 rounded-full" style={conv?.dnc ? { background: T.danger, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.danger }} data-testid="dnc">{conv?.dnc ? 'Do not contact ✓' : 'Do not contact'}</button>
-                  <button type="button" onClick={markUnread} className="text-[13px] px-3 py-1.5 rounded-full" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }} data-testid="mark-unread" title="Put the dot back so someone comes back to it">Mark as unread</button>
-                  {conv?.status === 'done'
-                    ? <button type="button" onClick={() => patch({ status: 'open' })} className="text-[14px] font-semibold px-4 py-2 rounded-[10px]" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }}>Reopen</button>
-                    : <button type="button" onClick={() => patch({ status: 'done' })} className="text-[14px] font-semibold px-4 py-2 rounded-[10px] text-white inline-flex items-center gap-2" style={{ background: GREEN }}>✓ Mark as done</button>}
+                  <button type="button" onClick={markUnread} className="text-[14px] font-semibold px-4 py-2 rounded-[10px] text-white inline-flex items-center gap-2" style={{ background: GREEN }} data-testid="mark-unread" title="Put the dot back so someone comes back to it">
+                    <span className="w-2.5 h-2.5 rounded-full bg-white" aria-hidden="true" />Mark as unread
+                  </button>
                 </div>
               </div>
               {conv?.dnc && (

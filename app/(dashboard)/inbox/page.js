@@ -247,7 +247,7 @@ function AiPanel({ conv, mode, text, onUse, onClose, request, onRequestDone }) {
     try {
       const r = await fetch(`/api/inbox/ai?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: conv.phone, ...payload }) });
       const j = await r.json().catch(() => ({}));
-      setItems((x) => [...x, r.ok ? { who: 'ai', message: j.message, english: j.english, note: j.note } : { who: 'error', text: j.error || `AI couldn't write it (${r.status})` }]);
+      setItems((x) => [...x, r.ok ? { who: 'ai', message: j.message, english: j.english, note: j.note, context: j.context } : { who: 'error', text: j.error || `AI couldn't write it (${r.status})` }]);
     } catch (e) { setItems((x) => [...x, { who: 'error', text: String(e) }]); } finally { setBusy(false); }
   }, [conv?.phone, mode]);
   useEffect(() => {
@@ -278,6 +278,7 @@ function AiPanel({ conv, mode, text, onUse, onClose, request, onRequestDone }) {
             <p className="text-[13.5px] whitespace-pre-wrap leading-snug" style={{ color: T.textPrimary }}>{it.message}</p>
             {it.english && <p className="text-[12px] leading-snug italic" style={{ color: T.textSecondary }}>EN · {it.english}</p>}
             {it.note && <p className="text-[11.5px] leading-snug" style={{ color: T.warning || T.textSecondary }}>Tip: {it.note}</p>}
+            {it.context && <p className="text-[10.5px] leading-snug" style={{ color: T.textMuted }} title="What the assistant knew (read-only, from our records)">Knew: {it.context}</p>}
             <button type="button" onClick={() => onUse(it.message)} className="text-[12.5px] font-semibold px-3 py-1 rounded-full text-white" style={{ background: GREEN }}>Use this</button>
           </div>
         )))}

@@ -10,11 +10,24 @@ import { normalizeEmail } from '@/lib/userInsights';
 import { englishTemplateName } from '@/lib/userEmails';
 import { userWhatsApp } from '@/lib/userWhatsApp';
 import { hogql, posthogConfigured } from '@/lib/posthogHogql';
+import { relay } from '@/lib/relayInbox';
+import { translateToEnglish } from '@/lib/translate';
+import { waLabel, waBodyText } from '@/lib/whatsappLabels';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const q = (s) => String(s).replace(/'/g, "''");
+
+// Our approved templates' text (Relay), read every 10 minutes — for the English line.
+let tplCache = null;
+async function templateBodies() {
+  if (tplCache && Date.now() - tplCache.at < 10 * 60 * 1000) return tplCache.map;
+  const r = await relay('live', '/templates?status=all').catch(() => null);
+  const map = new Map((r?.ok ? r.data.data || [] : []).map((t) => [t.name, t.body]));
+  if (map.size) tplCache = { at: Date.now(), map };
+  return map;
+}
 
 export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -41,12 +54,24 @@ export async function GET(req) {
       } catch (e) { clicksNote = String(e?.message || e).slice(0, 120); }
     } else clicksNote = 'posthog_not_configured';
     const names = Object.fromEntries([...new Set(rows.map((r) => r.template_key).filter(Boolean))].map((k) => [k, englishTemplateName(k) || k]));
+    const out = userWhatsApp(rows, clicks, names);
+    // Like the email rows: an English name, the text they read (Spanish) and its English.
+    const bodies = await templateBodies();
+    const english = new Map();
+    await Promise.all([...new Set(out.messages.map((m) => m.template))].map(async (t) => {
+      const es = waBodyText(bodies.get(t));
+      english.set(t, { es, en: es ? await translateToEnglish(es).catch(() => '') : '' });
+    }));
+    for (const m of out.messages) {
+      const tx = english.get(m.template) || {};
+      Object.assign(m, { type: waLabel(m.template), text: tx.es || '', text_en: tx.en && tx.en !== tx.es ? tx.en : '' });
+    }
     return NextResponse.json({
       phone: user?.phone || null,
       verified: !!user?.phone_verified_at,
       optedOut: !!user?.whatsapp_opted_out_at,
       clicksNote,
-      ...userWhatsApp(rows, clicks, names),
+      ...out,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });

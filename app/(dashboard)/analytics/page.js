@@ -345,12 +345,18 @@ const UserMessages = ({ email, userId }) => {
                           ) : (r.automation || r.ch === 'whatsapp') ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
                         </span>
                         {r.ch === 'email' && r.type_en && r.type_en !== r.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{r.type}</span> : null}
+                        {r.ch === 'whatsapp' && r.template ? <span className="block text-[11px] font-mono" style={{ color: T.textMuted }}>{r.template}</span> : null}
                       </td>
                       <td className="py-2 pr-3 max-w-[320px] align-top" style={{ color: T.textBody }}>
                         {r.ch === 'email' ? (
                           <>
                             <span className="block truncate" title={r.subject}>{r.subject}</span>
                             {r.subject_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={r.subject_en}>EN · {r.subject_en}</span> : null}
+                          </>
+                        ) : r.text ? (
+                          <>
+                            <span className="block truncate" title={r.text}>{r.text}</span>
+                            {r.text_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={r.text_en}>EN · {r.text_en}</span> : null}
                           </>
                         ) : <span className="font-mono">{r.template}</span>}
                       </td>

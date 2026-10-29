@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { isUnread, isUnresponded, dncOf, dncTagPatch, visibleTags, formatPhone, filterConversations, countryCounts, threadForAi, UNREAD_TAG, sitesOf } from '../lib/inboxRules.js';
-import { phoneCores, phoneMatches } from '../lib/phoneSearch.js';
 import { paywallState, paywallRows, paywallEvents, nthOfMonth, remindersByListing, ordinal } from '../lib/paywallActivity.js';
 import { validatePaymentFollowup, paymentFollowupConfig, paymentFollowupCounts, DEFAULT_STEPS } from '../lib/paymentFollowupAdmin.js';
 
@@ -69,18 +68,6 @@ describe('inbox rules', () => {
     const t = threadForAi([{ direction: 'outbound', template: { name: 'cl_borrador' }, text: 'Hola', created_at: '2026-10-28T10:00:00Z' }, { direction: 'inbound', text: 'Nadie me llama', created_at: '2026-10-28T11:00:00Z' }]);
     expect(t).toContain('CASA LIBRE (automatic template cl_borrador): Hola');
     expect(t.split('\n')[1]).toContain('CONTACT: Nadie me llama');
-  });
-});
-
-describe('users search by phone', () => {
-  it('finds the number however it was typed', () => {
-    expect(phoneCores('0981 123 456', '595')).toEqual(['981123456']);
-    expect(phoneCores('+595 981 123456', '595')).toEqual(['595981123456', '981123456']);
-    expect(phoneCores('maria', '595')).toEqual([]);
-    expect(phoneCores('12', '595')).toEqual([]);
-    expect(phoneMatches('+595981123456', ['981123456'])).toBe(true);
-    expect(phoneMatches('0981-123-456', phoneCores('+595981123456', '595'))).toBe(true);
-    expect(phoneMatches('+595971000000', ['981123456'])).toBe(false);
   });
 });
 

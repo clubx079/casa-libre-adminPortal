@@ -134,6 +134,8 @@ export default function UsersPage() {
   }
 
   const submit = (e) => { e.preventDefault(); setTerm(q.trim()); };
+  // Search as you type: a short pause after the last key (Enter still searches at once).
+  useEffect(() => { const t = setTimeout(() => setTerm(q.trim()), 300); return () => clearTimeout(t); }, [q]);
 
   // Block / Suspend toggles — PATCH /api/users/:id { [field]: !current }
   async function toggleFlag(u, field) {

@@ -230,7 +230,8 @@ const ChannelChip = ({ ch }) => (
   </span>
 );
 // Paid-listing steps (/api/users/paywall, lib/paywallActivity.js) shown in the same list, by time.
-const STEP_STATUS = { paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted] };
+const STEP_STATUS = { paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted],
+  ph_opened: ['pay screen', T.info], ph_started: ['tapped pay', T.info], ph_paid: ['paid', T.success], ph_gift: ['gift taken', T.success], ph_gift_failed: ['gift failed', T.danger] };
 const UserMessages = ({ email, userId }) => {
   const [em, setEm] = useState(null);   // /api/users/emails body or { error }
   const [wa, setWa] = useState(null);   // /api/users/whatsapp body or { error }
@@ -489,6 +490,9 @@ const UserActivityDetail = ({ user, onBack }) => {
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null); setBusy(false);
+    // A Casa Libre account PostHog has never seen (e.g. made without visiting the site):
+    // no sessions to load — the account, listings and messages below still show.
+    if (!user.person_id && !(user.is_anon && user.ip)) { setData({ activity: [], profile: null }); setLoading(false); return () => { cancelled = true; }; }
     (async () => {
       try {
         const qs = user.is_anon && user.ip
@@ -649,7 +653,7 @@ const UserActivityDetail = ({ user, onBack }) => {
       ) : error ? (
         <p className="text-xs p-5 bg-white" style={{ color: T.textMuted, ...CARD }}>Couldn&apos;t load this user&apos;s activity right now — analytics is under heavy load. Please try again in a moment.</p>
       ) : filteredSessions.length === 0 ? (
-        <p className="text-xs p-5 bg-white" style={{ color: T.textMuted, ...CARD }}>No sessions match these filters.</p>
+        <p className="text-xs p-5 bg-white" style={{ color: T.textMuted, ...CARD }}>{user.no_posthog ? 'No website visits tracked by PostHog for this person yet — their account, listings and messages are above.' : 'No sessions match these filters.'}</p>
       ) : (
         <div className="bg-white" style={CARD}>
           <div className="px-5 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: T.borderLight }}>
@@ -1211,6 +1215,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
         const json = await res.json();
         // keep the DB id so the user page can load their account + listings by id
         if (json.found && json.user) setSelected({ ...json.user, db_id: uid || '' });
+        else if (uid || email) setSelected({ person_id: null, db_id: uid || '', email: email || '', name: '', events: 0, views: 0, saves: 0, contacts: 0, no_posthog: true });
         else setResolveNote('This user has no tracked PostHog activity yet.');
       } catch { setResolveNote('Couldn\'t load this user\'s activity right now. Please try again in a moment.'); }
       finally { setResolved(true); }

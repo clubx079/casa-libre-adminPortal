@@ -153,3 +153,18 @@ describe('Users page listing count', async () => {
     expect(published.get('x')).toBe(1);   // only the ended (expired) one was ever on the site
   });
 });
+
+describe('PostHog payment events in the timeline', async () => {
+  const { posthogPaymentSteps } = await import('../lib/paywallActivity.js');
+  it('maps the website payment events to steps', () => {
+    const steps = posthogPaymentSteps([
+      ['2026-10-29 15:00:00', 'payment_screen_opened', 'p3', 'publish', null, null],
+      ['2026-10-29 15:01:00', 'payment_started', 'p3', 'publish', null, null],
+      ['2026-10-30 10:00:00', 'listing_gift_failed', 'p3', null, 'email', 'expired'],
+      ['2026-10-30 10:00:00', 'pageview', null, null, null, null],
+    ], (pid) => (pid === 'p3' ? 'Casa · sale · Luque' : ''));
+    expect(steps.map((s) => s.kind)).toEqual(['ph_opened', 'ph_started', 'ph_gift_failed']);
+    expect(steps[0]).toMatchObject({ at: '2026-10-29T15:00:00', title: 'Opened the pay screen to publish a listing', detail: 'Casa · sale · Luque · PostHog.' });
+    expect(steps[2].detail).toBe('Casa · sale · Luque · from the gift email · reason: expired · PostHog.');
+  });
+});

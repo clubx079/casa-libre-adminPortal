@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUnread, isUnresponded, dncOf, dncTagPatch, visibleTags, formatPhone, countryOf, filterConversations, countryCounts, threadForAi, UNREAD_TAG } from '../lib/inboxRules.js';
+import { isUnread, isUnresponded, dncOf, dncTagPatch, visibleTags, formatPhone, filterConversations, countryCounts, threadForAi, UNREAD_TAG, sitesOf } from '../lib/inboxRules.js';
 import { phoneCores, phoneMatches } from '../lib/phoneSearch.js';
 import { paywallState, paywallRows, paywallEvents, nthOfMonth, remindersByListing, ordinal } from '../lib/paywallActivity.js';
 import { validatePaymentFollowup, paymentFollowupConfig, paymentFollowupCounts, DEFAULT_STEPS } from '../lib/paymentFollowupAdmin.js';
@@ -35,12 +35,20 @@ describe('inbox rules', () => {
     expect(formatPhone('+584121234567')).toBe('+58 412 123 4567');
     expect(formatPhone('+923362771289')).toBe('+92 336 277 1289');
   });
-  it('places a conversation in a country by calling code, else by the DB match', () => {
-    expect(countryOf('+595981000001', PREFIX)).toBe('py');
-    expect(countryOf('+59171234567', PREFIX)).toBe('bo');
-    expect(countryOf('+584121234567', PREFIX)).toBe('ve');
-    expect(countryOf('+15551234567', PREFIX)).toBe('other');
-    expect(countryOf('+15551234567', PREFIX, new Map([['15551234567', 'py']]))).toBe('py');
+  it('places a conversation by the site that sent its code, never by the calling code', () => {
+    expect(sitesOf(conv({ phone: '+595981000001', tags: ['site-bo'] }))).toEqual(['bo']);           // a Paraguayan number used on the Bolivia site
+    expect(sitesOf(conv({ tags: ['site-py', 'hot-lead', 'site-uy'] }))).toEqual(['py', 'uy']);  // two sites → both inboxes
+    expect(visibleTags(['site-py', 'hot-lead'])).toEqual(['hot-lead']);
+    // untagged (older) chats: the country DBs that know the number (any format)
+    expect(sitesOf(conv({ phone: '+595981777123' }), new Map([['81777123', ['ve']]]))).toEqual(['ve']);
+    expect(sitesOf(conv({ phone: '+595981777123' }), new Map())).toEqual(['none']);
+    expect(sitesOf(conv({ phone: '+59171234567' }))).toEqual(['none']);                      // no country-code guess
+  });
+  it('a number on two sites counts in both', () => {
+    const two = [conv({ sites: ['py', 'bo'], unread_count: 1 })];
+    expect(filterConversations(two, { country: 'bo' }).data).toHaveLength(1);
+    expect(filterConversations(two, { country: 'py' }).data).toHaveLength(1);
+    expect(countryCounts(two)).toEqual({ py: { total: 1, unread: 1, unresponded: 0 }, bo: { total: 1, unread: 1, unresponded: 0 } });
   });
   it('filters by country / status / view and counts', () => {
     const list = [

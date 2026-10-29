@@ -17,12 +17,12 @@ import { isUnread } from '@/lib/inboxRules';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Unread WhatsApp conversations of this country — new messages or "marked unread" (lib/inboxRules.js);
+// Unread WhatsApp conversations of this site — new messages or "marked unread" (lib/inboxRules.js);
 // 0 without a Relay key.
 async function inboxUnread(cc) {
   try {
     const list = await conversationsWithCountry('live');
-    return list.filter((c) => c.country === cc && isUnread(c)).length;
+    return list.filter((c) => c.sites.includes(cc) && isUnread(c)).length;
   } catch { return 0; }
 }
 

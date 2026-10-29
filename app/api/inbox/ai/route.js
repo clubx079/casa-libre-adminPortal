@@ -8,8 +8,8 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { relay, modeOf, phoneParam } from '@/lib/relayInbox';
-import { countryPrefixes } from '@/lib/inboxData';
-import { countryOf, threadForAi } from '@/lib/inboxRules';
+import { withSites } from '@/lib/inboxData';
+import { threadForAi } from '@/lib/inboxRules';
 import { contactFor } from '@/lib/inboxContact';
 import { canAccessCountry } from '@/lib/adminCountry';
 
@@ -48,13 +48,12 @@ export async function POST(req) {
   const b = await req.json().catch(() => ({}));
   const phone = String(b.phone || '').replace(/[^\d]/g, '');
   if (phone.length < 8) return NextResponse.json({ error: 'invalid_phone' }, { status: 400 });
-  const [conv, msgs, prefixes] = await Promise.all([
+  const [conv, msgs] = await Promise.all([
     relay(mode, `/conversations/${phoneParam(phone)}`),
     relay(mode, `/conversations/${phoneParam(phone)}/messages?limit=40`),
-    countryPrefixes(),
   ]);
   if (!msgs.ok) return NextResponse.json({ error: msgs.data?.error?.message || 'Could not read the conversation.' }, { status: msgs.status });
-  const country = countryOf(phone, prefixes);
+  const country = conv.ok ? (await withSites(conv.data)).country : 'none';   // the site the number came from
   const who = canAccessCountry(country) ? await contactFor(phone, country).catch(() => null) : null;
   const thread = threadForAi([...(msgs.data.data || [])].reverse());
   const facts = {

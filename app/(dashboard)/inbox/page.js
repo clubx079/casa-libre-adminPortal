@@ -1,8 +1,9 @@
 'use client';
 // Inbox — the Casa Libre WhatsApp conversations, the same inbox as in Relay (kept in sync
 // with it). Built so no message is left without an answer:
-//   • per country (the switcher's country, or All): one number serves every site, each
-//     conversation is placed by its phone (lib/inboxRules.js)
+//   • per site (the switcher's country, or All): one number serves every site; each
+//     conversation shows under the site(s) whose verification code it got (tag site-xx,
+//     lib/inboxRules.js) — a number used on two sites shows in both
 //   • Open / Done / All, plus Unread (new messages or "Mark as unread") and Unresponded (the
 //     contact wrote last) with counts
 //   • the thread: ticks, media, template buttons, Translate (one message or all), "Reply with
@@ -21,7 +22,8 @@ import { WA_TEMPLATES } from '@/lib/whatsappTemplates';
 
 const GREEN = '#0F6E4A';
 const BUBBLE_OUT = '#D9FDD3';
-const COUNTRY_NAME = { py: 'Paraguay', bo: 'Bolivia', uy: 'Uruguay', ve: 'Venezuela', sv: 'El Salvador', other: 'Other numbers' };
+const COUNTRY_NAME = { py: 'Paraguay', bo: 'Bolivia', uy: 'Uruguay', ve: 'Venezuela', sv: 'El Salvador', none: 'No site yet' };
+const siteNames = (sites = []) => sites.map((c) => COUNTRY_NAME[c] || String(c).toUpperCase()).join(' + ');
 const initials = (c) => (c?.name ? c.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() : null);
 const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
 function ago(iso) {
@@ -395,13 +397,13 @@ export default function InboxPage() {
                 ))}
               </div>
             </div>
-            <select value={country || shownCountry} onChange={(e) => setCountry(e.target.value)} aria-label="Country" data-testid="inbox-country"
+            <select value={country || shownCountry} onChange={(e) => setCountry(e.target.value)} aria-label="Site" data-testid="inbox-country"
               className="w-full px-3 py-2 rounded-[10px] text-[13.5px] font-medium outline-none" style={{ border: `1px solid ${T.borderLight}`, background: '#fff', color: T.textPrimary }}>
               {countryOptions.map((c) => {
                 const n = byCountry[c] || {};
                 return <option key={c} value={c}>{COUNTRY_NAME[c] || c.toUpperCase()}{n.unread ? ` · ${n.unread} unread` : ''}{n.unresponded ? ` · ${n.unresponded} unanswered` : ''}</option>;
               })}
-              <option value="all">All countries</option>
+              <option value="all">All sites</option>
             </select>
             <div className="relative">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -436,7 +438,7 @@ export default function InboxPage() {
                             : c.marked_unread ? <span className="w-3 h-3 rounded-full shrink-0" style={{ background: GREEN }} title="Marked unread" data-testid="marked-dot" /> : null}
                         </div>
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
-                          {country === 'all' && c.country && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: T.bgSurface, color: T.textSecondary }}>{String(c.country).toUpperCase()}</span>}
+                          {(country === 'all' || (c.sites || []).length > 1) && (c.sites || []).map((x) => <span key={x} className="text-[10.5px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: T.bgSurface, color: T.textSecondary }} title="Site this number came from">{x === 'none' ? 'no site' : x.toUpperCase()}</span>)}
                           {c.unresponded && !c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#FBEAEA', color: T.danger }}>needs an answer</span>}
                           {c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.danger, color: '#fff' }}>do not contact</span>}
                           {c.tags?.map((t) => <span key={t} className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>{t}</span>)}
@@ -463,7 +465,7 @@ export default function InboxPage() {
                     </Link>
                   ) : <div className="text-[17px] font-semibold truncate" style={{ color: T.textPrimary }}>{conv?.name || formatPhone(sel)}</div>}
                   <div className="text-[12.5px] truncate" style={{ color: T.textSecondary }} data-testid="contact-sub">
-                    {formatPhone(sel)}{conv?.country ? ` · ${COUNTRY_NAME[conv.country] || conv.country}` : ''}
+                    {formatPhone(sel)}{conv?.sites ? ` · from ${siteNames(conv.sites)}` : ''}
                     {contact === undefined ? ' · …' : contact ? ` · ${contact.listings} ${contact.listings === 1 ? 'listing' : 'listings'}${contact.live !== contact.listings ? ` (${contact.live} live)` : ''}${contact.waitingPayment ? ` · ${contact.waitingPayment} waiting for payment` : ''}${contact.user.email ? ` · ${contact.user.email}` : ''}` : ' · not a Casa Libre account'}
                   </div>
                 </div>

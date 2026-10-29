@@ -7,13 +7,13 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { relay, modeOf, phoneParam } from '@/lib/relayInbox';
-import { forgetConversations, countryPrefixes } from '@/lib/inboxData';
-import { UNREAD_TAG, visibleTags, isUnread, isMarkedUnread, isUnresponded, dncOf, dncTagPatch, isInternalTag, countryOf } from '@/lib/inboxRules';
+import { forgetConversations, withSites } from '@/lib/inboxData';
+import { UNREAD_TAG, visibleTags, isUnread, isMarkedUnread, isUnresponded, dncOf, dncTagPatch, isInternalTag } from '@/lib/inboxRules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const shape = async (c) => ({ ...c, tags: visibleTags(c.tags), unread: isUnread(c), marked_unread: isMarkedUnread(c), unresponded: isUnresponded(c), dnc: dncOf(c), country: countryOf(c.phone, await countryPrefixes()) });
+const shape = async (c) => { const x = await withSites(c); return { ...x, tags: visibleTags(c.tags), unread: isUnread(c), marked_unread: isMarkedUnread(c), unresponded: isUnresponded(c), dnc: dncOf(c) }; };
 
 export async function GET(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });

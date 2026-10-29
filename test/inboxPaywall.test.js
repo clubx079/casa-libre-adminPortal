@@ -167,3 +167,21 @@ describe('chats with no site', async () => {
     expect(inSite(list[1], 'none')).toBe(false);
   });
 });
+
+describe('asked a site for a code, never signed up', async () => {
+  const { codeRequestFunnel } = await import('../lib/codeRequests.js');
+  it('counts the numbers flagged for this site and who became a user', () => {
+    const convs = [
+      { phone: '+595987133361', tags: ['site-py'], last_message: { direction: 'outbound', status: 'read', created_at: '2026-10-26T17:48:00Z' } },
+      { phone: '+59579999623767', tags: ['site-py'], last_message: { direction: 'outbound', status: 'failed', created_at: '2026-10-26T17:40:00Z' } },
+      { phone: '+595991610528', tags: ['site-py', 'hot-lead'], last_message: {} },
+      { phone: '+59171379392', tags: ['site-bo'], last_message: {} },
+      { phone: '+923362771289', tags: [], last_message: {} },
+    ];
+    const r = codeRequestFunnel(convs, ['0991 610 528', '+59171379392'], 'py');
+    expect(r.asked).toBe(3);
+    expect(r.converted).toBe(1);
+    expect(r.notConverted.map((x) => [x.phone, x.failed])).toEqual([['+595987133361', false], ['+59579999623767', true]]);
+    expect(codeRequestFunnel(convs, ['+59171379392'], 'bo')).toMatchObject({ asked: 1, converted: 1, notConverted: [] });
+  });
+});

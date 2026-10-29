@@ -310,6 +310,8 @@ export default function InboxPage() {
   const [modes, setModes] = useState({ live: true, test: false });
   const [err, setErr] = useState('');
   const [sel, setSel] = useState(null);       // phone
+  // /inbox?phone=595981… (Users → "Open chat") opens that conversation (live)
+  useEffect(() => { try { const d = (new URLSearchParams(window.location.search).get('phone') || '').replace(/\D/g, ''); if (d.length >= 8) setSel(`+${d}`); } catch { /* none */ } }, []);
   const [conv, setConv] = useState(null);
   const [msgs, setMsgs] = useState([]);
   const [contact, setContact] = useState(undefined);   // undefined = loading, null = not found
@@ -347,7 +349,8 @@ export default function InboxPage() {
   }, [mode, loadList]);
 
   useEffect(() => { setList(null); loadList(); const t = setInterval(loadList, 6000); return () => clearInterval(t); }, [loadList]);
-  useEffect(() => { setSel(null); setConv(null); setMsgs([]); }, [mode]);
+  const modeSeen = useRef(false);   // not on the first render: a ?phone= link already picked the chat
+  useEffect(() => { if (!modeSeen.current) { modeSeen.current = true; return; } setSel(null); setConv(null); setMsgs([]); }, [mode]);
   useEffect(() => {
     fetch(`/api/inbox/templates?mode=${mode}`).then((r) => r.json()).then((j) => setTplMeta(Object.fromEntries((j.data || []).map((t) => [t.name, t])))).catch(() => setTplMeta({}));
   }, [mode]);

@@ -2,6 +2,50 @@
 
 import { useEffect, useState } from 'react';
 import { LISTING_FREE_LIMIT } from '@/lib/listingCount';
+import { formatPhone } from '@/lib/inboxRules';
+
+// Asked this site for a WhatsApp code, never became a user (/api/users/code-requests): the
+// site flag on each WhatsApp chat vs this country's users. "Open chat" → the Inbox.
+function CodeRequests() {
+  const [res, setRes] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { fetch('/api/users/code-requests').then((r) => r.json()).then(setRes).catch(() => setRes({ error: 'unavailable' })); }, []);
+  if (!res) return null;
+  if (res.error) return <p className="text-[11px]" style={{ color: T.textMuted }}>WhatsApp code requests: couldn&apos;t load ({res.error}).</p>;
+  const n = res.notConverted.length;
+  const ago = (iso) => { if (!iso) return ''; const d = Math.round((Date.now() - Date.parse(iso)) / 86400000); return d < 1 ? 'today' : `${d} d ago`; };
+  return (
+    <div className="bg-white p-5" style={CARD} data-testid="code-requests">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-bold" style={{ color: T.textPrimary }}>Asked for a WhatsApp code, never signed up</h2>
+          <p className="text-[12.5px] mt-0.5" style={{ color: T.textSecondary }}>
+            {res.asked} {res.asked === 1 ? 'number' : 'numbers'} asked this site for a WhatsApp code · {res.converted} became users · <b style={{ color: n ? T.textPrimary : T.textSecondary }}>{n} didn&apos;t</b>
+          </p>
+        </div>
+        {n > 0 && <button type="button" onClick={() => setOpen((o) => !o)} className="text-[13px] font-semibold px-3.5 py-1.5 rounded-full border" style={{ borderColor: T.borderLight, color: T.textBody }}>{open ? 'Hide' : `Show the ${n}`}</button>}
+      </div>
+      {open && n > 0 && (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Number</th><th className="py-2 pr-3 font-medium">WhatsApp name</th><th className="py-2 pr-3 font-medium">Last activity</th><th className="py-2 pr-3 font-medium">Note</th><th className="py-2 font-medium" /></tr></thead>
+            <tbody>
+              {res.notConverted.map((x) => (
+                <tr key={x.phone} className="border-t" style={{ borderColor: T.borderLight }}>
+                  <td className="py-2 pr-3 whitespace-nowrap font-medium" style={{ color: T.textPrimary }}>{formatPhone(x.phone)}</td>
+                  <td className="py-2 pr-3" style={{ color: T.textBody }}>{x.name || '—'}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap" style={{ color: T.textSecondary }}>{ago(x.at)}</td>
+                  <td className="py-2 pr-3 text-[12px]" style={{ color: x.failed ? T.danger : T.textSecondary }}>{x.failed ? 'Code not delivered — wrong number or not on WhatsApp' : x.wrote ? 'They wrote to us' : 'Got the code, never entered it'}</td>
+                  <td className="py-2 text-right"><Link href={`/inbox?phone=${encodeURIComponent(x.phone.replace(/\D/g, ''))}`} className="text-[12.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>Open chat</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 import Link from 'next/link';
 import { Search, X, Users as UsersIcon, Activity, Home, CheckCircle2, Circle, Globe, Ban, ShieldOff, Trash2 } from 'lucide-react';
 
@@ -406,6 +450,8 @@ export default function UsersPage() {
       </div>
 
       <p className="text-[11px]" style={{ color: T.textMuted }}>Showing up to 500 most recent users. Deleted accounts are hidden. Activity opens their PostHog session timeline.</p>
+
+      <CodeRequests />
 
       {/* Delete confirmation modal — replaces the browser's native confirm(). */}
       {confirmUser && (

@@ -163,30 +163,6 @@ function TemplatePicker({ label, value, templates, onChange, error }) {
   );
 }
 
-// A small look at the email a step sends: subject, heading, the start of the text and its
-// button ({{name}}-style variables are filled in when it goes out). Full preview: Edit.
-const peekText = (s) => String(s || '').replace(/\*\*/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\n{2,}/g, '\n').trim();
-function EmailPeek({ tpl, dim }) {
-  if (!tpl) return null;
-  const body = peekText(tpl.body);
-  return (
-    <div className="rounded-[12px] border overflow-hidden" style={{ borderColor: T.borderLight, background: T.bgWhite, opacity: dim ? 0.55 : 1 }} data-testid="email-peek">
-      <div className="px-3 py-2 border-b text-[11px]" style={{ borderColor: T.borderLight, background: T.bgSurface, color: T.textSecondary }}>
-        <span className="font-mono uppercase tracking-label" style={{ color: T.textMuted }}>What they get · </span>{tpl.subject}
-      </div>
-      <div className="px-3 py-2.5 space-y-1.5">
-        {tpl.heading && <p className="text-[13px] font-bold leading-snug" style={{ color: T.textPrimary }}>{tpl.heading}</p>}
-        <p className="text-[12px] leading-snug whitespace-pre-line" style={{ color: T.textBody }}>{body.length > 320 ? `${body.slice(0, 320)}…` : body}</p>
-        {tpl.button_label && <span className="inline-block mt-1 px-3 py-1 rounded-full text-[11.5px] font-semibold" style={{ background: T.textPrimary, color: T.bgWhite }}>{tpl.button_label}</span>}
-        <div className="flex justify-between items-center pt-1">
-          <span className="text-[10.5px]" style={{ color: T.textMuted }}>{'{{name}}'}, {'{{property_title}}'}… are filled in per seller.</span>
-          <Link href={`/email-templates/${tpl.id}`} className="text-[11px] underline underline-offset-2" style={{ color: T.textSecondary }}>Full preview / edit</Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // One automation: name + status + on/off switch, the steps in a row, a save bar.
 function AutomationCard({ title, description, enabled, enabledAt, busy, onToggle, dirty, onSave, footnote, channelId, children }) {
   return (
@@ -646,7 +622,6 @@ export default function AutomationsPage() {
             <DraftSteps steps={pform.steps} errors={e8} onChange={(list) => setPform((f) => ({ ...f, steps: list }))}
               note="Each reminder goes once per listing (up to 5), only while it is still unpaid — e.g. 1, 3 and 7 days." />
             <TemplatePicker label="Reminder email" value={pform.reminderTemplateId} templates={data.templates} onChange={(v) => setPform((f) => ({ ...f, reminderTemplateId: v }))} error={e8.reminderTemplateId} />
-            <EmailPeek tpl={data.templates.find((t) => String(t.id) === String(pform.reminderTemplateId))} />
           </StepCard>
           <Connector />
           <StepCard n={3} kind="Gift" title="Still not paid: publish THAT listing for free">
@@ -655,7 +630,6 @@ export default function AutomationsPage() {
             <div style={{ opacity: pGift ? 1 : 0.55 }}>
               <TemplatePicker label={pGift ? 'Gift email' : 'Gift email (not sent while the days are 0)'} value={pform.giftTemplateId} templates={data.templates} onChange={(v) => setPform((f) => ({ ...f, giftTemplateId: v }))} error={e8.giftTemplateId} />
             </div>
-            <EmailPeek tpl={data.templates.find((t) => String(t.id) === String(pform.giftTemplateId))} dim={!pGift} />
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>Always by email (there is no WhatsApp template for the gift yet), even when Send by is WhatsApp.</p>
             {pGift && <DayField value={pform.giftDays} onChange={(v) => setPform((f) => ({ ...f, giftDays: v }))} min={1} max={365} error={e8.giftDays} suffix="days live (then it ends like a paid one)" />}
           </StepCard>

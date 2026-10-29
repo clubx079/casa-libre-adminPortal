@@ -91,7 +91,7 @@ function DayField({ value, onChange, min, max, error, suffix }) {
 }
 
 // The draft reminders: 1–5 rows of "Reminder n · after [N] [hours|days]" — add / remove.
-function DraftSteps({ steps, errors, onChange, note }) {
+function DraftSteps({ steps, errors, onChange, note, max = DRAFT_STEPS.max }) {
   const set = (i, k) => (v) => onChange(steps.map((s, j) => (j === i ? { ...s, [k]: v } : s)));
   const add = () => {
     const last = steps[steps.length - 1];
@@ -127,7 +127,7 @@ function DraftSteps({ steps, errors, onChange, note }) {
         </div>
       ))}
       {errors.steps ? <p className="text-[11px]" style={{ color: T.danger }}>{errors.steps}</p> : null}
-      {steps.length < DRAFT_STEPS.max && (
+      {steps.length < max && (
         <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add reminder</button>
       )}
       <p className="text-[11px]" style={{ color: T.textMuted }}>{note || <>Counted from the last time the seller opened or changed the draft. Each reminder goes once per draft (up to {DRAFT_STEPS.max}); coming back to the draft pushes the next one back.</>}</p>
@@ -629,7 +629,7 @@ export default function AutomationsPage() {
           <Connector />
           <StepCard n={2} kind="Reminders" title="Payment reminders, after the listing was saved">
             <DraftSteps steps={pform.steps} errors={e8} onChange={(list) => setPform((f) => ({ ...f, steps: list }))}
-              note="Each reminder goes once per listing (up to 5), only while it is still unpaid — e.g. 1, 3 and 7 days." />
+              note="Each reminder goes once per listing (up to 6), only while it is still unpaid — e.g. every day for the first 6 days." max={6} />
             <TemplatePicker label="Reminder email" value={pform.reminderTemplateId} templates={data.templates} onChange={(v) => setPform((f) => ({ ...f, reminderTemplateId: v }))} error={e8.reminderTemplateId} />
           </StepCard>
           <Connector />

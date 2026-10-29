@@ -5,7 +5,7 @@
 //   DELETE                      → remove a draft / the admin's record (not Relay's)
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { campaignResults } from '@/lib/waCampaigns';
+import { campaignResults, liveProblem, audienceLabel } from '@/lib/waCampaigns';
 import { getCampaign, listRecipients, refreshResults, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
 import { hogql, posthogConfigured } from '@/lib/posthogHogql';
 
@@ -28,7 +28,7 @@ export async function GET(_req, { params }) {
   const c = await getCampaign(params.id);
   if (!c) return bad('not_found', 404);
   const [recipients, clicks] = await Promise.all([listRecipients(c.id), clicksFor(c)]);
-  return NextResponse.json({ campaign: c, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
+  return NextResponse.json({ campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
 }
 
 export async function POST(req, { params }) {
@@ -38,11 +38,14 @@ export async function POST(req, { params }) {
   const { action } = await req.json().catch(() => ({}));
   if (action === 'refresh') {
     if (c.state === 'draft') return bad('This campaign is a draft: nothing was sent yet.');
+    if (c.demo) return bad('Demo batch: sample numbers, nothing was sent, so there is nothing to read from Relay.');
     return NextResponse.json({ ok: true, ...(await refreshResults(c)) });
   }
   if (action === 'send') {
     if (c.state !== 'draft') return bad('Only a draft can be sent from here.');
-    const recipients = (await listRecipients(c.id)).map((r) => ({ phone: r.phone, name: r.meta.name, email: r.email }));
+    const recipients = (await listRecipients(c.id)).filter((r) => !r.meta.skipped).map((r) => ({ phone: r.phone, name: r.meta.name, email: r.email, key: r.meta.key, sim: !!r.meta.sim }));
+    if (!recipients.length) return bad('Nobody in this batch can receive it.');
+    if (c.mode !== 'test') { const stop = liveProblem(recipients, { leadsLive: process.env.WA_LEADS_LIVE === '1' }); if (stop) return bad(stop, 403); }
     await saveCampaign(c.id, { state: 'sending' });
     return NextResponse.json(await sendCampaign(c.id, { mode: c.mode, recipients, settings: { ...c, send_at: null } }));
   }

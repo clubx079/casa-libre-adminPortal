@@ -1,75 +1,45 @@
 'use client';
-// WhatsApp campaigns — the list (like Relay → Campaigns). Each campaign: template,
-// audience, state and its results at a glance. Live = the real number; Test = Relay's
-// simulated traffic (nothing reaches WhatsApp). Data: /api/campaigns.
+// WhatsApp campaigns — two tabs: New campaign (one batch: first N of an audience, skipping
+// who an earlier batch had, or an earlier batch again) and Sent campaigns (every batch with
+// delivered / read / replied / clicked). ?tab=new|sent · ?next=<id> prefills the next batch
+// of that audience · ?from=<id> prefills "send that batch again".
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { T, CARD, PageHeader, Pill, Banner, btnPrimary, fmtDate } from '@/components/automations/ui';
-
-const STATE = { draft: ['neutral', 'Draft'], sending: ['info', 'Sending'], sent: ['success', 'Sent'], scheduled: ['warning', 'Scheduled'], failed: ['danger', 'Failed'] };
+import { useRouter } from 'next/navigation';
+import { T, PageHeader } from '@/components/automations/ui';
+import NewCampaignForm from '@/components/campaigns/NewCampaignForm';
+import SentCampaigns from '@/components/campaigns/SentCampaigns';
 
 export default function CampaignsPage() {
-  const [mode, setMode] = useState('live');
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState('');
+  const router = useRouter();
+  const [tab, setTab] = useState(null);
+  const [prefill, setPrefill] = useState(undefined);   // undefined = still reading the link
   useEffect(() => {
-    let alive = true;
-    setData(null); setErr('');
-    fetch(`/api/campaigns?mode=${mode}`).then((r) => r.json()).then((j) => { if (!alive) return; if (j.error) setErr(j.error); else setData(j); }).catch(() => alive && setErr('failed'));
-    return () => { alive = false; };
-  }, [mode]);
-  const list = data?.campaigns || [];
+    const sp = new URLSearchParams(window.location.search);
+    const next = sp.get('next');
+    const from = sp.get('from');
+    setTab(sp.get('tab') === 'new' || next || from ? 'new' : sp.get('tab') === 'sent' ? 'sent' : 'new');
+    const id = next || from;
+    if (!id) { setPrefill(sp.get('mode') === 'live' ? { mode: 'live' } : null); return; }
+    fetch(`/api/campaigns/${id}`).then((r) => r.json()).then(({ campaign: c }) => {
+      if (!c) { setPrefill(null); return; }
+      const d = c.audience_def || {};
+      setPrefill(next
+        ? { mode: c.mode === 'test' ? 'test' : 'live', template: c.template, name: `${c.name} (next)`, source: d.source, segment: d.segment, size: d.size || 100, skip: true }
+        : { mode: c.mode === 'test' ? 'test' : 'live', template: c.template, name: `${c.name} (again)`, source: 'batch', segment: c.id, batch_filter: 'not_read' });
+    }).catch(() => setPrefill(null));
+  }, []);
+  const go = (t) => { setTab(t); router.replace(`/campaigns?tab=${t}`); };
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="WhatsApp campaigns"
-        sub="Send an approved template to opted-in contacts, now or on a schedule — and see who received, read, clicked and replied."
-        action={<Link href={`/campaigns/new?mode=${mode}`} className={btnPrimary}>New campaign</Link>}
-      />
-      <div className="flex items-center gap-2">
-        {[['live', 'Live'], ['test', 'Test (simulated)']].map(([k, l]) => (
-          <button key={k} onClick={() => setMode(k)} className="text-[13px] font-semibold px-3.5 py-1.5 rounded-full"
-            style={{ background: mode === k ? T.primary : T.bgWhite, color: mode === k ? T.bgWhite : T.textBody, border: `1px solid ${mode === k ? T.primary : T.borderLight}` }}>{l}</button>
+      <PageHeader title="WhatsApp campaigns" sub="Send a template to a batch of people — the first 50, the next 100, or an earlier batch again — and compare how each batch did." />
+      <div className="flex gap-1 border-b" style={{ borderColor: T.borderLight }} role="tablist">
+        {[['new', 'New campaign'], ['sent', 'Sent campaigns']].map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)} data-testid={`tab-${k}`} className="px-4 py-2.5 text-[14px] -mb-px border-b-2"
+            style={tab === k ? { borderColor: T.primary, color: T.textPrimary, fontWeight: 600 } : { borderColor: 'transparent', color: T.textSecondary }}>{l}</button>
         ))}
       </div>
-      {mode === 'test' && <Banner tone="warning">Test mode uses Relay&apos;s test key: delivery is simulated (sent → delivered → read) and <b>nothing reaches WhatsApp</b>.</Banner>}
-      {err ? <Banner>Could not load: {err}</Banner> : null}
-
-      <div className="bg-white overflow-hidden" style={CARD}>
-        {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm font-semibold" style={{ color: T.textPrimary }}>No campaigns yet</p>
-            <p className="text-xs mt-1" style={{ color: T.textMuted }}>Pick an approved template and an audience of opted-in contacts, then send.</p>
-            <Link href={`/campaigns/new?mode=${mode}`} className={`${btnPrimary} mt-4`}>New campaign</Link>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[760px]">
-              <thead>
-                <tr style={{ color: T.textMuted }}>
-                  {['Campaign', 'Template', 'Audience', 'Will receive', 'State', 'Created'].map((h, i) => <th key={h} className={`px-4 py-2.5 font-semibold ${i >= 3 && i <= 3 ? 'text-right' : 'text-left'}`}>{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((c) => {
-                  const [tone, label] = STATE[c.state] || ['neutral', c.state];
-                  return (
-                    <tr key={c.id} className="border-t hover:bg-black/[.02]" style={{ borderColor: T.borderLight }}>
-                      <td className="px-4 py-3"><Link href={`/campaigns/${c.id}`} className="font-semibold underline-offset-2 hover:underline" style={{ color: T.textPrimary }}>{c.name}</Link></td>
-                      <td className="px-4 py-3 font-mono" style={{ color: T.textBody }}>{c.template} <span style={{ color: T.textMuted }}>· {c.category}</span></td>
-                      <td className="px-4 py-3" style={{ color: T.textBody }}>{c.audience_def?.source}{c.audience_def?.segment && c.audience_def.segment !== 'all' ? ` · ${c.audience_def.segment}` : ''} <span style={{ color: T.textMuted }}>({c.counts?.total ?? 0})</span></td>
-                      <td className="px-4 py-3 text-right font-semibold" style={{ color: T.textPrimary }}>{c.relay_audience?.eligible ?? c.counts?.willReceive ?? 0}</td>
-                      <td className="px-4 py-3"><Pill tone={tone}>{label}</Pill>{c.send_at && c.state === 'scheduled' ? <span className="ml-2" style={{ color: T.textMuted }}>{fmtDate(c.send_at, true)}</span> : null}</td>
-                      <td className="px-4 py-3 whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtDate(c.created_at, true)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {tab === 'sent' ? <SentCampaigns /> : tab === 'new' && prefill !== undefined ? <NewCampaignForm key={JSON.stringify(prefill)} prefill={prefill} /> : <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>}
     </div>
   );
 }

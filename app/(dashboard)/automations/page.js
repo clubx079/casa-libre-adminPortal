@@ -13,6 +13,7 @@ import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
+import { useDialog } from '@/components/Dialog';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -212,6 +213,13 @@ export default function AutomationsPage() {
   const [hform, setHform] = useState(null);
   const [sform, setSform] = useState(null);
   const [pform, setPform] = useState(null);
+  const { dialog, confirm } = useDialog();
+  // "Switch … on?\n\nwhat happens" → the admin dialog (title + text), Switch on / Switch off.
+  const ask = (text) => {
+    const [title, ...rest] = String(text).split('\n\n');
+    const off = /\boff\?$/.test(title);
+    return confirm({ title, message: rest.join('\n\n'), confirmLabel: off ? 'Switch off' : /\bon\?$/.test(title) ? 'Switch on' : 'OK', tone: off ? 'danger' : undefined });
+  };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});   // { first: {...}, views: {...} }
@@ -277,19 +285,19 @@ export default function AutomationsPage() {
   // Only send the tier list once the column exists; before that the single-tier fields apply.
   const firstPatch = () => { const { free_tiers, ...rest } = form; return hasTierList ? { ...rest, free_tiers } : rest; };
 
-  const toggleFirst = () => {
+  const toggleFirst = async () => {
     const on = !a.enabled;
-    if (on && !window.confirm('Switch the automation on?\n\nOnly sellers whose FIRST listing is published from now on get the free home display and the emails. Nobody who already published is affected.')) return;
-    if (!on && !window.confirm('Switch the automation off?\n\nNobody new gets the gift. Sellers already on free display keep it until it ends, but won’t get the reminder email.')) return;
+    if (on && !(await ask('Switch the automation on?\n\nOnly sellers whose FIRST listing is published from now on get the free home display and the emails. Nobody who already published is affected.'))) return;
+    if (!on && !(await ask('Switch the automation off?\n\nNobody new gets the gift. Sellers already on free display keep it until it ends, but won’t get the reminder email.'))) return;
     run('first', 'toggle', () => put('first', { enabled: on }, on ? 'First listing automation is on.' : 'First listing automation is off.'));
   };
 
   const va = data.views?.automation;
   const e2 = errors.views || {};
   const vDirty = !!(va && vform && (vform.milestones.replace(/\s/g, '') !== (va.milestones || []).join(',') || String(vform.template_id || '') !== String(va.template_id || '')));
-  const toggleViews = () => {
+  const toggleViews = async () => {
     const on = !va.enabled;
-    if (on && !window.confirm('Switch "Listing getting views" on?\n\nSellers get an email when their listing reaches your view numbers. Listings that already passed a number before now won’t be emailed for it.')) return;
+    if (on && !(await ask('Switch "Listing getting views" on?\n\nSellers get an email when their listing reaches your view numbers. Listings that already passed a number before now won’t be emailed for it.'))) return;
     run('views', 'toggle', () => put('views', { enabled: on }, on ? '“Listing getting views” is on.' : '“Listing getting views” is off.'));
   };
 
@@ -297,10 +305,10 @@ export default function AutomationsPage() {
   const e3 = errors.drafts || {};
   const savedSteps = da ? stepsFromHours(da.milestones) : [];
   const dDirty = !!(da && dform && (JSON.stringify(dform.steps.map((s) => ({ value: Number(s.value), unit: s.unit }))) !== JSON.stringify(savedSteps) || String(dform.template_id || '') !== String(da.template_id || '')));
-  const toggleDrafts = () => {
+  const toggleDrafts = async () => {
     const on = !da.enabled;
     const when = (da.milestones || []).map(stepLabel).join(', ');
-    if (on && !window.confirm(`Switch "Unfinished draft reminders" on?\n\nSellers with an unfinished draft get an email after ${when || 'your waits'} without changes, with a button that opens the draft. Drafts already waiting get ONE email for the latest reminder they reached (if it came due in the last 7 days).`)) return;
+    if (on && !(await ask(`Switch "Unfinished draft reminders" on?\n\nSellers with an unfinished draft get an email after ${when || 'your waits'} without changes, with a button that opens the draft. Drafts already waiting get ONE email for the latest reminder they reached (if it came due in the last 7 days).`))) return;
     run('drafts', 'toggle', () => put('drafts', { enabled: on }, on ? '“Unfinished draft reminders” is on.' : '“Unfinished draft reminders” is off.'));
   };
   const perStep = data.drafts?.perStep || {};
@@ -311,9 +319,9 @@ export default function AutomationsPage() {
 
   const xa = data.duplicates?.automation;
   const xDirty = !!(xa && xform && String(xform.template_id || '') !== String(xa.template_id || ''));
-  const toggleDups = () => {
+  const toggleDups = async () => {
     const on = !xa.enabled;
-    if (on && !window.confirm('Switch "Same property listed twice" on?\n\nA listing that repeats one of the user\'s own (same details + half or more of the same photos) is held as "Under review — possible duplicate" instead of published, and the user is emailed right away.')) return;
+    if (on && !(await ask('Switch "Same property listed twice" on?\n\nA listing that repeats one of the user\'s own (same details + half or more of the same photos) is held as "Under review — possible duplicate" instead of published, and the user is emailed right away.'))) return;
     run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
   };
 
@@ -322,9 +330,9 @@ export default function AutomationsPage() {
   const e5 = errors.nolist || {};
   const nDirty = !!(ns && nform && (['days', 'secondAfter', 'templateId', 'reminderTemplateId'].some((k) => String(nform[k] ?? '') !== String(ns[k] ?? ''))));
   const nHasSecond = !!(nform && nform.secondAfter !== '' && Number(nform.secondAfter) > 0);
-  const toggleNoListing = () => {
+  const toggleNoListing = async () => {
     const on = !ns.enabled;
-    if (on && !window.confirm(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`)) return;
+    if (on && !(await ask(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
     run('nolist', 'toggle', () => put('nolist', { enabled: on }, on ? '“Signed up, no listing yet” is on.' : '“Signed up, no listing yet” is off.'));
   };
   const hl = data.listingHeld;
@@ -332,18 +340,18 @@ export default function AutomationsPage() {
   const e6 = errors.held || {};
   const hDirty = !!(hs && hform && ['hours', 'reminderAfter'].some((k) => String(hform[k] ?? '') !== String(hs[k] ?? '')));
   const hHasReminder = !!(hform && hform.reminderAfter !== '' && Number(hform.reminderAfter) > 0);
-  const toggleHeld = () => {
+  const toggleHeld = async () => {
     const on = !hs.enabled;
-    if (on && !window.confirm(`Switch "Listing not published" on?\n\nOwners of user listings held off the site (waiting for payment, photos rejected, paused, missing details) get a message ${hs.hours} ${hs.hours === 1 ? 'hour' : 'hours'} later telling them why, with a button to My listings. Only listings created from now on.${hl.setUp ? '' : '\n\nThis also creates the four default emails (Spanish) — edit them in Templates.'}`)) return;
+    if (on && !(await ask(`Switch "Listing not published" on?\n\nOwners of user listings held off the site (waiting for payment, photos rejected, paused, missing details) get a message ${hs.hours} ${hs.hours === 1 ? 'hour' : 'hours'} later telling them why, with a button to My listings. Only listings created from now on.${hl.setUp ? '' : '\n\nThis also creates the four default emails (Spanish) — edit them in Templates.'}`))) return;
     run('held', 'toggle', () => put('held', { enabled: on }, on ? '“Listing not published” is on.' : '“Listing not published” is off.'));
   };
   const sv = data.saves;
   const ssv = sv?.settings;
   const e7 = errors.saves || {};
   const sDirty = !!(ssv && sform && (sform.milestones.replace(/s/g, '') !== (ssv.milestones || []).join(',') || String(sform.template_id || '') !== String(ssv.templateId || '')));
-  const toggleSaves = () => {
+  const toggleSaves = async () => {
     const on = !ssv.enabled;
-    if (on && !window.confirm('Switch "Listing getting saved" on?\n\nSellers get a message when their listing reaches your numbers of saves (people with an account + visitors). Numbers a listing already passed before now are not sent.')) return;
+    if (on && !(await ask('Switch "Listing getting saved" on?\n\nSellers get a message when their listing reaches your numbers of saves (people with an account + visitors). Numbers a listing already passed before now are not sent.'))) return;
     run('saves', 'toggle', () => put('saves', { enabled: on, ...(sv.setUp ? {} : { milestones: sform.milestones }) }, on ? '“Listing getting saved” is on.' : '“Listing getting saved” is off.'));
   };
   // "Waiting for payment → free listing"
@@ -355,9 +363,9 @@ export default function AutomationsPage() {
   const pDirty = !!(pfs && pform && (JSON.stringify(toHours(pform.steps)) !== JSON.stringify(pfs.steps)
     || ['reminderTemplateId', 'giftAfterDays', 'giftTemplateId', 'giftsPerPerson', 'giftWindowDays', 'giftDays'].some((k) => String(pform[k] ?? '') !== String(pfs[k] ?? ''))));
   const pGift = !!(pform && Number(pform.giftAfterDays) > 0);
-  const togglePay = () => {
+  const togglePay = async () => {
     const on = !pfs.enabled;
-    if (on && !window.confirm(`Switch "Waiting for payment → free listing" on?\n\nSellers whose listing is saved over the free listings of the month and not paid get payment reminders${pGift ? `, and after ${pform.giftAfterDays} days one email offering THAT listing for free (up to ${pform.giftsPerPerson} per person)` : ''}. Only listings saved from now on. While it is on, "Listing not published" stops sending its own payment message.${pf.setUp ? '' : '\n\nThis also creates the gift email (Spanish) — edit it in Templates.'}`)) return;
+    if (on && !(await ask(`Switch "Waiting for payment → free listing" on?\n\nSellers whose listing is saved over the free listings of the month and not paid get payment reminders${pGift ? `, and after ${pform.giftAfterDays} days one email offering THAT listing for free (up to ${pform.giftsPerPerson} per person)` : ''}. Only listings saved from now on. While it is on, "Listing not published" stops sending its own payment message.${pf.setUp ? '' : '\n\nThis also creates the gift email (Spanish) — edit it in Templates.'}`))) return;
     run('pay', 'toggle', () => put('pay', { enabled: on, ...(pf.setUp ? {} : pPatch()) }, on ? '“Waiting for payment → free listing” is on.' : '“Waiting for payment → free listing” is off.'));
   };
   const pStats = pf ? [
@@ -370,6 +378,7 @@ export default function AutomationsPage() {
 
   return (
     <div className="space-y-5">
+      {dialog}
       <PageHeader title="Automations" sub="Emails and rewards that run on their own, checked every hour." />
       {error && <Banner>{error}</Banner>}
       {notice && <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: T.successSurface, color: T.success }}>{notice}</div>}

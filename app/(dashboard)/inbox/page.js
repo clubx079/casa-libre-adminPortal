@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { T, Banner } from '@/components/automations/ui';
 import { refreshUnread } from '@/components/unread';
+import { useDialog } from '@/components/Dialog';
 import { formatPhone } from '@/lib/inboxRules';
 import { WA_TEMPLATES } from '@/lib/whatsappTemplates';
 
@@ -292,6 +293,7 @@ export default function InboxPage() {
   const [allEnglish, setAllEnglish] = useState(false);
   const [aiRequest, setAiRequest] = useState(null);
   const [tplMeta, setTplMeta] = useState({});
+  const { dialog, confirm, prompt } = useDialog();
   const scrollRef = useRef(null);
   const lastIdRef = useRef(null);
 
@@ -354,12 +356,18 @@ export default function InboxPage() {
     loadThread(sel); loadList(); refreshUnread();
     return r.ok;
   };
-  const addTag = () => { const t = window.prompt('Tag (e.g. hot lead, visita)'); if (t && t.trim()) patch({ add_tags: [t.trim()] }); };
+  const addTag = async () => {
+    const t = await prompt({ title: 'Add a tag', message: 'A short label for this conversation, e.g. hot lead, visita, agencia.', placeholder: 'Tag', maxLength: 40, required: true, confirmLabel: 'Add tag' });
+    if (t) patch({ add_tags: [t] });
+  };
   // Closing the chat keeps the dot until someone opens it again.
   const markUnread = async () => { const p = encodeURIComponent(sel.replace(/\D/g, '')); setSel(null); await fetch(`/api/inbox/conversations/${p}?mode=${mode}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unread: true }) }); loadList(); refreshUnread(); };
-  const setDnc = () => {
-    if (conv?.dnc) { if (window.confirm('Remove "Do not contact" from this conversation?')) patch({ dnc: { on: false } }); return; }
-    const note = window.prompt('Do not contact — a short note for the team (why). Max 35 characters.', '');
+  const setDnc = async () => {
+    if (conv?.dnc) {
+      if (await confirm({ title: 'Remove "Do not contact"?', message: `The team can message ${conv.name || formatPhone(sel)} again.${conv.dnc.note ? ` The note ("${conv.dnc.note}") is removed too.` : ''}`, confirmLabel: 'Remove' })) patch({ dnc: { on: false } });
+      return;
+    }
+    const note = await prompt({ title: 'Do not contact', message: 'We stop following up with this person. Add a short note for the team: why?', placeholder: 'e.g. rude, asked us to stop', maxLength: 35, confirmLabel: 'Mark do not contact', tone: 'danger' });
     if (note === null) return;
     patch({ dnc: { on: true, note } });
   };
@@ -384,6 +392,7 @@ export default function InboxPage() {
 
   return (
     <div className="space-y-3" data-testid="inbox-page">
+      {dialog}
       {err && <Banner>Inbox: {err}</Banner>}
       <div className="flex rounded-[16px] overflow-hidden bg-white" style={{ border: `1px solid ${T.borderLight}`, height: 'calc(100vh - 170px)', minHeight: 560 }}>
         {/* ---- conversation list ---- */}

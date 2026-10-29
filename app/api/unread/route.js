@@ -12,7 +12,7 @@ import { activeCountry } from '@/lib/adminCountry';
 import { isMissingTable } from '@/lib/automationDb';
 import { adminKey, unreadCounts, markSeen, UNREAD_PAGES } from '@/lib/unread';
 import { conversationsWithCountry } from '@/lib/inboxData';
-import { isUnread } from '@/lib/inboxRules';
+import { isUnread, inSite } from '@/lib/inboxRules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 async function inboxUnread(cc) {
   try {
     const list = await conversationsWithCountry('live');
-    return list.filter((c) => c.sites.includes(cc) && isUnread(c)).length;
+    return list.filter((c) => inSite(c, cc) && isUnread(c)).length;
   } catch { return 0; }
 }
 

@@ -155,3 +155,15 @@ describe('PostHog payment events in the timeline', async () => {
     expect(steps[2].detail).toBe('Casa · sale · Luque · from the gift email · reason: expired · PostHog.');
   });
 });
+
+describe('chats with no site', async () => {
+  const { filterConversations, inSite } = await import('../lib/inboxRules.js');
+  it('show in every site inbox (never hidden), and under No site yet', () => {
+    const list = [{ phone: '+923362771289', sites: ['none'], unread_count: 1, last_message: { direction: 'inbound' }, tags: [] }, { phone: '+59171234567', sites: ['bo'], tags: [], last_message: {} }];
+    expect(filterConversations(list, { country: 'py', status: 'all' }).data.map((c) => c.phone)).toEqual(['+923362771289']);
+    expect(filterConversations(list, { country: 'bo', status: 'all' }).data).toHaveLength(2);
+    expect(filterConversations(list, { country: 'bo', status: 'all' }).counts.unread).toBe(1);
+    expect(inSite(list[0], 'none')).toBe(true);
+    expect(inSite(list[1], 'none')).toBe(false);
+  });
+});

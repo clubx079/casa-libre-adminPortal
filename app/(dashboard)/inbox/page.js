@@ -472,7 +472,7 @@ export default function InboxPage() {
                             : c.marked_unread ? <span className="w-3 h-3 rounded-full shrink-0" style={{ background: GREEN }} title="Marked unread" data-testid="marked-dot" /> : null}
                         </div>
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
-                          {(country === 'all' || (c.sites || []).length > 1) && (c.sites || []).map((x) => <span key={x} className="text-[10.5px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: T.bgSurface, color: T.textSecondary }} title="Site this number came from">{x === 'none' ? 'no site' : x.toUpperCase()}</span>)}
+                          {(country === 'all' || (c.sites || []).length > 1 || (c.sites || [])[0] === 'none') && (c.sites || []).map((x) => <span key={x} className="text-[10.5px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: T.bgSurface, color: T.textSecondary }} title={x === 'none' ? 'This number never asked a site for a code and is not a user on any site, so it shows in every inbox' : 'Site this number came from'}>{x === 'none' ? 'no site' : x.toUpperCase()}</span>)}
                           {c.unresponded && !c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#FBEAEA', color: T.danger }}>needs an answer</span>}
                           {c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.danger, color: '#fff' }}>do not contact</span>}
                           {c.tags?.map((t) => <span key={t} className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>{t}</span>)}

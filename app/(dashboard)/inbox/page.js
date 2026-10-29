@@ -8,8 +8,9 @@
 //     contact wrote last) with counts
 //   • the thread: ticks, media, template buttons, Translate (one message or all), "Reply with
 //     AI" on a message, the contact's Casa Libre account → their activity page
-//   • the reply: text / photo / file inside the 24h window, or an approved template outside
-//     it; "Write with AI" drafts it (Claude, in the contact's language, English shown to us)
+//   • the reply: one slim row (text / photo / file inside the 24h window; outside it a
+//     template, whose form opens only when asked) and the AI assistant — a small chat beside
+//     the conversation (Claude, writes in the contact's language, English shown to us)
 //   • Mark as unread (no "Mark as done": the dot is how the team knows to come back),
 //     Do not contact (+ note), tags
 // Live = the real number, Test keys = Relay's simulated traffic. Data: /api/inbox/* → Relay
@@ -127,48 +128,33 @@ function Bubble({ m, mode, english, onTranslate, onAiReply, tplMeta }) {
   );
 }
 
-// The reply box. AI: "Write with AI" (Claude reads the chat) or an instruction in any language.
-function Composer({ conv, mode, onSent, aiRequest, onAiDone }) {
+// The reply bar: one slim row so the chat keeps the room. Inside the 24h window: 📎 · text ·
+// template · AI · Send. Outside it: a one-line note + "Send a template". The template form
+// only opens when asked (compact: picker, the values, a 2-line preview).
+const sparkle = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.6L12 15l-1.8-4.4L5.5 9l4.7-1.4z" /><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" /></svg>;
+const tplIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></svg>;
+const iconBtn = 'h-10 w-10 shrink-0 rounded-[10px] flex items-center justify-center disabled:opacity-40';
+
+function Composer({ conv, mode, text, setText, onSent, aiOpen, onToggleAi }) {
   const windowOpen = !!conv?.window?.open;
-  const [tab, setTab] = useState(windowOpen ? 'message' : 'template');
-  const [text, setText] = useState('');
+  const [tplOpen, setTplOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [tpls, setTpls] = useState([]);
   const [tplName, setTplName] = useState('');
   const [vals, setVals] = useState({});
-  const [ai, setAi] = useState(null);           // { english, note } of the last AI draft
-  const [aiBusy, setAiBusy] = useState(false);
-  const [askOpen, setAskOpen] = useState(false);
-  const [ask, setAsk] = useState('');
   const fileRef = useRef(null);
-  useEffect(() => { setTab(windowOpen ? 'message' : 'template'); setErr(''); setAi(null); setText(''); setAsk(''); setAskOpen(false); }, [conv?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!windowOpen) setTab('template'); }, [windowOpen]);
+  const taRef = useRef(null);
+  useEffect(() => { setTplOpen(false); setErr(''); setVals({}); }, [conv?.phone]);
   useEffect(() => {
     fetch(`/api/inbox/templates?mode=${mode}`).then((r) => r.json()).then((j) => { const list = (j.data || []).filter((t) => t.status === 'APPROVED'); setTpls(list); if (list[0]) setTplName((n) => n || list[0].name); }).catch(() => setTpls([]));
   }, [mode]);
+  // the text box grows with the text, up to ~5 lines
+  useEffect(() => { const el = taRef.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 120)}px`; }, [text]);
   const tpl = tpls.find((t) => t.name === tplName);
   const bodyN = tpl?.variables?.body || 0;
   const urlButtons = tpl?.variables?.url_buttons || [];
   const preview = useMemo(() => String(tpl?.body || '').replace(/\{\{(\d+)\}\}/g, (_, n) => vals[`b${n}`] || `{{${n}}}`), [tpl, vals]);
-
-  const writeWithAi = useCallback(async ({ instruction = '', draft = '' } = {}) => {
-    setAiBusy(true); setErr('');
-    try {
-      const r = await fetch(`/api/inbox/ai?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: conv.phone, instruction, draft }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) { setErr(j.error || `AI couldn't write it (${r.status})`); return; }
-      setText(j.message); setAi({ english: j.english, note: j.note }); setAskOpen(false); setAsk('');
-      if (windowOpen) setTab('message');
-      else setErr('The 24h window is closed, so this text can\'t be sent yet — send a template first. The draft is kept in the Message tab.');
-    } catch (e) { setErr(String(e)); } finally { setAiBusy(false); }
-  }, [conv?.phone, mode, windowOpen]);
-  // "Reply with AI" on a message in the thread
-  useEffect(() => {
-    if (!aiRequest || !conv) return;
-    writeWithAi({ instruction: `Reply to this message from the contact: "${String(aiRequest.text || '').slice(0, 800)}"` });
-    onAiDone();
-  }, [aiRequest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const post = async (url, opts) => {
     setBusy(true); setErr('');
@@ -179,97 +165,136 @@ function Composer({ conv, mode, onSent, aiRequest, onAiDone }) {
       onSent(); return true;
     } catch (e) { setErr(String(e)); return false; } finally { setBusy(false); }
   };
-  const sendText = async () => { if (!text.trim()) return; if (await post(`/api/inbox/send?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', to: conv.phone, text }) })) { setText(''); setAi(null); } };
+  const sendText = async () => { if (!text.trim() || !windowOpen) return; if (await post(`/api/inbox/send?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', to: conv.phone, text }) })) setText(''); };
   const sendFile = async (f) => { if (!f) return; const fd = new FormData(); fd.set('to', conv.phone); fd.set('file', f); if (text.trim()) fd.set('caption', text); if (await post(`/api/inbox/upload?mode=${mode}`, { method: 'POST', body: fd })) setText(''); if (fileRef.current) fileRef.current.value = ''; };
   const sendTemplate = async () => {
     if (!tpl) return;
     const body = Array.from({ length: bodyN }, (_, i) => vals[`b${i + 1}`] || '');
-    if (body.some((v) => !v.trim())) { setErr('Fill in every variable.'); return; }
+    if (body.some((v) => !v.trim())) { setErr('Fill in every value.'); return; }
     const buttons = urlButtons.map((index) => ({ index, text: vals[`u${index}`] || '' }));
     if (buttons.some((b) => !b.text.trim())) { setErr('Fill in the link ending.'); return; }
-    if (await post(`/api/inbox/send?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'template', to: conv.phone, template: tpl.name, language: tpl.language, variables: { body, ...(buttons.length ? { buttons } : {}) } }) })) setVals({});
+    if (await post(`/api/inbox/send?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'template', to: conv.phone, template: tpl.name, language: tpl.language, variables: { body, ...(buttons.length ? { buttons } : {}) } }) })) { setVals({}); setTplOpen(false); }
   };
 
-  const tabBtn = (v, label, icon, disabled) => (
-    <button type="button" disabled={disabled} onClick={() => setTab(v)} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-[13.5px] font-semibold disabled:opacity-40"
-      style={tab === v ? { background: '#E3F3EA', color: GREEN } : { color: T.textSecondary }}>{icon}{label}</button>
-  );
-  const inputCls = 'w-full px-3 py-2.5 rounded-[10px] text-[14px] outline-none bg-white';
-  const inputStyle = { border: `1px solid ${T.borderLight}` };
-  const sparkle = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.6L12 15l-1.8-4.4L5.5 9l4.7-1.4z" /><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" /></svg>;
+  const small = 'w-full h-9 px-2.5 rounded-[8px] text-[13px] outline-none bg-white';
+  const border = { border: `1px solid ${T.borderLight}` };
   return (
-    <div className="border-t px-4 pt-3 pb-4 bg-white" style={{ borderColor: T.borderLight }}>
-      <div className="flex items-center justify-between gap-3 mb-2.5 flex-wrap">
-        <div className="flex gap-1">
-          {tabBtn('message', 'Message', <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z" /></svg>)}
-          {tabBtn('template', 'Template', <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></svg>)}
-        </div>
-        <span className="text-[12.5px] flex items-center gap-1.5" style={{ color: T.textSecondary }}>
-          🕓 {windowOpen ? `Reply window open${conv.window.expires_at ? ` until ${timeOf(conv.window.expires_at)}` : ''}` : '24h reply window closed: templates only'}
-        </span>
-      </div>
-      {tab === 'message' ? (
-        <div className="space-y-2">
-          <div className="flex items-end gap-2">
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={busy || !windowOpen} title="Send a photo, file or voice note" className="h-[46px] w-[46px] shrink-0 rounded-[10px] flex items-center justify-center disabled:opacity-40" style={inputStyle}>📎</button>
-            <input ref={fileRef} type="file" className="hidden" onChange={(e) => sendFile(e.target.files?.[0])} />
-            <textarea value={text} onChange={(e) => { setText(e.target.value); if (ai) setAi((a) => a && { ...a, edited: true }); }} rows={text.length > 120 ? 3 : 1} placeholder={windowOpen ? 'Type a message — or let AI write it' : 'Window closed: you can draft here, but only a template can be sent'} className={`${inputCls} resize-none min-h-[46px]`} style={inputStyle} data-testid="composer-text"
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && windowOpen) { e.preventDefault(); sendText(); } }} />
-            <button type="button" onClick={sendText} disabled={busy || !text.trim() || !windowOpen} className="h-[46px] px-5 shrink-0 rounded-[10px] text-white text-[14px] font-semibold disabled:opacity-50" style={{ background: GREEN }}>{busy ? 'Sending…' : 'Send'}</button>
-          </div>
-          {ai && (
-            <div className="rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: '#F4F8F5', border: '1px solid #D5E8DC' }} data-testid="ai-english">
-              <span className="font-semibold" style={{ color: GREEN }}>In English{ai.edited ? ' (before your edits)' : ''}:</span> <span style={{ color: T.textBody }}>{ai.english}</span>
-              {ai.note && <div className="mt-1" style={{ color: T.textSecondary }}>Tip: {ai.note}</div>}
-            </div>
-          )}
-          <div className="flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={() => writeWithAi({ draft: text.trim() })} disabled={aiBusy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${GREEN}`, color: GREEN }} data-testid="ai-write">
-              {sparkle}{aiBusy ? 'Writing…' : text.trim() ? 'Improve with AI' : 'Write with AI'}
-            </button>
-            <button type="button" onClick={() => setAskOpen((o) => !o)} className="px-3 py-1.5 rounded-[10px] text-[13px]" style={{ color: T.textSecondary, border: `1px solid ${T.borderLight}` }}>Ask AI…</button>
-            <span className="text-[11.5px]" style={{ color: T.textMuted }}>AI writes in the contact&apos;s language; you review and send.</span>
-          </div>
-          {askOpen && (
-            <div className="flex items-stretch gap-2" data-testid="ai-ask">
-              <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="What should we say? Any language — e.g. “tell her we'll check her photos today”" className={inputCls} style={inputStyle}
-                onKeyDown={(e) => { if (e.key === 'Enter' && ask.trim()) writeWithAi({ instruction: ask.trim() }); }} />
-              <button type="button" onClick={() => writeWithAi({ instruction: ask.trim() })} disabled={aiBusy || !ask.trim()} className="px-4 shrink-0 rounded-[10px] text-white text-[13.5px] font-semibold disabled:opacity-50" style={{ background: GREEN }}>{aiBusy ? 'Writing…' : 'Write it'}</button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          <div>
-            <div className="text-[12.5px] mb-1" style={{ color: T.textSecondary }}>Template</div>
-            <select value={tplName} onChange={(e) => { setTplName(e.target.value); setVals({}); }} className={inputCls} style={inputStyle}>
+    <div className="border-t bg-white" style={{ borderColor: T.borderLight }}>
+      {tplOpen && (
+        <div className="px-4 pt-3 pb-2 space-y-2 border-b max-h-[240px] overflow-y-auto" style={{ borderColor: T.borderLight, background: '#FAFAF8' }} data-testid="template-panel">
+          <div className="flex items-center gap-2">
+            <select value={tplName} onChange={(e) => { setTplName(e.target.value); setVals({}); }} className={`${small} flex-1`} style={border} aria-label="Template">
               {tpls.length === 0 && <option value="">No approved templates</option>}
-              {tpls.map((t) => <option key={`${t.name}-${t.language}`} value={t.name}>{t.name} · {t.language} · {String(t.category).toLowerCase()}</option>)}
+              {tpls.map((t) => <option key={`${t.name}-${t.language}`} value={t.name}>{t.name} · {String(t.category).toLowerCase()}</option>)}
             </select>
+            <button type="button" onClick={() => setTplOpen(false)} className="h-9 w-9 shrink-0 rounded-[8px] text-[18px] leading-none" style={{ color: T.textMuted }} aria-label="Close templates">×</button>
           </div>
           {(bodyN > 0 || urlButtons.length > 0) && (
-            <div className="grid gap-2.5 grid-cols-2 md:grid-cols-3">
+            <div className="grid gap-1.5 grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: bodyN }, (_, i) => (
-                <label key={`b${i}`} className="block"><span className="text-[12px]" style={{ color: T.textSecondary }}>{`{{${i + 1}}}`}</span>
-                  <input value={vals[`b${i + 1}`] || ''} onChange={(e) => setVals((v) => ({ ...v, [`b${i + 1}`]: e.target.value }))} className={inputCls} style={inputStyle} /></label>
+                <input key={`b${i}`} value={vals[`b${i + 1}`] || ''} onChange={(e) => setVals((v) => ({ ...v, [`b${i + 1}`]: e.target.value }))} placeholder={`Value {{${i + 1}}}`} aria-label={`Value ${i + 1}`} className={small} style={border} />
               ))}
               {urlButtons.map((idx) => (
-                <label key={`u${idx}`} className="block"><span className="text-[12px]" style={{ color: T.textSecondary }}>Link ending (button {idx + 1})</span>
-                  <input value={vals[`u${idx}`] || ''} onChange={(e) => setVals((v) => ({ ...v, [`u${idx}`]: e.target.value }))} className={inputCls} style={inputStyle} /></label>
+                <input key={`u${idx}`} value={vals[`u${idx}`] || ''} onChange={(e) => setVals((v) => ({ ...v, [`u${idx}`]: e.target.value }))} placeholder="Link ending (button)" aria-label="Link ending" className={small} style={border} />
               ))}
             </div>
           )}
-          <div className="flex items-stretch gap-2">
-            <div className="flex-1 min-w-0 px-3 py-2.5 rounded-[10px] text-[13px] truncate" style={{ background: T.bgSurface, color: T.textBody }} title={preview}>{preview || '—'}</div>
-            <button type="button" onClick={sendTemplate} disabled={busy || !tpl} className="px-5 shrink-0 rounded-[10px] text-white text-[14px] font-semibold disabled:opacity-50 inline-flex items-center gap-2" style={{ background: GREEN }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" /></svg>{busy ? 'Sending…' : 'Send template'}
-            </button>
+          <div className="flex items-end gap-2">
+            <p className="flex-1 min-w-0 text-[12.5px] leading-snug line-clamp-2" style={{ color: T.textBody }} title={preview}>{preview || '—'}</p>
+            <button type="button" onClick={sendTemplate} disabled={busy || !tpl} className="h-9 px-4 shrink-0 rounded-[8px] text-white text-[13px] font-semibold disabled:opacity-50" style={{ background: GREEN }}>{busy ? 'Sending…' : 'Send template'}</button>
           </div>
-          {!windowOpen && <p className="text-[11.5px]" style={{ color: T.textMuted }}>Outside the 24h window WhatsApp only allows approved templates. When they answer, the window opens and you can write (or let AI write) freely.</p>}
         </div>
       )}
-      {err && <div className="mt-2 text-[12.5px] font-medium" style={{ color: T.danger }}>{err}</div>}
+      <div className="px-3 py-2.5">
+        {windowOpen ? (
+          <div className="flex items-end gap-1.5">
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} title="Send a photo, file or voice note" className={iconBtn} style={{ color: T.textSecondary }}>📎</button>
+            <input ref={fileRef} type="file" className="hidden" onChange={(e) => sendFile(e.target.files?.[0])} />
+            <textarea ref={taRef} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Type a message" className="flex-1 min-w-0 px-3 py-2.5 rounded-[10px] text-[14px] outline-none resize-none leading-snug" style={{ ...border, background: T.bgSurface }} data-testid="composer-text"
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } }} />
+            <button type="button" onClick={() => setTplOpen((o) => !o)} title="Send an approved template" className={iconBtn} style={tplOpen ? { background: '#E3F3EA', color: GREEN } : { color: T.textSecondary }}>{tplIcon}</button>
+            <button type="button" onClick={onToggleAi} title="AI assistant" className={iconBtn} style={aiOpen ? { background: '#E3F3EA', color: GREEN } : { color: GREEN }} data-testid="ai-toggle">{sparkle}</button>
+            <button type="button" onClick={sendText} disabled={busy || !text.trim()} className="h-10 px-4 shrink-0 rounded-[10px] text-white text-[14px] font-semibold disabled:opacity-50" style={{ background: GREEN }}>{busy ? '…' : 'Send'}</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 min-w-0 text-[12.5px] truncate" style={{ color: T.textSecondary }} title="WhatsApp only allows approved templates until they write again">
+              🕓 24h reply window closed — only a template can be sent until they write again
+            </span>
+            <button type="button" onClick={onToggleAi} title="AI assistant (draft now, send when they answer)" className={iconBtn} style={aiOpen ? { background: '#E3F3EA', color: GREEN } : { color: GREEN }} data-testid="ai-toggle">{sparkle}</button>
+            <button type="button" onClick={() => setTplOpen((o) => !o)} className="h-10 px-4 shrink-0 rounded-[10px] text-[13.5px] font-semibold inline-flex items-center gap-1.5" style={tplOpen ? { background: '#E3F3EA', color: GREEN } : { background: GREEN, color: '#fff' }} data-testid="open-template">{tplIcon}{tplOpen ? 'Hide template' : 'Send a template'}</button>
+          </div>
+        )}
+        {err && <div className="mt-1.5 text-[12.5px] font-medium" style={{ color: T.danger }}>{err}</div>}
+      </div>
     </div>
+  );
+}
+
+// The AI assistant — a small chat beside the conversation (Roland: "a little Claude chat
+// window built in"). Ask in any language; it answers with the WhatsApp message in the
+// contact's language + what it means in English; "Use this" puts it in the reply box.
+function AiPanel({ conv, mode, text, onUse, onClose, request, onRequestDone }) {
+  const [items, setItems] = useState([]);   // { who: 'you' | 'ai' | 'error', … }
+  const [ask, setAsk] = useState('');
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { setItems([]); setAsk(''); }, [conv?.phone]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [items, busy]);
+  const run = useCallback(async (label, payload) => {
+    setItems((x) => [...x, { who: 'you', text: label }]);
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/inbox/ai?mode=${mode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: conv.phone, ...payload }) });
+      const j = await r.json().catch(() => ({}));
+      setItems((x) => [...x, r.ok ? { who: 'ai', message: j.message, english: j.english, note: j.note } : { who: 'error', text: j.error || `AI couldn't write it (${r.status})` }]);
+    } catch (e) { setItems((x) => [...x, { who: 'error', text: String(e) }]); } finally { setBusy(false); }
+  }, [conv?.phone, mode]);
+  useEffect(() => {
+    if (!request || !conv) return;
+    run(`Reply to: “${String(request.text || '').slice(0, 140)}”`, { instruction: `Reply to this message from the contact: "${String(request.text || '').slice(0, 800)}"` });
+    onRequestDone();
+  }, [request]); // eslint-disable-line react-hooks/exhaustive-deps
+  const send = () => { const a = ask.trim(); if (!a || busy) return; setAsk(''); run(a, { instruction: a }); };
+  const chip = 'text-[12px] px-2.5 py-1 rounded-full border whitespace-nowrap disabled:opacity-40';
+  return (
+    <aside className="w-[330px] shrink-0 flex flex-col border-l bg-white" style={{ borderColor: T.borderLight }} data-testid="ai-panel">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: T.borderLight }}>
+        <div className="flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: GREEN }}>{sparkle}AI assistant</div>
+        <button type="button" onClick={onClose} className="text-[18px] leading-none px-1" style={{ color: T.textMuted }} aria-label="Close AI assistant">×</button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5" style={{ background: '#FAFAF8' }}>
+        {items.length === 0 && (
+          <p className="text-[12.5px] leading-snug px-1" style={{ color: T.textSecondary }}>
+            Tell it what to say, in any language — it writes the WhatsApp message in their language (Spanish by default) and shows you the English. You check it and send.
+          </p>
+        )}
+        {items.map((it, i) => (it.who === 'you' ? (
+          <div key={i} className="flex justify-end"><div className="max-w-[85%] text-[12.5px] px-3 py-1.5 rounded-[12px]" style={{ background: T.textPrimary, color: '#fff' }}>{it.text}</div></div>
+        ) : it.who === 'error' ? (
+          <div key={i} className="text-[12.5px] px-3 py-2 rounded-[10px]" style={{ background: T.dangerSurface, color: T.danger }}>{it.text}</div>
+        ) : (
+          <div key={i} className="rounded-[12px] border bg-white p-2.5 space-y-1.5" style={{ borderColor: '#D5E8DC' }} data-testid="ai-draft">
+            <p className="text-[13.5px] whitespace-pre-wrap leading-snug" style={{ color: T.textPrimary }}>{it.message}</p>
+            {it.english && <p className="text-[12px] leading-snug italic" style={{ color: T.textSecondary }}>EN · {it.english}</p>}
+            {it.note && <p className="text-[11.5px] leading-snug" style={{ color: T.warning || T.textSecondary }}>Tip: {it.note}</p>}
+            <button type="button" onClick={() => onUse(it.message)} className="text-[12.5px] font-semibold px-3 py-1 rounded-full text-white" style={{ background: GREEN }}>Use this</button>
+          </div>
+        )))}
+        {busy && <p className="text-[12.5px] px-1" style={{ color: T.textMuted }}>Writing…</p>}
+        <div ref={endRef} />
+      </div>
+      <div className="border-t px-3 pt-2 pb-3 space-y-2" style={{ borderColor: T.borderLight }}>
+        <div className="flex gap-1.5 flex-wrap">
+          <button type="button" disabled={busy} onClick={() => run('Write the next reply', {})} className={chip} style={{ borderColor: T.borderLight, color: T.textBody }}>Write the next reply</button>
+          <button type="button" disabled={busy || !text.trim()} onClick={() => run('Improve my text', { draft: text.trim() })} className={chip} style={{ borderColor: T.borderLight, color: T.textBody }} title={text.trim() ? '' : 'Type something in the reply box first'}>Improve my text</button>
+        </div>
+        <div className="flex gap-1.5">
+          <input value={ask} onChange={(e) => setAsk(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} placeholder="e.g. tell her we'll check the photos today" className="flex-1 min-w-0 h-9 px-2.5 rounded-[8px] text-[13px] outline-none" style={{ border: `1px solid ${T.borderLight}` }} data-testid="ai-ask" />
+          <button type="button" onClick={send} disabled={busy || !ask.trim()} className="h-9 px-3 rounded-[8px] text-white text-[13px] font-semibold disabled:opacity-50" style={{ background: GREEN }}>Ask</button>
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -292,6 +317,8 @@ export default function InboxPage() {
   const [english, setEnglish] = useState({});          // message id → English
   const [allEnglish, setAllEnglish] = useState(false);
   const [aiRequest, setAiRequest] = useState(null);
+  const [draft, setDraft] = useState('');           // the reply box (the AI panel can fill it)
+  const [aiOpen, setAiOpen] = useState(false);
   const [tplMeta, setTplMeta] = useState({});
   const { dialog, confirm, prompt } = useDialog();
   const scrollRef = useRef(null);
@@ -326,7 +353,7 @@ export default function InboxPage() {
     fetch(`/api/inbox/templates?mode=${mode}`).then((r) => r.json()).then((j) => setTplMeta(Object.fromEntries((j.data || []).map((t) => [t.name, t])))).catch(() => setTplMeta({}));
   }, [mode]);
   useEffect(() => {
-    setEnglish({}); setAllEnglish(false); setContact(undefined); setConv(null); setMsgs([]);
+    setEnglish({}); setAllEnglish(false); setContact(undefined); setConv(null); setMsgs([]); setDraft('');
     if (!sel) return undefined;
     loadThread(sel, true);
     const t = setInterval(() => loadThread(sel), 4000);
@@ -463,47 +490,55 @@ export default function InboxPage() {
             <div className="flex-1 flex items-center justify-center text-[14px]" style={{ color: T.textMuted, background: '#EFEAE2' }}>Pick a conversation</div>
           ) : (
             <>
-              <div className="flex items-center gap-3 px-5 py-3 border-b bg-white flex-wrap" style={{ borderColor: T.borderLight }}>
-                <Avatar c={conv} size={46} />
+              <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-white" style={{ borderColor: T.borderLight }}>
+                <Avatar c={conv} size={40} />
                 <div className="min-w-0 flex-1">
                   {contact ? (
-                    <Link href={contact.profileUrl} onClick={openProfile} className="text-[17px] font-semibold truncate block underline-offset-2 hover:underline" style={{ color: T.textPrimary }} data-testid="contact-link" title="Open their activity page">
+                    <Link href={contact.profileUrl} onClick={openProfile} className="text-[15.5px] font-semibold truncate block underline-offset-2 hover:underline" style={{ color: T.textPrimary }} data-testid="contact-link" title="Open their activity page">
                       {contact.user.name || conv?.name || formatPhone(sel)} ↗
                     </Link>
-                  ) : <div className="text-[17px] font-semibold truncate" style={{ color: T.textPrimary }}>{conv?.name || formatPhone(sel)}</div>}
-                  <div className="text-[12.5px] truncate" style={{ color: T.textSecondary }} data-testid="contact-sub">
+                  ) : <div className="text-[15.5px] font-semibold truncate" style={{ color: T.textPrimary }}>{conv?.name || formatPhone(sel)}</div>}
+                  <div className="text-[12px] truncate" style={{ color: T.textSecondary }} data-testid="contact-sub">
                     {formatPhone(sel)}{conv?.sites ? ` · from ${siteNames(conv.sites)}` : ''}
                     {contact === undefined ? ' · …' : contact ? ` · ${contact.listings} ${contact.listings === 1 ? 'listing' : 'listings'}${contact.live !== contact.listings ? ` (${contact.live} live)` : ''}${contact.waitingPayment ? ` · ${contact.waitingPayment} waiting for payment` : ''}${contact.user.email ? ` · ${contact.user.email}` : ''}` : ' · not a Casa Libre account'}
                   </div>
+                  {(conv?.tags || []).length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {conv.tags.map((t) => (
+                        <span key={t} className="text-[11px] pl-2 pr-1 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: T.bgSurface, color: T.textBody }}>{t}
+                          <button type="button" onClick={() => patch({ remove_tags: [t] })} aria-label={`Remove ${t}`} style={{ color: T.textMuted }}>×</button></span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {(conv?.tags || []).map((t) => (
-                    <span key={t} className="text-[12px] pl-2.5 pr-1.5 py-1 rounded-full inline-flex items-center gap-1" style={{ background: T.bgSurface, color: T.textBody }}>{t}
-                      <button type="button" onClick={() => patch({ remove_tags: [t] })} aria-label={`Remove ${t}`} style={{ color: T.textMuted }}>×</button></span>
-                  ))}
-                  <button type="button" onClick={addTag} className="text-[13px] px-3 py-1.5 rounded-full" style={{ border: `1px dashed ${T.borderLight}`, color: T.textSecondary }}>+ Tag</button>
-                  <button type="button" onClick={() => setAllEnglish((v) => !v)} className="text-[13px] px-3 py-1.5 rounded-full" style={allEnglish ? { background: T.textPrimary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary }} data-testid="translate-all">{allEnglish ? 'English on' : 'Translate all'}</button>
-                  <button type="button" onClick={setDnc} className="text-[13px] px-3 py-1.5 rounded-full" style={conv?.dnc ? { background: T.danger, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.danger }} data-testid="dnc">{conv?.dnc ? 'Do not contact ✓' : 'Do not contact'}</button>
-                  <button type="button" onClick={markUnread} className="text-[14px] font-semibold px-4 py-2 rounded-[10px] text-white inline-flex items-center gap-2" style={{ background: GREEN }} data-testid="mark-unread" title="Put the dot back so someone comes back to it">
-                    <span className="w-2.5 h-2.5 rounded-full bg-white" aria-hidden="true" />Mark as unread
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onClick={addTag} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={{ border: `1px dashed ${T.borderLight}`, color: T.textSecondary }}>+ Tag</button>
+                  <button type="button" onClick={() => setAllEnglish((v) => !v)} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={allEnglish ? { background: T.textPrimary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary }} data-testid="translate-all">{allEnglish ? 'English on' : 'Translate all'}</button>
+                  <button type="button" onClick={setDnc} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={conv?.dnc ? { background: T.danger, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.danger }} data-testid="dnc">{conv?.dnc ? 'Do not contact ✓' : 'Do not contact'}</button>
+                  <button type="button" onClick={markUnread} className="text-[13px] font-semibold px-3 py-1.5 rounded-[10px] text-white inline-flex items-center gap-1.5" style={{ background: GREEN }} data-testid="mark-unread" title="Put the dot back so someone comes back to it">
+                    <span className="w-2 h-2 rounded-full bg-white" aria-hidden="true" />Mark as unread
                   </button>
                 </div>
               </div>
-              {conv?.dnc && (
-                <div className="px-5 py-2 text-[13px] font-medium" style={{ background: '#FBEAEA', color: T.danger }} data-testid="dnc-banner">
+              {conv?.dnc ? (
+                <div className="px-4 py-1.5 text-[12.5px] font-medium" style={{ background: '#FBEAEA', color: T.danger }} data-testid="dnc-banner">
                   Do not contact{conv.dnc.note ? ` — ${conv.dnc.note}` : ''}. Only answer if they write first.
                 </div>
-              )}
-              {conv && !conv.dnc && conv.unresponded && (
-                <div className="px-5 py-1.5 text-[12.5px]" style={{ background: '#FFF6E5', color: T.textBody }} data-testid="unresponded-banner">They wrote last — close the loop with an answer, even a short one.</div>
-              )}
-              <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ background: '#EFEAE2' }}>
-                {withDays.map((x, i) => (x.day !== undefined
-                  ? <div key={`d${i}`} className="flex justify-center my-3"><span className="text-[12.5px] px-3 py-1 rounded-[8px] bg-white shadow-sm" style={{ color: T.textSecondary }}>{dayLabel(x.day)}</span></div>
-                  : <Bubble key={x.id} m={x} mode={mode} english={english[x.id]} tplMeta={tplMeta} onTranslate={toggleOne} onAiReply={(m) => setAiRequest({ text: m.text, at: Date.now() })} />))}
-                {msgs.length === 0 && <p className="text-center text-[13px] mt-10" style={{ color: T.textMuted }}>No messages yet.</p>}
+              ) : conv?.unresponded ? (
+                <div className="px-4 py-1 text-[12px]" style={{ background: '#FFF6E5', color: T.textBody }} data-testid="unresponded-banner">They wrote last — close the loop with an answer, even a short one.</div>
+              ) : null}
+              <div className="flex-1 min-h-0 flex">
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ background: '#EFEAE2' }}>
+                    {withDays.map((x, i) => (x.day !== undefined
+                      ? <div key={`d${i}`} className="flex justify-center my-3"><span className="text-[12.5px] px-3 py-1 rounded-[8px] bg-white shadow-sm" style={{ color: T.textSecondary }}>{dayLabel(x.day)}</span></div>
+                      : <Bubble key={x.id} m={x} mode={mode} english={english[x.id]} tplMeta={tplMeta} onTranslate={toggleOne} onAiReply={(m) => { setAiOpen(true); setAiRequest({ text: m.text, at: Date.now() }); }} />))}
+                    {msgs.length === 0 && <p className="text-center text-[13px] mt-10" style={{ color: T.textMuted }}>No messages yet.</p>}
+                  </div>
+                  {conv && <Composer conv={conv} mode={mode} text={draft} setText={setDraft} onSent={() => { loadThread(sel); loadList(); }} aiOpen={aiOpen} onToggleAi={() => setAiOpen((o) => !o)} />}
+                </div>
+                {conv && aiOpen && <AiPanel conv={conv} mode={mode} text={draft} onUse={(t) => setDraft(t)} onClose={() => setAiOpen(false)} request={aiRequest} onRequestDone={() => setAiRequest(null)} />}
               </div>
-              {conv && <Composer conv={conv} mode={mode} onSent={() => { loadThread(sel); loadList(); }} aiRequest={aiRequest} onAiDone={() => setAiRequest(null)} />}
             </>
           )}
         </div>

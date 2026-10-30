@@ -4,6 +4,7 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import * as b2 from '@/lib/b2';
 import { forget } from '@/lib/swrCache';
+import { teamDeletionRow } from '@/lib/listingDeletion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,11 +62,17 @@ async function handlePATCH(req, { params }) {
 // DELETE /api/properties/:id  -> delete property (cascades image rows) + purge B2 objects
 async function handleDELETE(_req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-  const { select, update, remove } = dbFor(activeCountry());
+  const { select, update, remove, insert } = dbFor(activeCountry());
   try {
     const imgs = await select('property_images', `property_id=eq.${params.id}&select=storage_key`);
+    // a user's listing: keep a record of it first — the row is gone after this (lib/listingDeletion.js)
+    const [prop] = await select('properties', `select=id,origin,created_by,created_at,status,raw_data,property_type,listing_type,neighborhood,city&id=eq.${params.id}&limit=1`).catch(() => []);
     // remove the row first (FK cascade drops property_images rows)
     await remove('properties', `id=eq.${params.id}`);
+    if (prop?.origin === 'user' && prop.created_by) {
+      const [owner] = await select('users', `select=email&id=eq.${prop.created_by}&limit=1`).catch(() => []);
+      await insert('email_log', [teamDeletionRow(prop, { ownerEmail: owner?.email, adminEmail: getSession()?.email })], { returning: 'minimal' }).catch((e) => console.error('[properties] deletion record', e?.message || e));
+    }
     // then purge the stored objects from Backblaze
     await Promise.all(imgs.filter((i) => i.storage_key).map((i) => b2.remove(i.storage_key)));
     return NextResponse.json({ ok: true, imagesPurged: imgs.length });

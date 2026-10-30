@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { normalizeEmail, isDeletedEmail, listingSummary } from '@/lib/userInsights';
+import { DELETED_EVENT, deletedListings } from '@/lib/listingDeletion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,8 +29,13 @@ export async function GET(req) {
     if (!user && email) [user] = await select('users', `select=${USER_COLS}&email=eq.${encodeURIComponent(email)}&limit=1`);
     if (!user || isDeletedEmail(user.email)) return NextResponse.json({ found: false, listings: [] });
 
-    const rows = await select('properties', `select=${LISTING_COLS}&created_by=eq.${user.id}&order=created_at.desc&limit=50`);
+    const [rows, deletedRows] = await Promise.all([
+      select('properties', `select=${LISTING_COLS}&created_by=eq.${user.id}&order=created_at.desc&limit=50`),
+      // listings they (or the team) deleted — the row is gone, the record stays (lib/listingDeletion.js)
+      select('email_log', `select=run_id,subject,error,created_at&automation_id=eq.${DELETED_EVENT}&to_email=eq.${encodeURIComponent(user.email)}&order=created_at.desc&limit=50`).catch(() => []),
+    ]);
     return NextResponse.json({
+      deleted: deletedListings(deletedRows),
       found: true,
       user: {
         id: user.id, email: user.email, name: user.full_name || '', phone: user.phone || '',

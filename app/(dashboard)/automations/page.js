@@ -209,6 +209,7 @@ export default function AutomationsPage() {
   const [vform, setVform] = useState(null);
   const [dform, setDform] = useState(null);
   const [xform, setXform] = useState(null);
+  const [lform, setLform] = useState(null);   // "Listing deleted → ask why"
   const [nform, setNform] = useState(null);
   const [hform, setHform] = useState(null);
   const [sform, setSform] = useState(null);
@@ -236,6 +237,8 @@ export default function AutomationsPage() {
     setDform(d ? { steps: stepsFromHours(d.milestones), template_id: d.template_id || '' } : null);
     const x = j.duplicates?.automation;
     setXform(x ? { template_id: x.template_id || '' } : null);
+    const l = j.deleted?.automation;
+    setLform(l ? { template_id: l.template_id || '' } : null);
     const n = j.noListing?.settings;
     setNform(n ? { days: n.days, secondAfter: n.secondAfter, templateId: n.templateId, reminderTemplateId: n.reminderTemplateId } : null);
     const hs = j.listingHeld?.settings;
@@ -260,7 +263,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -323,6 +326,14 @@ export default function AutomationsPage() {
     const on = !xa.enabled;
     if (on && !(await ask('Switch "Same property listed twice" on?\n\nA listing that repeats one of the user\'s own (same details + half or more of the same photos) is held as "Under review — possible duplicate" instead of published, and the user is emailed right away.'))) return;
     run('dups', 'toggle', () => put('dups', { enabled: on }, on ? '“Same property listed twice” is on.' : '“Same property listed twice” is off.'));
+  };
+
+  const la = data.deleted?.automation;
+  const lDirty = !!(la && lform && String(lform.template_id || '') !== String(la.template_id || ''));
+  const toggleDeleted = async () => {
+    const on = !la.enabled;
+    if (on && !(await ask('Switch "Listing deleted → ask why" on?\n\nRight after a seller deletes one of their listings, they get this email asking why, with a link to a short feedback form. At most once per person every 7 days.'))) return;
+    run('deleted', 'toggle', () => put('deleted', { enabled: on }, on ? '“Listing deleted → ask why” is on.' : '“Listing deleted → ask why” is off.'));
   };
 
   const nl = data.noListing;
@@ -541,6 +552,27 @@ export default function AutomationsPage() {
             <TemplatePicker label="Email sent" value={xform.template_id} templates={data.templates} onChange={(v) => setXform((f) => ({ ...f, template_id: v }))} />
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
               Use <span className="font-mono">{'{{listing_links}}'}</span> for the links to each copy and <span className="font-mono">{'{{my_listings_url}}'}</span> for the button.
+            </p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {la && lform ? (
+        <AutomationCard
+          title="Listing deleted → ask why"
+          channelId="listing_deleted"
+          description="Right after a seller deletes one of their listings, they get this email asking why — with a link to a short feedback form (one-tap reasons: sold it, no contacts, didn’t want to pay…). Answers land in Feedback with the source “listing_deleted”."
+          enabled={la.enabled} enabledAt={la.enabled_at} busy={busy.deleted}
+          onToggle={toggleDeleted} dirty={lDirty}
+          onSave={() => run('deleted', 'save', () => put('deleted', { template_id: lform.template_id }, 'Changes saved.'))}
+          footnote={`At most one email per person every 7 days (deleting three listings at once = one email). Listings the team deletes in Properties don't send it. Every deletion is recorded either way and shows on the person's activity page.${data.deleted?.deletions ? ` ${data.deleted.deletions.toLocaleString('en-US')} deletions recorded` : ''}${data.deleted?.sent ? ` · ${data.deleted.sent.toLocaleString('en-US')} emails sent.` : data.deleted?.deletions ? '.' : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A seller deletes one of their listings (My listings → Delete)" />
+          <Connector />
+          <StepCard n={2} kind="Email" title="Email asking why, with a button to the feedback form">
+            <TemplatePicker label="Email sent" value={lform.template_id} templates={data.templates} onChange={(v) => setLform((f) => ({ ...f, template_id: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              Use <span className="font-mono">{'{{feedback_url}}'}</span> for the button (the feedback form, opened on “Why did you delete your listing?”), <span className="font-mono">{'{{property_title}}'}</span> for the listing and <span className="font-mono">{'{{publish_url}}'}</span> to list again.
             </p>
           </StepCard>
         </AutomationCard>

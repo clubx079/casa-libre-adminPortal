@@ -6,7 +6,7 @@ import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, 
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
-  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle, Smartphone,
+  Activity, ExternalLink, Radio, Filter, Heart, Phone, Check, Search, Home, Mail, MessageCircle, Smartphone, Trash2,
 } from 'lucide-react';
 
 // Casa Libre palette (neo-brutalist: ink accent on warm paper).
@@ -226,12 +226,13 @@ const EMAIL_STATUS_COLOR = (s) => (s === 'opened' || s === 'clicked' ? T.success
 const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
 const ChannelChip = ({ ch }) => (
   <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : ch === 'activity' ? { background: '#F5EAD5', color: '#8A5A12' } : { background: T.bgSurface, color: T.textSecondary }}>
-    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : ch === 'activity' ? <Home className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : ch === 'activity' ? 'Paid listing' : 'Email'}
+    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : ch === 'activity' ? { background: '#F5EAD5', color: '#8A5A12' } : ch === 'listing' ? { background: '#F6E4E1', color: T.danger } : { background: T.bgSurface, color: T.textSecondary }}>
+    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : ch === 'activity' ? <Home className="w-3 h-3" /> : ch === 'listing' ? <Trash2 className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : ch === 'activity' ? 'Paid listing' : ch === 'listing' ? 'Listing' : 'Email'}
   </span>
 );
-// Paid-listing steps (/api/users/paywall, lib/paywallActivity.js) shown in the same list, by time.
-const STEP_STATUS = { paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted],
+// Paid-listing steps and deleted listings (/api/users/paywall, lib/paywallActivity.js +
+// lib/listingDeletion.js) shown in the same list, by time.
+const STEP_STATUS = { deleted: ['deleted', T.danger], paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted],
   ph_opened: ['pay screen', T.info], ph_started: ['tapped pay', T.info], ph_paid: ['paid', T.success], ph_gift: ['gift taken', T.success], ph_gift_failed: ['gift failed', T.danger] };
 const UserMessages = ({ email, userId }) => {
   const [em, setEm] = useState(null);   // /api/users/emails body or { error }
@@ -252,7 +253,7 @@ const UserMessages = ({ email, userId }) => {
 
   const pct = (v) => (v == null ? '—' : `${v}%`);
   const loading = em === null || wa === null || pw === null;
-  const steps = pw && !pw.error && pw.found ? pw.events.map((e, i) => ({ ...e, id: `${e.kind}-${e.listingId}-${i}`, ch: 'activity' })) : [];
+  const steps = pw && !pw.error && pw.found ? pw.events.map((e, i) => ({ ...e, id: `${e.kind}-${e.listingId}-${i}`, ch: e.kind === 'deleted' ? 'listing' : 'activity' })) : [];
   const es = em && !em.error ? em.summary : null;
   const ws = wa && !wa.error ? wa.summary : null;
   const rows = [
@@ -266,7 +267,7 @@ const UserMessages = ({ email, userId }) => {
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Mail className="w-4 h-4" style={{ color: T.primary }} />
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Messages sent</h2>
-        <span className="text-xs" style={{ color: T.textMuted }}>emails, WhatsApp and paid-listing steps, newest first</span>
+        <span className="text-xs" style={{ color: T.textMuted }}>emails, WhatsApp, paid-listing steps and deleted listings, newest first</span>
         {wa && !wa.error ? (
           <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
             WhatsApp: {wa.phone ? `${wa.phone} · ${wa.verified ? 'verified' : 'not verified'}` : 'no number'}{wa.optedOut ? ' · opted out' : ''}
@@ -302,7 +303,7 @@ const UserMessages = ({ email, userId }) => {
             {em?.tracking === 'error' ? ` Resend couldn't be read right now (${em.trackingError}).` : ''}
           </p>
           <div className="inline-flex rounded-full p-0.5 mb-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp'], ...(steps.length ? [['activity', 'Paid listing']] : [])].map(([v, l]) => (
+            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp'], ...(steps.some((s) => s.ch === 'activity') ? [['activity', 'Paid listing']] : []), ...(steps.some((s) => s.ch === 'listing') ? [['listing', 'Deleted listings']] : [])].map(([v, l]) => (
               <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-full text-[11px] font-medium" style={only === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
             ))}
           </div>
@@ -320,10 +321,10 @@ const UserMessages = ({ email, userId }) => {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    r.ch === 'activity' ? (
-                      <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight, background: '#FFFBF3' }} data-testid="paywall-step">
+                    r.ch === 'activity' || r.ch === 'listing' ? (
+                      <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight, background: r.ch === 'listing' ? '#FDF5F3' : '#FFFBF3' }} data-testid={r.ch === 'listing' ? 'deleted-step' : 'paywall-step'}>
                         <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
-                        <td className="py-2 pr-3 align-top"><ChannelChip ch="activity" /></td>
+                        <td className="py-2 pr-3 align-top"><ChannelChip ch={r.ch} /></td>
                         <td className="py-2 pr-3 align-top font-medium" style={{ color: T.textPrimary }} colSpan={2}>
                           {r.title}
                           {r.detail ? <span className="block text-[11px] font-normal" style={{ color: T.textSecondary }}>{r.detail}</span> : null}
@@ -439,7 +440,7 @@ const UserFacts = ({ user, profile, loading }) => {
           <div className="flex items-center gap-2 mb-3">
             <Home className="w-4 h-4" style={{ color: T.primary }} />
             <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Listed properties</h2>
-            {acct?.found ? <span className="text-xs" style={{ color: T.textMuted }}>{acct.listings.length}</span> : null}
+            {acct?.found ? <span className="text-xs" style={{ color: T.textMuted }}>{acct.listings.length}{acct.deleted?.length ? ` · ${acct.deleted.length} deleted` : ''}</span> : null}
           </div>
           {acct === null ? (
             <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
@@ -447,10 +448,27 @@ const UserFacts = ({ user, profile, loading }) => {
             <p className="text-xs" style={{ color: T.textMuted }}>Couldn&apos;t load their listings.</p>
           ) : !acct.found ? (
             <p className="text-xs" style={{ color: T.textMuted }}>No account found for this person, so no listings to show.</p>
-          ) : acct.listings.length === 0 ? (
+          ) : acct.listings.length === 0 && !acct.deleted?.length ? (
             <p className="text-xs" style={{ color: T.textMuted }}>No listings yet.</p>
           ) : (
             <div className="space-y-2">
+              {/* deleted listings: the listing is gone, only the record of it is left */}
+              {(acct.deleted || []).map((d) => (
+                <div key={`del-${d.id}-${d.deletedAt}`} className="flex items-center gap-3 p-2" style={{ border: `1px dashed ${T.borderLight}`, borderRadius: '10px', background: '#FDF8F6' }} data-testid="deleted-listing">
+                  <div className="w-14 h-14 shrink-0 flex items-center justify-center" style={{ background: T.bgSurface, borderRadius: '8px' }}>
+                    <Trash2 className="w-5 h-5" style={{ color: T.textMuted }} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium truncate" style={{ color: T.textSecondary }}>{d.title}{d.ref ? <span className="font-normal" style={{ color: T.textMuted }}> · Ref {d.ref}</span> : null}</p>
+                    <p className="text-[11px]" style={{ color: T.textMuted }}>
+                      <span className="font-semibold" style={{ color: T.danger }}>Deleted{d.by === 'team' ? ' by the team' : ''}</span>
+                      {` · ${d.estimated ? 'around ' : ''}${fmtDateOnly(d.deletedAt)}`}
+                      {d.listedAt ? ` · listed ${fmtDateOnly(d.listedAt)}` : ''}
+                      {d.views != null ? ` · ${d.views.toLocaleString('en-US')} views` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
               {acct.listings.map((l) => (
                 <div key={l.id} className="flex items-center gap-3 p-2" style={{ border: `1px solid ${T.borderLight}`, borderRadius: '10px' }}>
                   <div className="w-14 h-14 shrink-0 overflow-hidden" style={{ background: T.bgSurface, borderRadius: '8px' }}>

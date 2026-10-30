@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, DUPLICATES_AUTOMATION_ID, validateSettings, validateViewsSettings, validateDraftSettings, validateDuplicateSettings, automationStats, draftStepCounts } from '@/lib/automationAdmin';
+import { AUTOMATION_ID, VIEWS_AUTOMATION_ID, DRAFTS_AUTOMATION_ID, DUPLICATES_AUTOMATION_ID, DELETED_AUTOMATION_ID, validateSettings, validateViewsSettings, validateDraftSettings, validateDuplicateSettings, automationStats, draftStepCounts } from '@/lib/automationAdmin';
 import { dbError, q, EMAIL_ONLY } from '@/lib/automationDb';
 import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoListing } from '@/lib/noListingAdmin';
 import { LISTING_HELD_ID, HELD_REASONS, listingHeldConfig, listingHeldCounts, saveListingHeld } from '@/lib/listingHeldAdmin';
@@ -60,6 +60,18 @@ async function payload(db) {
       duplicates = { automation: xa, sent: sent.count || 0 };
     }
   } catch { duplicates = null; }
+  // "Listing deleted → ask why" (row seeded per country, like the duplicates one).
+  let deleted = null;
+  try {
+    const [la] = await db.select('automations', `select=*&id=eq.${DELETED_AUTOMATION_ID}&limit=1`);
+    if (la) {
+      const [sent, events] = await Promise.all([
+        db.selectWithCount('email_log', `select=id&automation_id=eq.${DELETED_AUTOMATION_ID}&status=eq.sent&limit=1&${EMAIL_ONLY}`).catch(() => ({ count: 0 })),
+        db.selectWithCount('email_log', 'select=id&automation_id=eq.event_listing_deleted&limit=1').catch(() => ({ count: 0 })),
+      ]);
+      deleted = { automation: la, sent: sent.count || 0, deletions: events.count || 0 };
+    }
+  } catch { deleted = null; }
   // "Signed up but never listed" — no row until the first save on the card (defaults shown).
   let noListing = null;
   try {
@@ -117,6 +129,7 @@ async function payload(db) {
     views,
     drafts,
     duplicates,
+    deleted,
     noListing,
     listingHeld,
     paymentFollowup,
@@ -176,6 +189,15 @@ export async function PUT(req) {
       const v = validateDuplicateSettings(patch, cur);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       await db.update('automations', `id=eq.${q(DUPLICATES_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === DELETED_AUTOMATION_ID) {
+      const [cur] = await db.select('automations', `select=*&id=eq.${DELETED_AUTOMATION_ID}&limit=1`);
+      if (!cur) return NextResponse.json({ pending: true, error: 'not_set_up' });
+      const { id, ...patch } = body;
+      const v = validateDuplicateSettings(patch, cur);   // same shape: on/off + one template
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      await db.update('automations', `id=eq.${q(DELETED_AUTOMATION_ID)}`, { ...v.value, updated_at: new Date().toISOString() }, { returning: 'minimal' });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }
     if (body.id === LISTING_HELD_ID) {

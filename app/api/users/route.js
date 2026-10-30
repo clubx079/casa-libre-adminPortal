@@ -7,6 +7,7 @@ import { selectAll } from '@/lib/selectAll';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
 import { listingCounts, countListings } from '@/lib/listingCount';
+import { DELETED_EVENT } from '@/lib/listingDeletion';
 import { listingPhones } from '@/lib/listingPhones';
 import { matchesUser } from '@/lib/userSearch';
 import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
@@ -71,6 +72,12 @@ export async function GET(request) {
     // Only published ones; a listing waiting for payment is counted apart (listings_waiting).
     const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => ({ published: new Map(), waiting: new Map() }));
     for (const u of users) { u.listings = counts.published.get(String(u.id)) || 0; u.listings_waiting = counts.waiting.get(String(u.id)) || 0; }
+    // Listings they deleted (the record kept for each, lib/listingDeletion.js) — shown apart.
+    const emails = users.map((u) => String(u.email || '').toLowerCase()).filter(Boolean);
+    const delRows = emails.length ? await dbFor(activeCountry()).select('email_log', `select=to_email&automation_id=eq.${DELETED_EVENT}&to_email=in.(${emails.map((e) => `"${e.replace(/"/g, '')}"`).join(',')})&limit=5000`).catch(() => []) : [];
+    const delBy = new Map();
+    for (const r of delRows) delBy.set(r.to_email, (delBy.get(r.to_email) || 0) + 1);
+    for (const u of users) u.listings_deleted = delBy.get(String(u.email || '').toLowerCase()) || 0;
     // No phone on the profile → the one on their newest listing (shown as "from listing").
     const fromListing = await listingPhones(dbFor(activeCountry()).select, users.filter((u) => !u.phone).map((u) => u.id)).catch(() => new Map());
     for (const u of users) if (!u.phone && fromListing.has(String(u.id))) { u.phone = fromListing.get(String(u.id)); u.phone_source = 'listing'; }

@@ -349,6 +349,7 @@ export default function UsersPage() {
                         <span className="inline-block px-2 py-0.5 rounded-full font-semibold" style={{ background: '#F5EAD5', color: '#8A5A12' }} title={`${LISTING_FREE_LIMIT}+ listings — at or over the free listings per month`}>{u.listings}</span>
                       ) : <span style={{ color: u.listings ? T.textBody : T.textMuted }}>{u.listings || 0}</span>}
                       {u.listings_waiting > 0 && <span className="block text-[10.5px] mt-0.5 whitespace-nowrap" style={{ color: '#8A5A12' }} title="Saved over the free limit, not paid — not on the site">+{u.listings_waiting} waiting for payment</span>}
+                      {u.listings_deleted > 0 && <span className="block text-[10.5px] mt-0.5 whitespace-nowrap" style={{ color: T.textMuted }} title="Listings they (or the team) deleted — still counted in the free listings of their month">{u.listings_deleted} deleted</span>}
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{fmtDate(u.created_at)}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textMuted }}>{fmtWhen(u.last_login_at)}</td>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toE164, cleanAudience, audienceCounts, neededFields, missingValue, relayVariables, variablesProblem, previewText, campaignSlug, matchCampaignMessage, campaignResults, skipReason, pickBatch, retargetRows, simulateRecipients, liveProblem, isSimPhone, SIM_PHONES, audienceLabel } from '../lib/waCampaigns.js';
+import { toE164, cleanAudience, audienceCounts, neededFields, missingValue, relayVariables, variablesProblem, previewText, campaignSlug, matchCampaignMessage, campaignResults, skipReason, pickBatch, retargetRows, simulateRecipients, liveProblem, isSimPhone, SIM_PHONES, audienceLabel, recipientRef, linkAttr, trackedAttributes, markClicks } from '../lib/waCampaigns.js';
 
 describe('audience', () => {
   it('cleans phones, de-duplicates, keeps the first name', () => {
@@ -78,11 +78,31 @@ describe('batches', () => {
 
 describe('variables', () => {
   const tpl = { variables: { body: 2, url_buttons: [0] } };
-  it('tracked button: /r/wa?sell=1&b=<batch> — no contact field needed, never re-tagged', () => {
+  it('tracked button: each person own link /r/wa?sell=1&b=<batch>&r=<code>, from a contact attribute', () => {
     const map = { body: [{ source: 'contact.first_name' }], button: { source: 'tracked' } };
-    expect(relayVariables(map, 'wc-agentes-lote-2-ab12').buttons).toEqual([{ index: 0, source: 'static:wa?sell=1&b=wc-agentes-lote-2-ab12' }]);
+    const slug = 'wc-agentes-lote-2-ab12';
+    expect(relayVariables(map, slug).buttons).toEqual([{ index: 0, source: `attr.${linkAttr(slug)}` }]);
+    expect(linkAttr(slug)).toMatch(/^clb_[0-9a-z]+$/);
+    expect(linkAttr(slug)).not.toBe(linkAttr('wc-otro-lote'));   // one key per batch: never overwrites another batch's link
     expect(neededFields(map)).toEqual(['first_name']);
     expect(variablesProblem({ variables: { body: 1, url_buttons: [0] } }, map)).toBeNull();
+    const people = [{ phone: '+595981000001', key: 'lead:1' }, { phone: '+595981000002', key: 'lead:2' }, { phone: '+595999000001', key: 'lead:3', sim: true }, { phone: '+595999000001', key: 'lead:4', sim: true }];
+    const attrs = trackedAttributes(slug, people);
+    expect(attrs.get('+595981000001')).toEqual({ [linkAttr(slug)]: `wa?sell=1&b=${slug}&r=${recipientRef('lead:1')}` });
+    expect(recipientRef('lead:1')).not.toBe(recipientRef('lead:2'));
+    expect(recipientRef('lead:1')).toBe(recipientRef('lead:1'));   // stable: no store needed
+    expect(attrs.get('+595999000001')[linkAttr(slug)]).toMatch(/&r=sim$/);   // a simulation number carries many people
+    expect(attrs.size).toBe(3);
+  });
+  it('who clicked: by their own code; a one-person batch without codes gets the batch taps', () => {
+    const rows = [{ phone: '+595981000001', status: 'read', meta: { key: 'lead:1' } }, { phone: '+595981000002', status: 'read', meta: { key: 'lead:2' } }, { phone: '+595981000003', status: 'failed', meta: { key: 'lead:3', skipped: 'opted_out' } }];
+    const marked = markClicks(rows, new Map([[recipientRef('lead:2'), '2026-10-30T15:26:40Z']]));
+    expect(marked.map((r) => r.meta.clicked_at || null)).toEqual([null, '2026-10-30T15:26:40Z', null]);
+    // the Testing batch (sent before codes): one person, taps without a code → theirs
+    const one = [{ phone: '+923362771289', status: 'read', meta: { key: '+923362771289' } }];
+    expect(markClicks(one, new Map([['', '2026-10-30T15:24:46Z']]))[0].meta.clicked_at).toBe('2026-10-30T15:24:46Z');
+    expect(markClicks(rows, new Map([['', '2026-10-30T15:24:46Z']])).every((r) => !r.meta.clicked_at)).toBe(true);   // 2 people: can't tell whose
+    expect(campaignResults(marked, 0)).toMatchObject({ clicked: 1 });
   });
   it('header variables (Relay: variables.header is an array, like body)', () => {
     expect(relayVariables({ header: [{ source: 'static', text: 'Octubre' }], body: [] }).header).toEqual(['static:Octubre']);

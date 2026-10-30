@@ -5,9 +5,9 @@
 //   DELETE                      → remove a draft / the admin's record (not Relay's)
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { campaignResults, liveProblem, audienceLabel } from '@/lib/waCampaigns';
+import { campaignResults, liveProblem, audienceLabel, markClicks } from '@/lib/waCampaigns';
 import { getCampaign, listRecipients, refreshResults, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
-import { batchClicks } from '@/lib/waCampaignClicks';
+import { batchClicks, recipientClicks } from '@/lib/waCampaignClicks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,8 @@ export async function GET(req, { params }) {
   const c = await getCampaign(params.id);
   if (!c) return bad('not_found', 404);
   const force = new URL(req.url).searchParams.get('fresh') === '1';
-  const [recipients, clicks] = await Promise.all([listRecipients(c.id), clicksFor(c, force)]);
+  const [rows, clicks, byRef] = await Promise.all([listRecipients(c.id), clicksFor(c, force), c.demo ? new Map() : recipientClicks(c.slug, { force })]);
+  const recipients = markClicks(rows, byRef);   // each person's click (their own link), for the Clicked column
   return NextResponse.json({ campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
 }
 

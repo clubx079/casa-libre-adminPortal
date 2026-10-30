@@ -11,12 +11,12 @@
 // Sending = Relay's POST /v1/campaigns: everyone who hasn't opted out receives it (Relay no
 // longer needs an opt-in, 2026-10-29). Test mode: leads and users run on the simulation
 // numbers (nobody real is messaged). Live: never the simulation numbers; never leads while
-// WA_LEADS_LIVE is not '1' (decision: no marketing to leads yet).
+// WA_LEADS_LIVE is '0' (on by default since 2026-10-30; the form asks before a live send to leads).
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { relayTemplates } from '@/lib/relayAdmin';
 import { audienceCounts, relayVariables, variablesProblem, campaignSlug, neededFields, pickBatch, simulateRecipients, liveProblem, skipReason, audienceLabel } from '@/lib/waCampaigns';
-import { createCampaign, addRecipients, relayOptIns, loadAudience, sendCampaign, campaignsWithResults, batchedKeys, getCampaign } from '@/lib/waCampaignStore';
+import { createCampaign, addRecipients, relayOptIns, loadAudience, sendCampaign, campaignsWithResults, batchedKeys, getCampaign, refreshIfStale } from '@/lib/waCampaignStore';
 import { modeOf, inboxModes } from '@/lib/relayInbox';
 import { batchClicks } from '@/lib/waCampaignClicks';
 
@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const bad = (error, status = 400) => NextResponse.json({ error }, { status });
-const leadsLive = () => process.env.WA_LEADS_LIVE === '1';
+const leadsLive = () => process.env.WA_LEADS_LIVE !== '0';
 
 async function templatesList() {
   const { configured, templates } = await relayTemplates();
@@ -64,11 +64,15 @@ export async function GET(req) {
       return NextResponse.json({
         ...counts, invalid: batch.invalid, range: batch.range, simulated: batch.recipients.filter((r) => r.sim).length,
         blocked: mode === 'live' ? liveProblem(batch.recipients, { leadsLive: leadsLive() }) : null,
+        leads: batch.recipients.filter((r) => String(r.key || '').startsWith('lead:')).length,   // the form confirms a live send to leads
         tags: opt.tags, relayContacts: opt.contacts,
         sample: batch.recipients.slice(0, 8).map((r) => ({ phone: r.phone, name: r.name, sim: !!r.sim, status: opt.map.get(r.phone) || 'not a contact yet' })),
       });
     }
     const all = await campaignsWithResults(clicksBySlug);
+    // recent batches whose statuses weren't read from Relay in the last minute: read them in the
+    // background, so the next look shows delivered / read (the page itself doesn't wait)
+    for (const c of all.filter((x) => !x.demo).slice(0, 8)) refreshIfStale(c, { wait: 0 }).catch(() => {});
     const mode = sp.get('mode');
     return NextResponse.json({ campaigns: (mode ? all.filter((c) => c.mode === modeOf(mode)) : all).map((c) => ({ ...c, audience_label: audienceLabel(c.audience_def) })), modes: inboxModes(), leadsLive: leadsLive() });
   } catch (e) {

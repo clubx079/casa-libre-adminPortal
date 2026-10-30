@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { campaignResults, liveProblem, audienceLabel, markClicks } from '@/lib/waCampaigns';
-import { getCampaign, listRecipients, refreshResults, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
+import { getCampaign, listRecipients, refreshResults, refreshIfStale, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
 import { batchClicks, recipientClicks } from '@/lib/waCampaignClicks';
 
 export const runtime = 'nodejs';
@@ -27,6 +27,7 @@ export async function GET(req, { params }) {
   const c = await getCampaign(params.id);
   if (!c) return bad('not_found', 404);
   const force = new URL(req.url).searchParams.get('fresh') === '1';
+  await refreshIfStale(c);   // delivered / read / replied from Relay, when last read over a minute ago
   const [rows, clicks, byRef] = await Promise.all([listRecipients(c.id), clicksFor(c, force), c.demo ? new Map() : recipientClicks(c.slug, { force })]);
   const recipients = markClicks(rows, byRef);   // each person's click (their own link), for the Clicked column
   return NextResponse.json({ campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
@@ -46,7 +47,7 @@ export async function POST(req, { params }) {
     if (c.state !== 'draft') return bad('Only a draft can be sent from here.');
     const recipients = (await listRecipients(c.id)).filter((r) => !r.meta.skipped).map((r) => ({ phone: r.phone, name: r.meta.name, email: r.email, key: r.meta.key, sim: !!r.meta.sim }));
     if (!recipients.length) return bad('Nobody in this batch can receive it.');
-    if (c.mode !== 'test') { const stop = liveProblem(recipients, { leadsLive: process.env.WA_LEADS_LIVE === '1' }); if (stop) return bad(stop, 403); }
+    if (c.mode !== 'test') { const stop = liveProblem(recipients, { leadsLive: process.env.WA_LEADS_LIVE !== '0' }); if (stop) return bad(stop, 403); }
     await saveCampaign(c.id, { state: 'sending' });
     return NextResponse.json(await sendCampaign(c.id, { mode: c.mode, recipients, settings: { ...c, send_at: null } }));
   }

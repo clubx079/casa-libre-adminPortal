@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { T, CARD, Banner, btnPrimary, inputCls } from '@/components/automations/ui';
+import { useDialog } from '@/components/Dialog';
 import { SOURCES, BATCH_FILTERS, TRACKED, previewText } from '@/lib/waCampaigns';
 
 const AUDIENCES = {
@@ -117,8 +118,14 @@ export default function NewCampaignForm({ prefill = null }) {
   const receive = counts?.willReceive ?? 0;
   const blocked = mode === 'live' ? counts?.blocked : null;
   const batchable = !!AUDIENCES[source].batches;
+  const { dialog, confirm } = useDialog();
   const submit = async (e) => {
     e.preventDefault();
+    // a live send to leads is real, paid marketing: ask first
+    if (mode === 'live' && when !== 'draft' && counts?.leads > 0) {
+      const ok = await confirm({ title: `Send to ${fmt(counts.willReceive)} leads?`, message: `This sends a real WhatsApp marketing message to ${fmt(counts.willReceive)} leads (agents / agencies / developers) — about US$${(counts.willReceive * 0.15).toFixed(2)} at ~US$0.15 each. It can't be undone.`, confirmLabel: 'Send to leads', tone: 'danger' });
+      if (!ok) return;
+    }
     setErr(''); setBusy(true);
     try {
       const r = await fetch('/api/campaigns', {
@@ -135,6 +142,7 @@ export default function NewCampaignForm({ prefill = null }) {
   const rg = counts?.range;
   return (
     <form onSubmit={submit} className="space-y-5" data-testid="new-campaign">
+      {dialog}
       <div className="flex flex-wrap items-center gap-2">
         {[['test', 'Test (simulated)'], ['live', 'Live']].map(([k, l]) => (
           <button key={k} type="button" onClick={() => setMode(k)} data-testid={`mode-${k}`} className="text-[13px] font-semibold px-3.5 py-1.5 rounded-full"
@@ -155,7 +163,7 @@ export default function NewCampaignForm({ prefill = null }) {
                   <option value="">{tpls ? 'Choose a template…' : 'Loading…'}</option>
                   {(tpls?.templates || []).map((t) => <option key={t.name} value={t.name}>{t.name} · {t.language} · {t.category}</option>)}
                 </select>
-                <p className="text-[10.5px] mt-1" style={{ color: T.textMuted }}>Approved Utility and Marketing templates (Relay). Image / video headers: not available in Relay yet — text only.</p>
+                <p className="text-[10.5px] mt-1" style={{ color: T.textMuted }}>Approved Utility and Marketing templates (Relay). Templates with an image, video or GIF send the file they were approved with.</p>
               </div>
             </div>
           </Step>

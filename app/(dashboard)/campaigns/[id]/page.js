@@ -91,7 +91,7 @@ export default function CampaignPage({ params }) {
         ))}
       </div>
       <p className="text-[11px]" style={{ color: T.textMuted }}>
-        Read is a minimum (people with read receipts off never send one). Clicks = people who opened the message&apos;s link (PostHog, utm_campaign {c.slug}).
+        Sent / delivered / read come from WhatsApp (Relay); read is a minimum (people with read receipts off never send one). WhatsApp never reports button taps: clicks = people who tapped this batch&apos;s tracked link <span className="font-mono">/r/wa?b={c.slug}</span> (counted by the link itself, even if the page never loads) or landed with utm_campaign {c.slug}.
         {c.refreshed_at ? ` Last read from Relay ${fmtDate(c.refreshed_at, true)}.` : ''}
       </p>
 

@@ -78,6 +78,12 @@ describe('batches', () => {
 
 describe('variables', () => {
   const tpl = { variables: { body: 2, url_buttons: [0] } };
+  it('tracked button: /r/wa?sell=1&b=<batch> — no contact field needed, never re-tagged', () => {
+    const map = { body: [{ source: 'contact.first_name' }], button: { source: 'tracked' } };
+    expect(relayVariables(map, 'wc-agentes-lote-2-ab12').buttons).toEqual([{ index: 0, source: 'static:wa?sell=1&b=wc-agentes-lote-2-ab12' }]);
+    expect(neededFields(map)).toEqual(['first_name']);
+    expect(variablesProblem({ variables: { body: 1, url_buttons: [0] } }, map)).toBeNull();
+  });
   it('header variables (Relay: variables.header is an array, like body)', () => {
     expect(relayVariables({ header: [{ source: 'static', text: 'Octubre' }], body: [] }).header).toEqual(['static:Octubre']);
     expect(variablesProblem({ variables: { header: 1, body: 0 } }, { header: [] })).toMatch(/Header \{\{1\}\}/);

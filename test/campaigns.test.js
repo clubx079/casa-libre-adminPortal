@@ -27,6 +27,14 @@ describe('SQL for the UTM Links page', () => {
     // WhatsApp listing shares (campaign property_share) are NOT the WhatsApp link
     expect(sql).not.toContain('property_share');
   });
+  it('WhatsApp campaign batches (utm_campaign wc-…) count under the WhatsApp link; other channels unchanged', async () => {
+    const sql = landingChannelSql(CAMPAIGNS, LEGACY_CAMPAIGNS);
+    expect(sql).toContain("= 'whatsapp' AND (coalesce(properties.utm_campaign, '') IN ('whatsapp', 'manual_outreach') OR startsWith(coalesce(properties.utm_campaign, ''), 'wc-')), 'wa'");
+    expect(sql).not.toMatch(/'reddit' AND \(/);
+    const { campaignUrl, batchOf } = await import('../lib/campaigns.js');
+    expect(campaignUrl('https://casa-libre.com.py', 'wa', { batch: 'wc-lote-1', sell: true })).toBe('https://casa-libre.com.py/?sell=1&utm_source=whatsapp&utm_medium=outreach&utm_campaign=wc-lote-1');
+    expect(batchOf("wc-x'; DROP")).toBe('wc-xdrop');
+  });
   it('only ever puts plain [a-z0-9_] names into the SQL', () => {
     expect(() => landingChannelSql({ bad: { source: "x' OR 1=1 --", name: 'x' } }, {})).toThrow();
   });

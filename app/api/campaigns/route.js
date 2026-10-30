@@ -18,7 +18,7 @@ import { relayTemplates } from '@/lib/relayAdmin';
 import { audienceCounts, relayVariables, variablesProblem, campaignSlug, neededFields, pickBatch, simulateRecipients, liveProblem, skipReason, audienceLabel } from '@/lib/waCampaigns';
 import { createCampaign, addRecipients, relayOptIns, loadAudience, sendCampaign, campaignsWithResults, batchedKeys, getCampaign } from '@/lib/waCampaignStore';
 import { modeOf, inboxModes } from '@/lib/relayInbox';
-import { hogql, posthogConfigured } from '@/lib/posthogHogql';
+import { batchClicks } from '@/lib/waCampaignClicks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,15 +32,8 @@ async function templatesList() {
   return { configured, templates: templates.filter((t) => t.status === 'APPROVED' && (t.category === 'utility' || t.category === 'marketing')) };
 }
 
-// People who opened each campaign's link (PostHog $pageview with its utm_campaign), one query.
-async function clicksBySlug(slugs) {
-  const ok = slugs.filter((s) => /^wc-[a-z0-9-]+$/.test(String(s || '')));
-  if (!ok.length || !posthogConfigured()) return new Map();
-  try {
-    const rows = await hogql(`SELECT properties.utm_campaign, count(DISTINCT person_id) FROM events WHERE event = '$pageview' AND properties.utm_campaign IN (${ok.map((s) => `'${s}'`).join(',')}) AND timestamp >= now() - INTERVAL 120 DAY GROUP BY properties.utm_campaign`);
-    return new Map((rows || []).map(([s, n]) => [s, Number(n) || 0]));
-  } catch { return new Map(); }
-}
+// People who opened each batch's link (lib/waCampaignClicks.js).
+const clicksBySlug = async (slugs) => (await batchClicks(slugs)).clicks;
 
 // The batch: the audience, minus who earlier batches had (when asked), cut to the first N;
 // in test mode leads / users moved onto the simulation numbers.

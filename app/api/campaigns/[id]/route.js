@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { campaignResults, liveProblem, audienceLabel } from '@/lib/waCampaigns';
 import { getCampaign, listRecipients, refreshResults, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
-import { hogql, posthogConfigured } from '@/lib/posthogHogql';
+import { batchClicks } from '@/lib/waCampaignClicks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,12 +15,10 @@ export const maxDuration = 300;
 
 const bad = (error, status = 400) => NextResponse.json({ error }, { status });
 
+// People who opened this batch's link (lib/waCampaignClicks.js).
 async function clicksFor(c) {
-  if (!c?.slug || !posthogConfigured()) return { clicks: 0, clickers: 0, note: posthogConfigured() ? null : 'posthog_not_configured' };
-  try {
-    const [[n, people] = [0, 0]] = await hogql(`SELECT count(), count(DISTINCT person_id) FROM events WHERE event = '$pageview' AND properties.utm_campaign = '${c.slug.replace(/'/g, '')}' AND timestamp >= now() - INTERVAL 120 DAY`);
-    return { clicks: Number(n) || 0, clickers: Number(people) || 0, note: null };
-  } catch (e) { return { clicks: 0, clickers: 0, note: String(e?.message || e).slice(0, 100) }; }
+  const { clicks, note } = await batchClicks([c?.slug]);
+  return { clickers: clicks.get(c?.slug) || 0, note };
 }
 
 export async function GET(_req, { params }) {

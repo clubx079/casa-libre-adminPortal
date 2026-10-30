@@ -33,8 +33,12 @@ export default function SentCampaigns() {
     fetch(`/api/campaigns${mode === 'all' ? '' : `?mode=${mode}`}`).then((r) => r.json()).then((j) => { if (!alive) return; if (j.error) setErr(j.error); else setData(j); }).catch(() => alive && setErr('failed'));
     return () => { alive = false; };
   }, [mode]);
-  const list = data?.campaigns || [];
+  const [sort, setSort] = useState('new');   // new | click | read
   const pct = (n, of) => (of ? Math.round((n / of) * 1000) / 10 : null);
+  const rate = (c, k) => c.results?.[k] ?? -1;
+  const list = [...(data?.campaigns || [])].sort((a, b) => (sort === 'click' ? rate(b, 'clickRate') - rate(a, 'clickRate') : sort === 'read' ? rate(b, 'readRate') - rate(a, 'readRate') : 0));
+  // the batch with the best click rate (of the ones that delivered anything) gets a badge
+  const best = list.filter((c) => c.results?.delivered > 0 && c.results.clickRate > 0).sort((a, b) => b.results.clickRate - a.results.clickRate)[0]?.id;
 
   return (
     <div className="space-y-4" data-testid="sent-campaigns">
@@ -43,7 +47,12 @@ export default function SentCampaigns() {
           <button key={k} onClick={() => setMode(k)} className="text-[13px] font-semibold px-3.5 py-1.5 rounded-full"
             style={{ background: mode === k ? T.primary : T.bgWhite, color: mode === k ? T.bgWhite : T.textBody, border: `1px solid ${mode === k ? T.primary : T.borderLight}` }}>{l}</button>
         ))}
-        <span className="text-[11.5px]" style={{ color: T.textMuted }}>Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off).</span>
+        <select aria-label="Sort batches" value={sort} onChange={(e) => setSort(e.target.value)} className="text-[13px] px-3 py-1.5 rounded-full border bg-white" style={{ borderColor: T.borderLight }} data-testid="sort-batches">
+          <option value="new">Newest first</option>
+          <option value="click">Highest click rate</option>
+          <option value="read">Highest read rate</option>
+        </select>
+        <span className="text-[11.5px]" style={{ color: T.textMuted }}>Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off). Clicked = people who tapped the batch&apos;s tracked link.</span>
       </div>
       {err ? <Banner>Could not load: {err}</Banner> : null}
       <div className="bg-white overflow-hidden" style={CARD}>
@@ -72,6 +81,7 @@ export default function SentCampaigns() {
                         <div className="flex gap-1 mt-1 flex-wrap">
                           <Pill tone={tone}>{label}</Pill>
                           {c.demo ? <Pill tone="warning">Demo data</Pill> : c.mode === 'test' ? <Pill tone="info">Test · simulated</Pill> : <Pill tone="ink">Live</Pill>}
+                          {c.id === best && <span data-testid="best-batch"><Pill tone="success">Best click rate</Pill></span>}
                         </div>
                       </td>
                       <td className="px-3 py-3 align-top font-mono" style={{ color: T.textBody }}>{c.template}<div className="font-sans text-[10.5px]" style={{ color: T.textMuted }}>{c.category}</div></td>

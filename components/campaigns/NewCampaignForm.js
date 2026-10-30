@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { T, CARD, Banner, btnPrimary, inputCls } from '@/components/automations/ui';
-import { SOURCES, BATCH_FILTERS, previewText } from '@/lib/waCampaigns';
+import { SOURCES, BATCH_FILTERS, TRACKED, previewText } from '@/lib/waCampaigns';
 
 const AUDIENCES = {
   leads: { label: 'Leads (agents / agencies / developers)', segments: [['all', 'All leads'], ['agent', 'Agents'], ['agency', 'Agencies'], ['developer', 'Developers']], batches: true },
@@ -42,8 +42,12 @@ function VarPicker({ label, example, value = {}, onChange, button }) {
       <div className="space-y-2">
         <select aria-label={`${label} source`} value={value.source || ''} onChange={(e) => onChange({ ...value, source: e.target.value })} className={inputCls}>
           <option value="">Choose…</option>
+          {button && <option value={TRACKED}>Tracked link: opens the sell wizard, counts clicks per batch</option>}
           {SOURCES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
+        {button && value.source === TRACKED && (
+          <p className="text-[11px]" style={{ color: T.textMuted }}>For templates whose button is <span className="font-mono">casa-libre.com.py/r/{'{{1}}'}</span>. The link becomes <span className="font-mono">/r/wa?sell=1&amp;b=&lt;this batch&gt;</span>: the tap is counted for this batch and the sell wizard opens.</p>
+        )}
         {value.source === 'static' && (
           <input value={value.text || ''} onChange={(e) => onChange({ ...value, text: e.target.value })} placeholder={button ? 'the end of the link, e.g. 6b1f… or ?tab=…' : 'Same text for everyone'} className={inputCls} />
         )}
@@ -89,7 +93,7 @@ export default function NewCampaignForm({ prefill = null }) {
   const nHead = Number(tpl?.variables?.header) || 0;
   const nBody = Number(tpl?.variables?.body) || 0;
   const nBtn = Array.isArray(tpl?.variables?.url_buttons) ? tpl.variables.url_buttons.length : 0;
-  useEffect(() => { setVars({ header: Array.from({ length: nHead }, () => ({})), body: Array.from({ length: nBody }, (_, i) => (i === 0 ? { source: 'contact.first_name' } : {})), button: nBtn ? {} : null }); }, [tplName, nHead, nBody, nBtn]);
+  useEffect(() => { setVars({ header: Array.from({ length: nHead }, () => ({})), body: Array.from({ length: nBody }, (_, i) => (i === 0 ? { source: 'contact.first_name' } : {})), button: nBtn ? { source: TRACKED } : null }); }, [tplName, nHead, nBody, nBtn]);
   const keepSegment = useRef(!!prefill?.segment);   // the first run keeps a prefilled segment
   useEffect(() => {
     if (keepSegment.current) { keepSegment.current = false; return; }

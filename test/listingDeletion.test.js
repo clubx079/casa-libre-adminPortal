@@ -42,3 +42,12 @@ describe('deleted listings', () => {
     expect(listingRef('fce9be87-1a3b-43df-b8d0-d91063cef8e9', '2026-10-15T12:11:12Z')).toBe('CL-2026-06389');
   });
 });
+
+describe('backfilled deletions (found afterwards)', () => {
+  it('say "Listing deleted" with the time marked estimated', () => {
+    const r = { run_id: 'x', created_at: '2026-10-28T15:33:00Z', error: JSON.stringify({ property_id: 'x', title: 'Casa · Capiatá', ref: 'CL-2026-06389', listed_at: '2026-10-15T12:11:12Z', live_days: 13, views: 63, paid: 'free', by: 'unknown', estimated: true }) };
+    const e = deletionEvent(deletedListings([r])[0]);
+    expect(e.title).toBe('Listing deleted — Casa · Capiatá');
+    expect(e.detail).toMatch(/deletion time estimated\.$/);
+  });
+});

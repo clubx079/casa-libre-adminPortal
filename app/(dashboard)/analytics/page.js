@@ -211,6 +211,7 @@ const SOURCE_LABELS = {
   google: 'Google search', bing: 'Bing search', duckduckgo: 'DuckDuckGo search', search: 'Search engine',
   chatgpt: 'ChatGPT', perplexity: 'Perplexity', gemini: 'Gemini', claude: 'Claude', copilot: 'Copilot', 'other ai': 'Other AI assistant',
   email: 'Email', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', reddit: 'Reddit',
+  'whatsapp campaign': 'WhatsApp campaign',   // a batch from WhatsApp campaigns (/r/wa?b=…)
 };
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
 const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
@@ -404,7 +405,7 @@ const UserFacts = ({ user, profile, loading }) => {
 
   const dash = loading ? '…' : '—';
   const source = profile?.source || user.source || '';
-  const campaign = profile?.campaign || user.campaign || '';
+  const campaign = profile?.campaign_label || user.campaign_label || profile?.campaign || user.campaign || '';
   const ip = profile?.ip || user.ip || acct?.user?.last_ip || '';
   const location = profile?.location || user.location || '';
   const facts = [
@@ -794,8 +795,8 @@ function SourcesCard({ master }) {
               {r.campaigns.filter((c) => c.campaign).length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {r.campaigns.filter((c) => c.campaign).map((c) => (
-                    <span key={c.campaign} className="text-[10px] px-2 py-0.5 border" style={{ borderColor: T.borderLight, color: T.textMuted }}>
-                      {c.campaign} · {c.visitors}
+                    <span key={c.campaign} className="text-[10px] px-2 py-0.5 border" style={{ borderColor: T.borderLight, color: T.textMuted }} title={c.label ? c.campaign : undefined}>
+                      {c.label || c.campaign} · {c.visitors}
                     </span>
                   ))}
                 </div>
@@ -1388,7 +1389,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>{u.location || '—'}</td>
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>
                     {u.source || 'direct'}
-                    {u.campaign ? <span className="block text-[10px]" style={{ color: T.textMuted }}>{u.campaign}</span> : null}
+                    {u.campaign ? <span className="block text-[10px]" style={{ color: T.textMuted }}>{u.campaign_label || u.campaign}</span> : null}
                   </td>
                   <td className="px-4 py-2.5 text-right text-xs font-semibold" style={{ color: T.textPrimary }}>{u.events}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.views}</td>

@@ -14,6 +14,7 @@ import { clickSql, applyClicks, OPEN_TRACKING_GAP } from '@/lib/contactsReport';
 import { isInternalContact } from '@/lib/internalTraffic';
 import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
+import { batchNames } from '@/lib/waCampaignStore';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -86,6 +87,7 @@ async function usersList() {
     ORDER BY last_seen DESC
     LIMIT 300
   `);
+  const names = await batchNames();   // WhatsApp campaign batch slug → its name
   const users = flat(rows).map((r) => {
     const email = r[2] || '';
     return {
@@ -99,6 +101,7 @@ async function usersList() {
       location: [r[6], r[7]].filter(Boolean).join(', '),
       source: r[8] || 'direct',
       campaign: r[9] || '',
+      campaign_label: names.get(r[9]) || '',
       site: r[10] || 'py',
       events: Number(r[11] || 0),
       views: Number(r[12] || 0),
@@ -213,6 +216,7 @@ async function userActivity({ personId, ip }) {
     // where the FIRST visit came from (google, chatgpt, direct, an /r/ campaign tag…)
     source: p[10] || 'direct',
     campaign: p[11] || '',
+    campaign_label: (await batchNames()).get(p[11]) || '',   // a WhatsApp campaign batch's name
     referrer: p[12] && p[12] !== '$direct' ? p[12] : '',
   };
   const pathOf = (url) => {
@@ -286,10 +290,11 @@ async function sourcesBreakdown(days, site) {
     SELECT source, campaign, count() AS visitors, countIf(known = 0) AS anon, countIf(known = 1) AS signed_in,
            sum(listings) AS listings, sum(contacts) AS contacts
     FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 40`);
+  const names = await batchNames();   // WhatsApp campaign batch slug → its name
   return NextResponse.json({
     configured: true, days: d,
     rows: flat(rows).map((r) => ({
-      source: r[0] || 'direct', campaign: r[1] || '',
+      source: r[0] || 'direct', campaign: r[1] || '', label: names.get(r[1]) || '',
       visitors: Number(r[2] || 0),
       // anonymous visitors count too — by IP, the same way the rest of this page does
       anon: Number(r[3] || 0), signedIn: Number(r[4] || 0),

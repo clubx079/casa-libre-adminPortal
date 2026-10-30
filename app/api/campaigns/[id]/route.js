@@ -16,16 +16,18 @@ export const maxDuration = 300;
 const bad = (error, status = 400) => NextResponse.json({ error }, { status });
 
 // People who opened this batch's link (lib/waCampaignClicks.js).
-async function clicksFor(c) {
-  const { clicks, note } = await batchClicks([c?.slug]);
+// force = "Refresh results" (?fresh=1): read PostHog now, not the 1-minute copy.
+async function clicksFor(c, force = false) {
+  const { clicks, note } = await batchClicks([c?.slug], { force });
   return { clickers: clicks.get(c?.slug) || 0, note };
 }
 
-export async function GET(_req, { params }) {
+export async function GET(req, { params }) {
   if (!getSession()) return bad('unauthorized', 401);
   const c = await getCampaign(params.id);
   if (!c) return bad('not_found', 404);
-  const [recipients, clicks] = await Promise.all([listRecipients(c.id), clicksFor(c)]);
+  const force = new URL(req.url).searchParams.get('fresh') === '1';
+  const [recipients, clicks] = await Promise.all([listRecipients(c.id), clicksFor(c, force)]);
   return NextResponse.json({ campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
 }
 

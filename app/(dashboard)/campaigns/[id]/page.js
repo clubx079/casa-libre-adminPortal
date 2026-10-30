@@ -21,7 +21,7 @@ export default function CampaignPage({ params }) {
   const [busy, setBusy] = useState('');
   const [note, setNote] = useState('');
   const { dialog, confirm } = useDialog();
-  const load = useCallback(() => fetch(`/api/campaigns/${params.id}`).then((r) => r.json()).then((j) => { if (j.error) setErr(j.error); else setData(j); }).catch(() => setErr('failed')), [params.id]);
+  const load = useCallback((fresh = false) => fetch(`/api/campaigns/${params.id}${fresh ? '?fresh=1' : ''}`).then((r) => r.json()).then((j) => { if (j.error) setErr(j.error); else setData(j); }).catch(() => setErr('failed')), [params.id]);
   useEffect(() => { load(); }, [load]);
 
   const act = async (action) => {
@@ -32,7 +32,7 @@ export default function CampaignPage({ params }) {
       if (!r.ok || j.error) setNote(j.error || 'Something went wrong.');
       else if (action === 'refresh') setNote(`Checked ${j.checked} recipient${j.checked === 1 ? '' : 's'} in Relay · ${j.updated} updated.`);
       else if (action === 'send') setNote(j.ok ? 'Sent to Relay.' : `Relay refused it: ${j.error}`);
-      await load();
+      await load(action === 'refresh');   // Refresh results also re-reads the clicks (PostHog) now
     } finally { setBusy(''); }
   };
   const remove = async () => {

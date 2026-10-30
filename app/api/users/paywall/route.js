@@ -51,6 +51,9 @@ export async function GET(req) {
       select('payments', `select=id,property_id,created_at&kind=eq.listing_free&user_id=eq.${user.id}&order=created_at.asc&limit=500`).catch(() => []),
     ]);
     const deleted = deletedListings(deletedRows);
+    // the "ask why" email of each deletion, if it went out (automation or the button)
+    const askRows = deleted.length ? await select('email_log', `select=run_id,created_at&automation_id=eq.listing_deleted&run_id=in.(${deleted.map((d) => d.id).filter(Boolean).join(',')})`).catch(() => []) : [];
+    const askedAt = new Map(askRows.map((a) => [String(a.run_id), a.created_at]));
     // deleted listings still count for "their Nth listing this month"
     const gone = goneListings({ userId: user.id, deleted, ledger });
     const walled = listings.filter((p) => p.raw_data?.paid_listing).map((p) => String(p.id));
@@ -67,7 +70,7 @@ export async function GET(req) {
       found: true,
       posthog: ph.posthog,
       rows: rows.map((r) => ({ ...r, label: STATE_LABEL[r.state] || r.state })),
-      events: [...ours, ...ph.steps, ...deleted.map(deletionEvent)].sort((a, b) => String(b.at).localeCompare(String(a.at))),
+      events: [...ours, ...ph.steps, ...deleted.map((d) => ({ ...deletionEvent(d), askedAt: askedAt.get(String(d.id)) || null, askable: d.by !== 'team' }))].sort((a, b) => String(b.at).localeCompare(String(a.at))),
     });
   } catch (e) {
     console.error('[api/users/paywall]', e);

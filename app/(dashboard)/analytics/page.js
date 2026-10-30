@@ -239,6 +239,18 @@ const UserMessages = ({ email, userId }) => {
   const [wa, setWa] = useState(null);   // /api/users/whatsapp body or { error }
   const [pw, setPw] = useState(null);   // /api/users/paywall body or { error }
   const [only, setOnly] = useState('all');
+  const [asking, setAsking] = useState(null);
+  const [askErr, setAskErr] = useState('');
+  const [reload, setReload] = useState(0);
+  // a deleted listing → send its "why did you delete it?" email now (/api/users/deleted-ask)
+  const askWhy = async (propertyId) => {
+    setAsking(propertyId);
+    try {
+      const r = await fetch('/api/users/deleted-ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ propertyId }) });
+      const j = await r.json().catch(() => ({}));
+      setAskErr(!r.ok && r.status !== 409 ? (j.error || 'Could not send it.') : '');
+    } finally { setAsking(null); setReload((n) => n + 1); }
+  };
   useEffect(() => {
     if (!email) return undefined;
     let cancelled = false;
@@ -249,7 +261,7 @@ const UserMessages = ({ email, userId }) => {
     get('/api/users/whatsapp', setWa);
     get(`/api/users/paywall${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`, setPw);
     return () => { cancelled = true; };
-  }, [email, userId]);
+  }, [email, userId, reload]);
 
   const pct = (v) => (v == null ? '—' : `${v}%`);
   const loading = em === null || wa === null || pw === null;
@@ -302,6 +314,7 @@ const UserMessages = ({ email, userId }) => {
             {em?.tracking === 'no_key' ? ' Email opens/clicks need RESEND_READ_API_KEY: only automation emails from our own log are shown.' : ''}
             {em?.tracking === 'error' ? ` Resend couldn't be read right now (${em.trackingError}).` : ''}
           </p>
+          {askErr ? <p className="text-[12px] mb-3" style={{ color: T.danger }}>Ask-why email: {askErr}</p> : null}
           <div className="inline-flex rounded-full p-0.5 mb-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
             {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp'], ...(steps.some((s) => s.ch === 'activity') ? [['activity', 'Paid listing']] : []), ...(steps.some((s) => s.ch === 'listing') ? [['listing', 'Deleted listings']] : [])].map(([v, l]) => (
               <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-full text-[11px] font-medium" style={only === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
@@ -328,6 +341,14 @@ const UserMessages = ({ email, userId }) => {
                         <td className="py-2 pr-3 align-top font-medium" style={{ color: T.textPrimary }} colSpan={2}>
                           {r.title}
                           {r.detail ? <span className="block text-[11px] font-normal" style={{ color: T.textSecondary }}>{r.detail}</span> : null}
+                          {r.kind === 'deleted' && r.askedAt ? (
+                            <span className="block text-[11px] font-normal mt-0.5" style={{ color: T.success }} data-testid="asked-why">Ask-why email sent {fmtDateOnly(r.askedAt)} · {fmtTime(r.askedAt)} (its opens / clicks are on the email row)</span>
+                          ) : r.kind === 'deleted' && r.askable ? (
+                            <button type="button" onClick={() => askWhy(r.listingId)} disabled={asking === r.listingId} data-testid="send-ask-why"
+                              className="mt-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border disabled:opacity-50" style={{ borderColor: T.borderLight, color: T.textPrimary, background: '#fff' }}>
+                              {asking === r.listingId ? 'Sending…' : 'Send the “why did you delete it?” email'}
+                            </button>
+                          ) : null}
                         </td>
                         <td className="py-2 text-right font-semibold whitespace-nowrap align-top" style={{ color: (STEP_STATUS[r.kind] || [])[1] || T.textMuted }}>{(STEP_STATUS[r.kind] || [r.kind])[0]}</td>
                       </tr>

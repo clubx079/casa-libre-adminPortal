@@ -2,6 +2,7 @@
 // App installs — how many people install (and remove) the Casa Libre app, per day, on
 // Google Play and the App Store. Data: /api/app-installs (store reports, read-only).
 // Both stores publish their numbers with a delay (Play ~1–2+ days, Apple ~1–2 days).
+// From install to account: /api/app-installs/accounts (the app's own 'opened' pings + notification sign-ups).
 import { useEffect, useState } from 'react';
 import { T, CARD, Banner, Pill } from '@/components/automations/ui';
 
@@ -78,6 +79,62 @@ function StoreStatus({ name, s, latest }) {
   );
 }
 
+const pctOf = (n, of) => (of ? `${Math.round((n / of) * 100)}%` : '—');
+
+// Installs → opened the app → signed in → account created in the app (the app's own pings),
+// and before those pings existed: people who signed in and allowed notifications.
+function ToAccounts({ acc, installs }) {
+  if (!acc) return <div className="h-[120px] rounded-[14px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />;
+  if (acc.error) return <Banner>{acc.error}</Banner>;
+  const tr = acc.tracked || {};
+  const b = acc.beforeTracking || { byCountry: [] };
+  const live = !tr.error && tr.opened > 0;
+  return (
+    <div className="rounded-[14px] p-5 space-y-4" style={CARD}>
+      <div>
+        <div className="text-[14px] font-bold" style={{ color: T.textPrimary }}>From install to account</div>
+        <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>Who opened the app, and how many signed in or created their account in it. Team and test accounts left out.</div>
+      </div>
+      {live ? (
+        <>
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+            <Kpi label="Store installs" value={int(installs)} sub={`last ${acc.days} days`} />
+            <Kpi label="Opened the app" value={int(tr.opened)} sub={`${int(tr.firstOpens)} for the first time`} />
+            <Kpi label="Signed in" value={int(tr.signedIn)} sub={`${pctOf(tr.signedIn, tr.opened)} of who opened it`} />
+            <Kpi label="New accounts in the app" value={int(tr.newInApp)} sub={`${pctOf(tr.newInApp, tr.opened)} of who opened it`} />
+            <Kpi label="Existing accounts" value={int(tr.existing)} sub="signed up on the website first" />
+          </div>
+          {tr.byCountry?.length ? (
+            <table className="w-full text-[12.5px]">
+              <thead><tr style={{ color: T.textMuted }}>{['Country', 'Phone', 'Opened', 'Signed in', 'New in the app', 'Existing'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i > 1 ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+              <tbody>{tr.byCountry.map((r) => (
+                <tr key={`${r.country}-${r.platform}`} className="border-t" style={{ borderColor: T.borderLight, color: T.textPrimary }}>
+                  <td className="py-1.5">{r.name}</td><td>{r.platform === 'ios' ? 'iPhone' : r.platform === 'android' ? 'Android' : r.platform}</td>
+                  <td className="text-right tabular-nums">{int(r.opened)}</td><td className="text-right tabular-nums">{int(r.signedIn)}</td><td className="text-right tabular-nums">{int(r.newInApp)}</td><td className="text-right tabular-nums">{int(r.existing)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          ) : null}
+          <div className="text-[11.5px]" style={{ color: T.textMuted }}>Counting since {tr.since ? dayLabel(tr.since.slice(0, 10)) : '—'} (the app version that sends it).</div>
+        </>
+      ) : (
+        <div className="text-[12.5px] rounded-[10px] px-3 py-2" style={{ background: T.bgSurface, color: T.textSecondary }}>
+          {tr.error ? `App tracking: ${tr.error}` : 'No app openings counted yet — they start with the app update that sends them.'}
+        </div>
+      )}
+      <div className="border-t pt-4" style={{ borderColor: T.borderLight }}>
+        <div className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>Before that: people who signed in to the app and allowed notifications</div>
+        <div className="text-[12px] mt-0.5 mb-3" style={{ color: T.textSecondary }}>A minimum — people who said no to notifications are not counted. All time.</div>
+        <div className="grid gap-3 grid-cols-3">
+          <Kpi label="Signed in to the app" value={int(b.people)} sub={b.byCountry.map((r) => `${r.name} ${r.people}`).join(' · ') || '—'} />
+          <Kpi label="Created the account in the app" value={int(b.createdInApp)} sub={pctOf(b.createdInApp, b.people)} />
+          <Kpi label="Had a website account" value={int(b.existingAccounts)} sub={pctOf(b.existingAccounts, b.people)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AppInstallsPage() {
   const [days, setDays] = useState(30);
   const [res, setRes] = useState(null);
@@ -88,6 +145,11 @@ export default function AppInstallsPage() {
       .catch((e) => setRes({ error: String(e) })).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [acc, setAcc] = useState(null);
+  useEffect(() => {
+    setAcc(null);
+    fetch(`/api/app-installs/accounts?days=${days}`, { cache: 'no-store' }).then((r) => r.json()).then(setAcc).catch((e) => setAcc({ error: String(e) }));
+  }, [days]);
 
   const t = res?.total;
   return (
@@ -120,6 +182,7 @@ export default function AppInstallsPage() {
             <div className="text-[14px] font-bold mb-4" style={{ color: T.textPrimary }}>Installs per day</div>
             <Chart series={res.series} />
           </div>
+          <ToAccounts acc={acc} installs={t.android + t.ios} />
           <div className="rounded-[14px] px-5 py-3" style={CARD}>
             <StoreStatus name="Google Play" s={res.play} latest={res.latest.play} />
             <StoreStatus name="App Store" s={res.apple} latest={res.latest.apple} />

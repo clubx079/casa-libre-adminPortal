@@ -55,5 +55,6 @@ describe('AI fact sheet · activity (the salesperson\'s numbers)', () => {
   it('no activity → the sheet still builds', () => {
     const f = buildFactSheet({ cc: 'py', countryName: 'Paraguay', site: 'https://casa-libre.com.py' });
     expect(f.site_activity).toBe(null);
+    expect(f.area_demand).toEqual([]);
   });
 });

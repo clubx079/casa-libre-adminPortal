@@ -467,6 +467,7 @@ export default function InboxPage() {
                             : c.marked_unread ? <span className="w-3 h-3 rounded-full shrink-0" style={{ background: GREEN }} title="Marked unread" data-testid="marked-dot" /> : null}
                         </div>
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
+                          {c.campaign && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.warningSurface, color: T.warning }} title="We reached this number with a WhatsApp campaign" data-testid="campaign-tag">Campaign</span>}
                           {(c.sites || [])[0] === 'none' && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.infoSurface, color: T.info }} title="This number never asked a site for a code and is not a user on any site, so it shows in every country's inbox" data-testid="general-tag">General</span>}
                           {c.window_hours_left != null && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#E7F5EC', color: GREEN }} title="They wrote in the last 24 hours: a normal message can still go out" data-testid="window-tag">24h open · {c.window_hours_left < 1 ? `${Math.max(1, Math.round(c.window_hours_left * 60))} min left` : `${Math.floor(c.window_hours_left)}h left`}</span>}
                           {c.unresponded && !c.dnc && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#FBEAEA', color: T.danger }}>needs an answer</span>}
@@ -495,7 +496,7 @@ export default function InboxPage() {
                     </Link>
                   ) : <div className="text-[15.5px] font-semibold truncate" style={{ color: T.textPrimary }}>{conv?.name || formatPhone(sel)}</div>}
                   <div className="text-[12px] truncate" style={{ color: T.textSecondary }} data-testid="contact-sub">
-                    {formatPhone(sel)}{conv?.sites ? (conv.sites[0] === 'none' ? ' · General (no site)' : ` · from ${siteNames(conv.sites)}`) : ''}
+                    {formatPhone(sel)}{conv?.sites ? (conv.sites[0] === 'none' ? ' · General (no site)' : ` · from ${siteNames(conv.sites)}`) : ''}{conv?.campaign ? ' · Campaign' : ''}
                     {contact === undefined ? ' · …' : contact ? ` · ${contact.listings} ${contact.listings === 1 ? 'listing' : 'listings'}${contact.live !== contact.listings ? ` (${contact.live} live)` : ''}${contact.waitingPayment ? ` · ${contact.waitingPayment} waiting for payment` : ''}${contact.user.email ? ` · ${contact.user.email}` : ''}` : ' · not a Casa Libre account'}
                   </div>
                   {(conv?.tags || []).length > 0 && (

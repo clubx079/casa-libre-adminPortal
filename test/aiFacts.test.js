@@ -27,7 +27,7 @@ describe('AI fact sheet', () => {
     expect(f.listings[1].state).toMatch(/FREE-listing gift is open until 2026-11-12/);
     expect(f.listings[1].link).toBe('https://casa-libre.com.bo/cuenta/publicaciones');   // not live → My listings
     expect(f.situation).toMatch(/waiting for payment/);
-    expect(f.paid_listings).toEqual({ free_listings_per_month: 2, price_of_an_extra_listing: 'US$5.80' });
+    expect(f.paid_listings).toMatchObject({ free_listings_per_month: 2, price_of_an_extra_listing: 'US$5.80', extra_listing_lasts_days: 90 });
   });
   it('no account', () => {
     expect(situationOf({ user: null, codeRequested: true })).toMatch(/sign-up code but never finished/);
@@ -37,5 +37,23 @@ describe('AI fact sheet', () => {
     expect(listingState({ status: 'rejected' })).toMatch(/photos were rejected/);
     expect(listingState({ status: 'published', admin_status: 'inactive' })).toMatch(/paused/);
     expect(draftMissing({ price: 1, area: 2, contact_phone: '0981123456', photos: [{}] })).toEqual([]);
+  });
+});
+
+describe('AI fact sheet · activity (the salesperson\'s numbers)', () => {
+  it('views / contacts per listing and the site\'s traffic', () => {
+    const f = buildFactSheet({
+      cc: 'py', countryName: 'Paraguay', site: 'https://casa-libre.com.py', user: { id: 'u1', full_name: 'Ana', created_at: '2026-10-01T00:00:00Z' },
+      listings: [{ id: 'p1', slug: 'casa-1', status: 'active', admin_status: 'active', property_type: 'casa', listing_type: 'sale', city: 'Luque', created_at: '2026-10-02T00:00:00Z' }],
+      paid: { enabled: true, freePerMonth: 2, price: 'US$5.80' },
+      activity: { site: { visitors_last_7_days: 2197, visitors_growth_pct: 92 }, byListing: new Map([['p1', { views_total: 48, views_last_7_days: 12, buyer_contacts: 3 }]]) },
+    });
+    expect(f.listings[0]).toMatchObject({ views_total: 48, views_last_7_days: 12, buyer_contacts: 3 });
+    expect(f.site_activity).toMatchObject({ visitors_last_7_days: 2197, visitors_growth_pct: 92 });
+    expect(f.paid_listings.other_portals_charge).toMatch(/US\$40/);
+  });
+  it('no activity → the sheet still builds', () => {
+    const f = buildFactSheet({ cc: 'py', countryName: 'Paraguay', site: 'https://casa-libre.com.py' });
+    expect(f.site_activity).toBe(null);
   });
 });

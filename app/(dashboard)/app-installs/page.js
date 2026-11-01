@@ -149,13 +149,12 @@ export default function AppInstallsPage() {
       {res?.error && <Banner>{res.error}</Banner>}
 
       {!t ? (
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[92px] rounded-[14px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />)}</div>
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[92px] rounded-[14px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />)}</div>
       ) : (
         <div className={`space-y-5 ${loading ? 'opacity-60' : ''}`}>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
             <Kpi label="Total installs" value={int(t.android + t.ios)} sub={`last ${res.days} days`} />
             <Kpi label="Android installs" value={res.play.ok ? int(t.android) : '—'} sub={res.play.ok ? `${int(t.androidUninstalls)} uninstalls` : 'not connected'} />
-            <Kpi label="Android active devices" value={res.play.ok ? int(t.androidActive) : '—'} sub="devices with the app now" />
             <Kpi label="iPhone installs" value={res.apple.ok ? int(t.ios) : '—'} sub={res.apple.ok ? `${int(t.iosDeletions)} deletions` : 'not connected'} />
             <Kpi label="Net new" value={int(t.android + t.ios - t.androidUninstalls - t.iosDeletions)} sub="installs − removals" />
           </div>

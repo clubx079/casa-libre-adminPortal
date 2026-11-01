@@ -1071,7 +1071,7 @@ const AppDownloadsCard = ({ master }) => {
     },
     {
       name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
-      tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls], ['Active devices', t.androidActive]],
+      tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls]],
       accounts: acc?.accounts?.byPlatform?.android,
       waiting: 'Connected — waiting for the first Google Play report.',
     },

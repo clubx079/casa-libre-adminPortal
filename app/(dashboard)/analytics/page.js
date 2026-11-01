@@ -1115,15 +1115,9 @@ const AppDownloadsCard = ({ master }) => {
                 <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>{st.s?.ok ? st.waiting : st.s?.error}</p>
               )}
               {st.accounts?.total ? (
-                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
-                  <div>
-                    <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Signed in to the app</p>
-                    <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.accounts.total)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Created the account in the app</p>
-                    <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.accounts.createdInApp)}</p>
-                  </div>
+                <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
+                  <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Signed in to the app (have an account)</p>
+                  <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.accounts.total)}</p>
                 </div>
               ) : null}
             </div>

@@ -81,7 +81,7 @@ function StoreStatus({ name, s, latest }) {
 
 const pctOf = (n, of) => (of ? `${Math.round((n / of) * 100)}%` : '—');
 
-// Installs → signed in to the app → account created in the app. One number per person, joined from
+// Installs → signed in to the app (has an account). One number per person, joined from
 // the app's own pings and the phones registered for notifications (how we knew before the pings).
 function ToAccounts({ acc, installs }) {
   if (!acc) return <div className="h-[120px] rounded-[14px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />;
@@ -92,20 +92,18 @@ function ToAccounts({ acc, installs }) {
     <div className="rounded-[14px] p-5 space-y-4" style={CARD}>
       <div>
         <div className="text-[14px] font-bold" style={{ color: T.textPrimary }}>From install to account</div>
-        <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>People who signed in to the app in the last {acc.days} days, and how many created their account in it. Team and test accounts left out.</div>
+        <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>People who installed the app and are signed in to it (have an account), last {acc.days} days. Team and test accounts left out.</div>
       </div>
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2">
         <Kpi label="Store installs" value={int(installs)} sub={`last ${acc.days} days`} />
-        <Kpi label="Signed in to the app" value={int(a.total)} sub={`${pctOf(a.total, installs)} of installs`} />
-        <Kpi label="Created the account in the app" value={int(a.createdInApp)} sub={`${pctOf(a.createdInApp, installs)} of installs`} />
-        <Kpi label="Had a website account" value={int(a.existing)} sub="signed up on the website first" />
+        <Kpi label="Signed in to the app" value={int(a.total)} sub={`${pctOf(a.total, installs)} of installs have an account`} />
       </div>
       {a.byCountry?.length ? (
         <table className="w-full text-[12.5px]">
-          <thead><tr style={{ color: T.textMuted }}>{['Country', 'Signed in to the app', 'Created in the app', 'Had a website account'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ color: T.textMuted }}>{['Country', 'Signed in to the app'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
           <tbody>{a.byCountry.map((r) => (
             <tr key={r.country} className="border-t" style={{ borderColor: T.borderLight, color: T.textPrimary }}>
-              <td className="py-1.5">{r.name}</td><td className="text-right tabular-nums">{int(r.accounts)}</td><td className="text-right tabular-nums">{int(r.createdInApp)}</td><td className="text-right tabular-nums">{int(r.existing)}</td>
+              <td className="py-1.5">{r.name}</td><td className="text-right tabular-nums">{int(r.accounts)}</td>
             </tr>
           ))}</tbody>
         </table>

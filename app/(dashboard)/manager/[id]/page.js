@@ -6,7 +6,7 @@
 //                Done or add a note → the next runs read it. Copy for Tahir / copy the list.
 //   emails     — the drafts, ready to approve & send (Preview in English, edit)
 //   the loop   — what earlier reports asked for: fixed / improving / still open / worse
-//   numbers    — funnel, messages, follow-ups, complaints & bots, scrapers (tables from code)
+//   numbers    — funnel, messages, email click trend, follow-ups, complaints & bots, WhatsApp campaigns (tables from code)
 //   memory     — what the manager remembers; lessons it suggests; notes it applied
 //   how it was made — cost, number check, log, the data.
 // Reports written before the single-brief manager (no report.version) still open: their
@@ -24,10 +24,10 @@ const COUNTRY = { py: ['Paraguay', '.py'], bo: ['Bolivia', '.bo'], uy: ['Uruguay
 const OWNERS = ['Omar', 'Tahir', 'Roland'];
 const ROLE = { Omar: 'Lead developer', Tahir: 'Google Ads', Roland: 'CEO' };
 // the specialist areas (lib/manager/brief.js SECTIONS) and which action areas belong to each
-const SECTION_TABS = [['feedback', 'Feedback'], ['listings', 'Listings & payments'], ['messages', 'Messages'], ['growth', 'Traffic & ads'], ['catalog', 'Scrapers']];
-const SECTION_OF = { feedback: 'feedback', listings: 'listings', payments: 'listings', messages: 'messages', followups: 'messages', growth: 'growth', ads: 'growth', catalog: 'catalog' };
+const SECTION_TABS = [['feedback', 'Feedback'], ['listings', 'Listings & payments'], ['messages', 'Messages & email clicks'], ['campaigns', 'WhatsApp campaigns'], ['growth', 'Traffic & ads'], ['security', 'Security watch']];
+const SECTION_OF = { feedback: 'feedback', listings: 'listings', payments: 'listings', messages: 'messages', followups: 'messages', campaigns: 'campaigns', growth: 'growth', ads: 'growth', security: 'security' };
 const TREND = { better: [T.success, T.successSurface, 'Better'], worse: [T.danger, T.dangerSurface, 'Worse'], steady: [T.textSecondary, T.bgSurface, 'Steady'], mixed: [T.warning, T.warningSurface, 'Mixed'], too_early: [T.textSecondary, T.bgSurface, 'Too early'] };
-const AREA = { feedback: 'Feedback', listings: 'Listings', payments: 'Payments', messages: 'Messages', growth: 'Traffic', ads: 'Google Ads', catalog: 'Scrapers', data: 'Data' };
+const AREA = { feedback: 'Feedback', listings: 'Listings', payments: 'Payments', messages: 'Messages', campaigns: 'WhatsApp campaigns', growth: 'Traffic', ads: 'Google Ads', security: 'Security', data: 'Data' };
 const STATUS = {
   new: [T.info, T.infoSurface, 'New'],
   still_open: [T.warning, T.warningSurface, 'Still open'],
@@ -480,17 +480,26 @@ export default function ManagerReportPage({ params }) {
   const hasDraft = (x) => drafts.some((a) => (x.user_id && a.user_id === x.user_id) || (x.feedback_id && String(a.feedback_id) === String(x.feedback_id)));
   const timing = pack.messageTiming?.rows || [];
   const scorecard = pack.automations?.followUpsPreviousWeekFullResults || [];
-  const scrapers = pack.scrapers?.last14Days || [];
+  const waBatches = pack.whatsappCampaigns?.batches || [];
+  const waFormats = pack.whatsappCampaigns?.byFormat || [];
+  const emailTrend = pack.emailEngagement?.clickTrend4Weeks || [];
   const guard = r.guard;
   // old reports (5 researchers) call the messages area 'followups'
   const sections = new Map((r.sections || []).map((x) => [SECTION_OF[x.id] || x.id, x]));
-  const areaTabs = sections.size ? SECTION_TABS : [];
+  const areaTabs = sections.size ? SECTION_TABS.filter(([id]) => !['campaigns', 'security'].includes(id) || sections.has(id) || pack[id === 'campaigns' ? 'whatsappCampaigns' : 'security']) : [];
   const tabs = [['overview', 'Overview'], ...areaTabs, ['emails', 'Emails'], ...(r.tracker ? [['loop', 'Earlier actions']] : []), ...(areaTabs.length ? [] : [['numbers', 'Numbers']]), ['memory', 'Memory'], ['method', 'How it was made']];
   const actionsIn = (id) => actions.filter((a) => SECTION_OF[a.area || a.section] === id);
   const funnelBlock = Array.isArray(pack.traffic?.funnel) ? <Funnel funnel={pack.traffic.funnel} /> : <Empty>No visitor data in this report.</Empty>;
+  const emailTrendTable = emailTrend.length ? (
+    <>
+      <p className="px-5 pt-4 pb-2 text-[12.5px] font-semibold" style={{ color: T.textPrimary }}>Email click rate, last 4 weeks</p>
+      <Table min={520} numeric={[1, 2, 3, 4]} head={['Week', 'Emails', 'Clicked', 'Click rate', 'Open rate']} rows={emailTrend.map((w) => [`${day(w.from)} – ${day(w.to)}`, w.measured, w.clicked, rate(w.clickRate), rate(w.openRate)])} />
+    </>
+  ) : null;
   const messagesTables = (
               timing.length || scorecard.length ? (
                 <>
+                  {emailTrendTable}
                   {timing.length ? (
                     <Table min={760} numeric={[2, 3, 4, 5, 6]} head={['Automation', 'Channel', 'Sent', 'Bounced', 'Opened', 'Clicked / read', 'Acted in 7 days', 'Best send hours']} rows={timing.map((t) => {
                       const best = [...(t.bySendHourLocal || [])].filter((h) => h.sent >= 3).sort((a, b) => (b.rate || 0) - (a.rate || 0))[0];
@@ -523,11 +532,31 @@ export default function ManagerReportPage({ params }) {
                 ]} />
               ) : <Empty>No complaints to check and no bots this time.</Empty>
   );
-  const scrapersTable = (
-              scrapers.length ? (
-                <Table min={640} numeric={[1, 2, 3, 4]} head={['Scraper', 'Runs (14 days)', 'Failed', 'New', 'Live listings', 'Last run']} rows={scrapers.filter((x) => x.active).map((x) => [x.name || x.key, x.runs, x.failed, x.inserted, x.liveListings ?? '—', `${day(x.lastRun)} · ${x.lastStatus || '—'}`])} />
-              ) : <Empty>No scraper data in this report.</Empty>
-  );
+  const campaignsTable = waBatches.length ? (
+    <>
+      <Table min={760} numeric={[1, 2, 3, 4, 5, 6, 7]} head={['Format', 'Batches', 'People', 'Delivered', 'Read', 'Replied', 'Clicked', 'Signed up / listed']} rows={waFormats.map((f) => [f.type, f.batches, f.people, f.delivered, `${f.read} · ${rate(f.readRate)}`, `${f.replied} · ${rate(f.replyRate)}`, `${f.clicked} · ${rate(f.clickRate)}`, `${f.signedUp} / ${f.listed}`])} />
+      <p className="px-5 pt-4 pb-2 text-[12.5px] font-semibold border-t" style={{ color: T.textPrimary, borderColor: T.borderLight }}>Every batch</p>
+      <Table min={820} numeric={[2, 3, 4, 5, 6, 7]} head={['Batch', 'Sent', 'People', 'Delivered', 'Not delivered yet / failed', 'Read', 'Clicked', 'Landed → signed up / listed']} rows={waBatches.map((b) => [b.name, day(b.sentAt), b.people, b.delivered, `${b.notDeliveredYet} / ${b.failed}`, `${b.read} · ${rate(b.readRate)}`, `${b.clicked} · ${rate(b.clickRate)}`, `${b.landed} → ${b.signedUp} / ${b.listed}`])} />
+      <p className="px-5 py-3 text-[12px]" style={{ color: T.textMuted }}>Each batch = different people. Read, replied and clicked are of delivered. Batches of about 50 are small: 1–3 clicks apart is noise.</p>
+    </>
+  ) : <Empty>No live WhatsApp campaign batches in this report.</Empty>;
+  const sec = pack.security || {};
+  const securityTables = sec.visitorsByCountry || sec.newAccountsForeignPhone ? (
+    <>
+      {sec.visitorsByCountry?.length ? (
+        <Table min={520} numeric={[1, 2, 3, 4]} head={['Visitors from', 'This period', 'Share', 'Previous', 'Property views']} rows={sec.visitorsByCountry.map((c) => [c.country, c.visitors, rate(c.share), c.previousVisitors, c.propertyViews])} />
+      ) : null}
+      {sec.busiestVisitors?.length ? (
+        <>
+          <p className="px-5 pt-4 pb-2 text-[12.5px] font-semibold border-t" style={{ color: T.textPrimary, borderColor: T.borderLight }}>Busiest single visitors (one IP) — scrapers read hundreds of pages</p>
+          <Table min={680} numeric={[2, 3, 4, 5]} head={['IP', 'Where', 'Events', 'Property views', 'Pages', 'Hours active']} rows={sec.busiestVisitors.map((v) => [v.ip, [v.city, v.country].filter(Boolean).join(', ') || '—', v.events, v.propertyViews, v.distinctPages, v.activeHours])} />
+        </>
+      ) : null}
+      <p className="px-5 py-3 text-[12px] border-t" style={{ color: T.textMuted, borderColor: T.borderLight }}>
+        New accounts with a foreign phone (not {sec.homeCountryPhoneCode}): {sec.newAccountsForeignPhone?.last30Days ?? '—'} in 30 days ({sec.newAccountsForeignPhone?.thisPeriod ?? '—'} this period) · IPs with 3+ new accounts: {sec.sameIpSignups?.length ?? 0} · Suspended / blocked (30 days): {sec.suspendedOrBlocked?.last30Days ?? '—'}
+      </p>
+    </>
+  ) : <Empty>No security data in this report.</Empty>;
   const L = pack.listings || {}, P = pack.payments || {};
   const listingsTable = L.newThisWeek || P.thisWeek ? (
     <Table min={520} numeric={[1, 2]} head={['', 'This period', 'Previous']} rows={[
@@ -696,7 +725,8 @@ export default function ManagerReportPage({ params }) {
                   {tahirBlock}
                 </>
               ) : null}
-              {id === 'catalog' ? <Panel title="Scrapers" sub="Last 14 days, from the data." flush>{scrapersTable}</Panel> : null}
+              {id === 'campaigns' ? <Panel title="WhatsApp campaigns — A/B by format" sub="From the data, no AI." flush>{campaignsTable}</Panel> : null}
+              {id === 'security' ? <Panel title="Security watch" sub="This period, from the data, no AI." flush>{securityTables}</Panel> : null}
             </div>
           ))}
 
@@ -704,8 +734,8 @@ export default function ManagerReportPage({ params }) {
           {!areaTabs.length ? (
             <div {...panel('numbers')}>
               <Panel title="The numbers" sub="From the data, no AI." flush
-                right={<Segmented label="Numbers" value={numbersTab} onChange={setNumbersTab} options={[['messages', 'Messages'], ['funnel', 'Visitors'], ['feedback', 'Complaints & bots'], ['scrapers', 'Scrapers']]} />}>
-                {numbersTab === 'funnel' ? funnelBlock : numbersTab === 'messages' ? messagesTables : numbersTab === 'feedback' ? feedbackTable : scrapersTable}
+                right={<Segmented label="Numbers" value={numbersTab} onChange={setNumbersTab} options={[['messages', 'Messages'], ['funnel', 'Visitors'], ['feedback', 'Complaints & bots'], ['campaigns', 'WhatsApp campaigns']]} />}>
+                {numbersTab === 'funnel' ? funnelBlock : numbersTab === 'messages' ? messagesTables : numbersTab === 'feedback' ? feedbackTable : campaignsTable}
               </Panel>
             </div>
           ) : null}

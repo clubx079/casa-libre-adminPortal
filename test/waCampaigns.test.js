@@ -154,3 +154,11 @@ describe('results', () => {
     expect(campaignResults(rows, 3).clicked).toBe(3);
   });
 });
+
+describe('campaignResults · not delivered yet', () => {
+  it('people = delivered + not delivered yet + failed', () => {
+    const rows = [...Array(44)].map(() => ({ status: 'delivered' })).concat([...Array(5)].map(() => ({ status: 'sent' })), [{ status: 'failed' }]);
+    const r = campaignResults(rows);
+    expect([r.recipients, r.delivered, r.pending, r.failed]).toEqual([50, 44, 5, 1]);
+  });
+});

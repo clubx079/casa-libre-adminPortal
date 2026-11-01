@@ -30,8 +30,17 @@ export default function SentCampaigns() {
   useEffect(() => {
     let alive = true;
     setData(null); setErr('');
-    fetch(`/api/campaigns${mode === 'all' ? '' : `?mode=${mode}`}`).then((r) => r.json()).then((j) => { if (!alive) return; if (j.error) setErr(j.error); else setData(j); }).catch(() => alive && setErr('failed'));
-    return () => { alive = false; };
+    let timer = null;
+    // while any batch still has messages on the way (not delivered yet / sending), look again
+    // every 30 s — the API re-reads them from Relay — until they're all delivered or failed
+    const load = () => fetch(`/api/campaigns${mode === 'all' ? '' : `?mode=${mode}`}`).then((r) => r.json()).then((j) => {
+      if (!alive) return;
+      if (j.error) { setErr(j.error); return; }
+      setData(j);
+      if ((j.campaigns || []).some((c) => c.results?.pending > 0 || c.results?.waiting > 0)) timer = setTimeout(load, 30_000);
+    }).catch(() => alive && setErr('failed'));
+    load();
+    return () => { alive = false; clearTimeout(timer); };
   }, [mode]);
   const [sort, setSort] = useState('new');   // new | click | read
   const pct = (n, of) => (of ? Math.round((n / of) * 1000) / 10 : null);
@@ -52,7 +61,7 @@ export default function SentCampaigns() {
           <option value="click">Highest click rate</option>
           <option value="read">Highest read rate</option>
         </select>
-        <span className="text-[11.5px]" style={{ color: T.textMuted }}>Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off). Clicked = people who tapped the batch&apos;s tracked link.</span>
+        <span className="text-[11.5px]" style={{ color: T.textMuted }}>People = delivered + not delivered yet (sent, phone off or no signal) + failed. Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off). Clicked = people who tapped the batch&apos;s tracked link.</span>
       </div>
       {err ? <Banner>Could not load: {err}</Banner> : null}
       <div className="bg-white overflow-hidden" style={CARD}>
@@ -88,7 +97,7 @@ export default function SentCampaigns() {
                       <td className="px-3 py-3 align-top whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtDate(c.sent_at || c.send_at || c.created_at, true)}</td>
                       <td className="px-3 py-3 text-right align-top">
                         <div className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{fmt(s.recipients)}</div>
-                        <div className="text-[10.5px]" style={{ color: T.textMuted }}>{s.skipped ? `${fmt(s.skipped)} skipped` : ''}{s.failed ? `${s.skipped ? ' · ' : ''}${fmt(s.failed)} failed` : ''}</div>
+                        <div className="text-[10.5px]" style={{ color: T.textMuted }}>{[s.skipped && `${fmt(s.skipped)} skipped`, s.failed && `${fmt(s.failed)} failed`, s.pending && `${fmt(s.pending)} not delivered yet`, s.waiting && `${fmt(s.waiting)} sending`].filter(Boolean).join(' · ')}</div>
                       </td>
                       <Rate n={s.delivered} of={s.sent} rate={s.deliveredRate} color={T.info} />
                       <Rate n={s.read} of={s.delivered} rate={s.readRate} color={T.success} />

@@ -1040,6 +1040,14 @@ const AppDownloadsCard = ({ master }) => {
   const { days } = range;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [acc, setAcc] = useState(null);   // who signed in to the app / created the account in it
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/app-installs/accounts?days=${days}`, { cache: 'no-store' }).then((r) => r.json())
+      .then((j) => { if (!cancelled) setAcc(j); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [days]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1058,11 +1066,13 @@ const AppDownloadsCard = ({ master }) => {
     {
       name: 'App Store downloads', s: data.apple, latest: data.latest?.apple,
       tiles: [['Downloads', t.ios], ['Deletions', t.iosDeletions]],
+      accounts: acc?.accounts?.byPlatform?.ios,
       waiting: 'Connected — the first numbers arrive 1–2 days after the app is live on the App Store.',
     },
     {
       name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
       tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls], ['Active devices', t.androidActive]],
+      accounts: acc?.accounts?.byPlatform?.android,
       waiting: 'Connected — waiting for the first Google Play report.',
     },
   ] : [];
@@ -1104,6 +1114,18 @@ const AppDownloadsCard = ({ master }) => {
               ) : (
                 <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>{st.s?.ok ? st.waiting : st.s?.error}</p>
               )}
+              {st.accounts?.total ? (
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
+                  <div>
+                    <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Signed in to the app</p>
+                    <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.accounts.total)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Created the account in the app</p>
+                    <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.accounts.createdInApp)}</p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

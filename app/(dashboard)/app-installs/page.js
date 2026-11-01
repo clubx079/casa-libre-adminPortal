@@ -81,55 +81,38 @@ function StoreStatus({ name, s, latest }) {
 
 const pctOf = (n, of) => (of ? `${Math.round((n / of) * 100)}%` : '—');
 
-// Installs → opened the app → signed in → account created in the app (the app's own pings),
-// and before those pings existed: people who signed in and allowed notifications.
+// Installs → signed in to the app → account created in the app. One number per person, joined from
+// the app's own pings and the phones registered for notifications (how we knew before the pings).
 function ToAccounts({ acc, installs }) {
   if (!acc) return <div className="h-[120px] rounded-[14px] animate-pulse" style={{ ...CARD, background: T.bgSurface }} />;
   if (acc.error) return <Banner>{acc.error}</Banner>;
-  const tr = acc.tracked || {};
-  const b = acc.beforeTracking || { byCountry: [] };
-  const live = !tr.error && tr.opened > 0;
+  const a = acc.accounts || { total: 0, createdInApp: 0, existing: 0, byCountry: [] };
+  const pg = acc.pings || {};
   return (
     <div className="rounded-[14px] p-5 space-y-4" style={CARD}>
       <div>
         <div className="text-[14px] font-bold" style={{ color: T.textPrimary }}>From install to account</div>
-        <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>Who opened the app, and how many signed in or created their account in it. Team and test accounts left out.</div>
+        <div className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>People who signed in to the app in the last {acc.days} days, and how many created their account in it. Team and test accounts left out.</div>
       </div>
-      {live ? (
-        <>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
-            <Kpi label="Store installs" value={int(installs)} sub={`last ${acc.days} days`} />
-            <Kpi label="Opened the app" value={int(tr.opened)} sub={`${int(tr.firstOpens)} for the first time`} />
-            <Kpi label="Signed in" value={int(tr.signedIn)} sub={`${pctOf(tr.signedIn, tr.opened)} of who opened it`} />
-            <Kpi label="New accounts in the app" value={int(tr.newInApp)} sub={`${pctOf(tr.newInApp, tr.opened)} of who opened it`} />
-            <Kpi label="Existing accounts" value={int(tr.existing)} sub="signed up on the website first" />
-          </div>
-          {tr.byCountry?.length ? (
-            <table className="w-full text-[12.5px]">
-              <thead><tr style={{ color: T.textMuted }}>{['Country', 'Phone', 'Opened', 'Signed in', 'New in the app', 'Existing'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i > 1 ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
-              <tbody>{tr.byCountry.map((r) => (
-                <tr key={`${r.country}-${r.platform}`} className="border-t" style={{ borderColor: T.borderLight, color: T.textPrimary }}>
-                  <td className="py-1.5">{r.name}</td><td>{r.platform === 'ios' ? 'iPhone' : r.platform === 'android' ? 'Android' : r.platform}</td>
-                  <td className="text-right tabular-nums">{int(r.opened)}</td><td className="text-right tabular-nums">{int(r.signedIn)}</td><td className="text-right tabular-nums">{int(r.newInApp)}</td><td className="text-right tabular-nums">{int(r.existing)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          ) : null}
-          <div className="text-[11.5px]" style={{ color: T.textMuted }}>Counting since {tr.since ? dayLabel(tr.since.slice(0, 10)) : '—'} (the app version that sends it).</div>
-        </>
-      ) : (
-        <div className="text-[12.5px] rounded-[10px] px-3 py-2" style={{ background: T.bgSurface, color: T.textSecondary }}>
-          {tr.error ? `App tracking: ${tr.error}` : 'No app openings counted yet — they start with the app update that sends them.'}
-        </div>
-      )}
-      <div className="border-t pt-4" style={{ borderColor: T.borderLight }}>
-        <div className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>Before that: people who signed in to the app and allowed notifications</div>
-        <div className="text-[12px] mt-0.5 mb-3" style={{ color: T.textSecondary }}>A minimum — people who said no to notifications are not counted. All time.</div>
-        <div className="grid gap-3 grid-cols-3">
-          <Kpi label="Signed in to the app" value={int(b.people)} sub={b.byCountry.map((r) => `${r.name} ${r.people}`).join(' · ') || '—'} />
-          <Kpi label="Created the account in the app" value={int(b.createdInApp)} sub={pctOf(b.createdInApp, b.people)} />
-          <Kpi label="Had a website account" value={int(b.existingAccounts)} sub={pctOf(b.existingAccounts, b.people)} />
-        </div>
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+        <Kpi label="Store installs" value={int(installs)} sub={`last ${acc.days} days`} />
+        <Kpi label="Signed in to the app" value={int(a.total)} sub={`${pctOf(a.total, installs)} of installs`} />
+        <Kpi label="Created the account in the app" value={int(a.createdInApp)} sub={`${pctOf(a.createdInApp, installs)} of installs`} />
+        <Kpi label="Had a website account" value={int(a.existing)} sub="signed up on the website first" />
+      </div>
+      {a.byCountry?.length ? (
+        <table className="w-full text-[12.5px]">
+          <thead><tr style={{ color: T.textMuted }}>{['Country', 'Signed in to the app', 'Created in the app', 'Had a website account'].map((h, i) => <th key={h} className={`py-1.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+          <tbody>{a.byCountry.map((r) => (
+            <tr key={r.country} className="border-t" style={{ borderColor: T.borderLight, color: T.textPrimary }}>
+              <td className="py-1.5">{r.name}</td><td className="text-right tabular-nums">{int(r.accounts)}</td><td className="text-right tabular-nums">{int(r.createdInApp)}</td><td className="text-right tabular-nums">{int(r.existing)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      ) : null}
+      <div className="text-[11.5px] leading-relaxed" style={{ color: T.textMuted }}>
+        {pg.opened ? `Since ${dayLabel(String(pg.since).slice(0, 10))} the app reports itself: ${int(pg.opened)} installs opened it (${int(pg.firstOpens)} for the first time), ${int(pg.signedIn)} signed in. ` : 'The app starts reporting every opening with its next update. '}
+        Before that, the count comes from phones that signed in and allowed notifications — a minimum{a.fromNotificationsOnly ? ` (${int(a.fromNotificationsOnly)} of the ${int(a.total)})` : ''}.
       </div>
     </div>
   );

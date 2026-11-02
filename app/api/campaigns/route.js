@@ -2,6 +2,7 @@
 // Each campaign is a BATCH of an audience (first N, skipping who an earlier batch had) or a
 // re-send to an earlier batch.
 //   GET  ?mode=live|test            → the campaigns (batches) of the active country + totals
+//                                     (+ signed_in: who signed in to Casa Libre after the batch)
 //   GET  ?templates=1               → approved Utility / Marketing templates (Relay)
 //   GET  ?audience=1&source=&segment=&mode=&template=&phones=&size=&skip=1&batch_filter=
 //                                   → who this batch would reach
@@ -19,6 +20,7 @@ import { audienceCounts, relayVariables, variablesProblem, campaignSlug, neededF
 import { createCampaign, addRecipients, relayOptIns, loadAudience, sendCampaign, campaignsWithResults, batchedKeys, getCampaign, refreshIfStale } from '@/lib/waCampaignStore';
 import { modeOf, inboxModes } from '@/lib/relayInbox';
 import { batchClicks } from '@/lib/waCampaignClicks';
+import { batchSignins } from '@/lib/waSigninsStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,7 +76,11 @@ export async function GET(req) {
     // background, so the next look shows delivered / read (the page itself doesn't wait)
     for (const c of all.filter((x) => !x.demo).slice(0, 8)) refreshIfStale(c, { wait: 0 }).catch(() => {});
     const mode = sp.get('mode');
-    return NextResponse.json({ campaigns: (mode ? all.filter((c) => c.mode === modeOf(mode)) : all).map((c) => ({ ...c, audience_label: audienceLabel(c.audience_def) })), modes: inboxModes(), leadsLive: leadsLive() });
+    // who signed in to Casa Libre after each batch (lib/waSignins.js) — the "Signed in" column
+    // + who landed on the website from it (PostHog, utm_campaign = the batch)
+    const { signins, landed } = await batchSignins(all).catch(() => ({ signins: new Map(), landed: new Map() }));
+    const signedIn = (c) => { const l = signins.get(String(c.id)); return l ? { total: l.length, new_accounts: l.filter((s) => s.new_account).length } : null; };
+    return NextResponse.json({ campaigns: (mode ? all.filter((c) => c.mode === modeOf(mode)) : all).map((c) => ({ ...c, audience_label: audienceLabel(c.audience_def), signed_in: signedIn(c), landed: landed.has(String(c.id)) ? landed.get(String(c.id)) : null })), modes: inboxModes(), leadsLive: leadsLive() });
   } catch (e) {
     return bad(String(e?.message || e), 502);
   }

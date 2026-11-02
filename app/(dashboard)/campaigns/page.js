@@ -1,7 +1,7 @@
 'use client';
-// WhatsApp campaigns — two tabs: New campaign (one batch: first N of an audience, skipping
-// who an earlier batch had, or an earlier batch again) and Sent campaigns (every batch with
-// delivered / read / replied / clicked). ?tab=new|sent · ?next=<id> prefills the next batch
+// WhatsApp marketing — two tabs: Sent campaigns (the default: every batch with delivered /
+// read / replied / clicked / signed in) and New campaign (one batch: first N of an audience,
+// skipping who an earlier batch had, or an earlier batch again). ?tab=sent|new · ?next=<id> prefills the next batch
 // of that audience · ?from=<id> prefills "send that batch again".
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -17,7 +17,7 @@ export default function CampaignsPage() {
     const sp = new URLSearchParams(window.location.search);
     const next = sp.get('next');
     const from = sp.get('from');
-    setTab(sp.get('tab') === 'new' || next || from ? 'new' : sp.get('tab') === 'sent' ? 'sent' : 'new');
+    setTab(sp.get('tab') === 'new' || next || from ? 'new' : 'sent');
     const id = next || from;
     if (!id) { setPrefill(sp.get('mode') === 'live' ? { mode: 'live' } : null); return; }
     fetch(`/api/campaigns/${id}`).then((r) => r.json()).then(({ campaign: c }) => {
@@ -32,9 +32,9 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="WhatsApp campaigns" sub="Send a template to a batch of people — the first 50, the next 100, or an earlier batch again — and compare how each batch did." />
+      <PageHeader title="WhatsApp marketing" sub="Send a template to a batch of people — the first 50, the next 100, or an earlier batch again — and compare how each batch did." />
       <div className="flex gap-1 border-b" style={{ borderColor: T.borderLight }} role="tablist">
-        {[['new', 'New campaign'], ['sent', 'Sent campaigns']].map(([k, l]) => (
+        {[['sent', 'Sent campaigns'], ['new', 'New campaign']].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)} data-testid={`tab-${k}`} className="px-4 py-2.5 text-[14px] -mb-px border-b-2"
             style={tab === k ? { borderColor: T.primary, color: T.textPrimary, fontWeight: 600 } : { borderColor: 'transparent', color: T.textSecondary }}>{l}</button>
         ))}

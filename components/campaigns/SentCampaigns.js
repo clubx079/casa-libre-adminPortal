@@ -2,10 +2,14 @@
 // Sent campaigns — every batch with its results at a glance: who it went to (audience +
 // #from–to), template, live / test / demo, and delivered · read · replied · clicked as a share
 // of the batch. Each row: open it, send the next batch of the same audience, or send it
-// again (everyone / didn't read / …). Data: /api/campaigns.
+// again (everyone / didn't read / …). Template → Preview: the message as it lands on the phone,
+// Spanish and English side by side. Signed in = people who signed in to Casa Libre after the
+// batch (lib/waSignins.js). Data: /api/campaigns (+ ?templates=1 for the text from Relay).
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, CARD, Pill, Banner, fmtDate } from '@/components/automations/ui';
+import { TemplatePreviewModal } from '@/components/campaigns/TemplatePreview';
+import { templateLook } from '@/lib/waTemplateLook';
 
 const STATE = { draft: ['neutral', 'Draft'], sending: ['info', 'Sending'], sent: ['success', 'Sent'], scheduled: ['warning', 'Scheduled'], failed: ['danger', 'Failed'] };
 const fmt = (n) => Number(n || 0).toLocaleString('en-US');
@@ -42,6 +46,12 @@ export default function SentCampaigns() {
     load();
     return () => { alive = false; clearTimeout(timer); };
   }, [mode]);
+  // the template text + header type from Relay (the media and buttons: lib/waTemplateLook.js)
+  const [tpls, setTpls] = useState(null);
+  useEffect(() => {
+    fetch('/api/campaigns?templates=1').then((r) => r.json()).then((j) => setTpls(new Map((j.templates || []).map((t) => [t.name, t])))).catch(() => setTpls(new Map()));
+  }, []);
+  const [open, setOpen] = useState(null);   // { template, vars } shown in the modal
   const [sort, setSort] = useState('new');   // new | click | read
   const pct = (n, of) => (of ? Math.round((n / of) * 1000) / 10 : null);
   const rate = (c, k) => c.results?.[k] ?? -1;
@@ -61,9 +71,10 @@ export default function SentCampaigns() {
           <option value="click">Highest click rate</option>
           <option value="read">Highest read rate</option>
         </select>
-        <span className="text-[11.5px]" style={{ color: T.textMuted }}>People = delivered + not delivered yet (sent, phone off or no signal) + failed. Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off). Clicked = people who tapped the batch&apos;s tracked link.</span>
+        <span className="text-[11.5px]" style={{ color: T.textMuted }}>People = delivered + not delivered yet (sent, phone off or no signal) + failed. Delivered = of sent · Read, replied and clicked = of delivered. Read is a minimum (read receipts can be off). Clicked = people who tapped the batch&apos;s tracked link. Landed on website = people who arrived on the site from the batch&apos;s link (PostHog, the &quot;WhatsApp campaign&quot; source). Signed in = people who signed in to Casa Libre after the batch (new account from the link, came from the link signed in, or the account with that WhatsApp number signed in).</span>
       </div>
       {err ? <Banner>Could not load: {err}</Banner> : null}
+      <TemplatePreviewModal open={open} tpls={tpls} onClose={() => setOpen(null)} />
       <div className="bg-white overflow-hidden" style={CARD}>
         {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (
           <div className="p-10 text-center">
@@ -72,10 +83,10 @@ export default function SentCampaigns() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[1040px]">
+            <table className="w-full text-xs min-w-[1200px]">
               <thead>
                 <tr style={{ color: T.textMuted }}>
-                  {['Batch', 'Template', 'Sent', 'People', 'Delivered', 'Read', 'Replied', 'Clicked', ''].map((h, i) => <th key={h || i} className={`px-3 py-2.5 font-semibold ${i >= 3 && i <= 7 ? 'text-right' : 'text-left'}`}>{h}</th>)}
+                  {['Batch', 'Template', 'Sent', 'People', 'Delivered', 'Read', 'Replied', 'Clicked', 'Landed on website', 'Signed in', ''].map((h, i) => <th key={h || i} className={`px-3 py-2.5 font-semibold ${i >= 3 && i <= 9 ? 'text-right' : 'text-left'}`}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -93,7 +104,11 @@ export default function SentCampaigns() {
                           {c.id === best && <span data-testid="best-batch"><Pill tone="success">Best click rate</Pill></span>}
                         </div>
                       </td>
-                      <td className="px-3 py-3 align-top font-mono" style={{ color: T.textBody }}>{c.template}<div className="font-sans text-[10.5px]" style={{ color: T.textMuted }}>{c.category}</div></td>
+                      <td className="px-3 py-3 align-top" style={{ color: T.textBody }}>
+                        <div className="font-mono">{c.template}</div>
+                        <div className="text-[10.5px]" style={{ color: T.textMuted }}>{templateLook(c.template, tpls?.get(c.template)).format} · {c.category}</div>
+                        <button type="button" onClick={() => setOpen({ template: c.template, vars: c.variables, name: c.name })} className="text-[11.5px] font-semibold mt-1 underline-offset-2 hover:underline" style={{ color: T.textPrimary }} data-testid="preview-template">Preview</button>
+                      </td>
                       <td className="px-3 py-3 align-top whitespace-nowrap" style={{ color: T.textSecondary }}>{fmtDate(c.sent_at || c.send_at || c.created_at, true)}</td>
                       <td className="px-3 py-3 text-right align-top">
                         <div className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{fmt(s.recipients)}</div>
@@ -103,6 +118,18 @@ export default function SentCampaigns() {
                       <Rate n={s.read} of={s.delivered} rate={s.readRate} color={T.success} />
                       <Rate n={s.replied} of={s.delivered} rate={s.replyRate} color="#7A5BA6" />
                       <Rate n={s.clicked} of={s.delivered} rate={s.clickRate ?? pct(s.clicked, s.delivered)} color="#B8741A" />
+                      <td className="px-3 py-3 text-right align-top" data-testid="landed">
+                        {c.landed == null ? <span style={{ color: T.textMuted }}>—</span> : <>
+                          <div className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{fmt(c.landed)}</div>
+                          <div className="text-[10.5px]" style={{ color: T.textMuted }}>{s.delivered ? `${pct(c.landed, s.delivered)}% of delivered` : 'people on the site'}</div>
+                        </>}
+                      </td>
+                      <td className="px-3 py-3 text-right align-top" data-testid="signed-in">
+                        {c.signed_in ? <>
+                          <Link href={`/campaigns/${c.id}#signed-in`} className="font-semibold tabular-nums underline-offset-2 hover:underline" style={{ color: T.textPrimary }}>{fmt(c.signed_in.total)}</Link>
+                          <div className="text-[10.5px]" style={{ color: T.textMuted }}>{[c.landed ? `${pct(c.signed_in.total, c.landed)}% of landed` : '', c.signed_in.new_accounts ? `${fmt(c.signed_in.new_accounts)} new` : ''].filter(Boolean).join(' · ') || '—'}</div>
+                        </> : <span style={{ color: T.textMuted }}>—</span>}
+                      </td>
                       <td className="px-3 py-3 align-top text-right whitespace-nowrap">
                         {c.state !== 'draft' && <>
                           {c.audience_def?.source && !['batch', 'phones'].includes(c.audience_def.source) && <Link href={`/campaigns?tab=new&next=${c.id}`} className="block text-[11.5px] font-semibold underline-offset-2 hover:underline" style={{ color: T.textPrimary }}>Next batch</Link>}

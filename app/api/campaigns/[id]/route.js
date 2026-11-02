@@ -1,5 +1,6 @@
 // /api/campaigns/[id]
-//   GET                         → the campaign, its recipients and results
+//   GET                         → the campaign, its recipients and results, and who signed in
+//                                 to Casa Libre after it (signins, lib/waSignins.js)
 //   POST { action: 'refresh' }  → read each recipient's Relay conversation (status, reply)
 //   POST { action: 'send' }     → send a draft now
 //   DELETE                      → remove a draft / the admin's record (not Relay's)
@@ -8,6 +9,7 @@ import { getSession } from '@/lib/auth';
 import { campaignResults, liveProblem, audienceLabel, markClicks } from '@/lib/waCampaigns';
 import { getCampaign, listRecipients, refreshResults, refreshIfStale, deleteCampaign, saveCampaign, sendCampaign } from '@/lib/waCampaignStore';
 import { batchClicks, recipientClicks } from '@/lib/waCampaignClicks';
+import { batchSignins } from '@/lib/waSigninsStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,9 +30,15 @@ export async function GET(req, { params }) {
   if (!c) return bad('not_found', 404);
   const force = new URL(req.url).searchParams.get('fresh') === '1';
   await refreshIfStale(c);   // delivered / read / replied from Relay, when last read over a minute ago
-  const [rows, clicks, byRef] = await Promise.all([listRecipients(c.id), clicksFor(c, force), c.demo ? new Map() : recipientClicks(c.slug, { force })]);
+  const [rows, clicks, byRef, signins] = await Promise.all([
+    listRecipients(c.id), clicksFor(c, force), c.demo ? new Map() : recipientClicks(c.slug, { force }),
+    batchSignins([c]).catch(() => null),
+  ]);
   const recipients = markClicks(rows, byRef);   // each person's click (their own link), for the Clicked column
-  return NextResponse.json({ campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients });
+  return NextResponse.json({
+    campaign: { ...c, audience_label: audienceLabel(c.audience_def) }, results: campaignResults(recipients, clicks.clickers), clicks, recipients,
+    signins: signins ? signins.signins.get(String(c.id)) || [] : null, landed: signins ? signins.landed.get(String(c.id)) ?? 0 : null,
+  });
 }
 
 export async function POST(req, { params }) {

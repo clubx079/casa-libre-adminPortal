@@ -1,8 +1,11 @@
 'use client';
 // Templates → WhatsApp: the real WhatsApp templates in Relay (created and approved by
 // Meta there), with their category, status, text and which automation uses each one.
-// Read-only. Data: /api/whatsapp/templates.
-import { useEffect, useState } from 'react';
+// Preview = the message as it lands on the phone, like Relay's (header media, text, footer,
+// button; Spanish | English). Read-only. Data: /api/whatsapp/templates.
+import { useEffect, useMemo, useState } from 'react';
+import { TemplatePreviewModal } from '@/components/campaigns/TemplatePreview';
+import { templateLook } from '@/lib/waTemplateLook';
 import { MessageCircle } from 'lucide-react';
 import { T, CARD, Pill, Banner, btnSecondary } from '@/components/automations/ui';
 
@@ -14,6 +17,8 @@ export default function WhatsAppTemplatesTab() {
   const [busy, setBusy] = useState(false);
   const load = (fresh) => { setBusy(true); return fetch(`/api/whatsapp/templates${fresh ? '?fresh=1' : ''}`, { cache: 'no-store' }).then((r) => r.json()).then(setD).catch((e) => setD({ error: String(e) })).finally(() => setBusy(false)); };
   useEffect(() => { load(false); }, []);
+  const [open, setOpen] = useState(null);   // { template } in the preview
+  const tpls = useMemo(() => new Map((d?.templates || []).map((t) => [t.name, t])), [d]);
   if (!d) return <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>;
   return (
     <div className="space-y-3" data-testid="whatsapp-templates">
@@ -26,6 +31,7 @@ export default function WhatsAppTemplatesTab() {
       </div>
       {d.configured === false && <Banner tone="warning">RELAY_API_KEY is not set on the admin, so the WhatsApp templates can’t be listed.</Banner>}
       {d.error && <Banner>Relay: {d.error}</Banner>}
+      <TemplatePreviewModal open={open} tpls={tpls} onClose={() => setOpen(null)} />
       <div className="overflow-hidden" style={CARD}>
         <div className="cl-scroll overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -42,7 +48,8 @@ export default function WhatsAppTemplatesTab() {
                   <tr key={`${t.name}-${t.language}`} className="border-b align-top" style={{ borderColor: T.borderLight }}>
                     <td className="px-4 py-3">
                       <div className="text-[13px] font-mono font-medium" style={{ color: T.textPrimary }}>{t.name}</div>
-                      <div className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>{t.language}{t.supported ? '' : ' · not used by automations'}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>{t.language} · {templateLook(t.name, t).format}{t.supported ? '' : ' · not used by automations'}</div>
+                      <button type="button" onClick={() => setOpen({ template: t.name })} className="text-[12px] font-semibold mt-1.5 underline-offset-2 hover:underline" style={{ color: T.textPrimary }} data-testid="wa-template-preview">Preview</button>
                     </td>
                     <td className="px-4 py-3"><Pill tone={ct}>{cl}</Pill></td>
                     <td className="px-4 py-3"><Pill tone={st}>{sl}</Pill></td>

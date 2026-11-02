@@ -38,3 +38,18 @@ describe('waSegments', () => {
     expect(waSegments('Hola *María*, _ya_ ~no~')).toEqual([{ text: 'Hola ' }, { text: 'María', bold: true }, { text: ', ' }, { text: 'ya', italic: true }, { text: ' ' }, { text: 'no', strike: true }]);
   });
 });
+
+describe('the "por fin llegó" set', () => {
+  it('each of the four has its format, media, footer, button and English', () => {
+    const relay = (name, header) => ({ name, header, body: 'Hola {{1}}, ¡por fin llegó!', variables: { body: 1, url_buttons: [0] } });
+    const want = { cl_porfin_texto: ['Text', null], cl_porfin_gif_mascota: ['GIF', '/wa-templates/porfin-mascota.mp4'], cl_porfin_gif_estadisticas: ['GIF', '/wa-templates/porfin-estadisticas.mp4'], cl_porfin_video: ['Video', '/wa-templates/publica-video.mp4'] };
+    for (const [name, [format, src]] of Object.entries(want)) {
+      const es = templateLook(name, relay(name, src ? 'gif' : null));
+      expect(es).toMatchObject({ format, footer: 'Casa-Libre', buttons: ['Reclamar publicación'], body: 'Hola María, ¡por fin llegó!', url: 'https://casa-libre.com.py/?sell=1' });
+      expect(es.header?.src ?? null).toBe(src);
+      const en = templateLook(name, relay(name), null, 'en');
+      expect(en.body).toMatch(/^Hi María, it's finally here!/);
+      expect(en.buttons).toEqual(['Claim your listing']);
+    }
+  });
+});

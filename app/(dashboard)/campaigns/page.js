@@ -1,5 +1,5 @@
 'use client';
-// WhatsApp marketing — two tabs: Sent campaigns (the default: every batch with delivered /
+// WhatsApp Marketing — two tabs: Sent campaigns (the default: every batch with delivered /
 // read / replied / clicked / signed in) and New campaign (one batch: first N of an audience,
 // skipping who an earlier batch had, or an earlier batch again). ?tab=sent|new · ?next=<id> prefills the next batch
 // of that audience · ?from=<id> prefills "send that batch again".
@@ -32,7 +32,7 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="WhatsApp marketing" sub="Send a template to a batch of people — the first 50, the next 100, or an earlier batch again — and compare how each batch did." />
+      <PageHeader title="WhatsApp Marketing" sub="Send a template to a batch of people — the first 50, the next 100, or an earlier batch again — and compare how each batch did." />
       <div className="flex gap-1 border-b" style={{ borderColor: T.borderLight }} role="tablist">
         {[['sent', 'Sent campaigns'], ['new', 'New campaign']].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => go(k)} data-testid={`tab-${k}`} className="px-4 py-2.5 text-[14px] -mb-px border-b-2"

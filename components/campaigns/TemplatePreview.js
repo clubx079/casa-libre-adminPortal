@@ -30,7 +30,7 @@ export function TemplateBoth({ template, tpl, vars }) {
       {[['Spanish · sent', es], ['English · translation', { ...enLook, body: enBody || '' }]].map(([label, look]) => (
         <div key={label}>
           <div className="text-[11.5px] font-semibold mb-1.5" style={{ color: T.textSecondary }}>{label}</div>
-          <WhatsAppPreview look={look} />
+          <WhatsAppPreview look={look} chrome />
         </div>
       ))}
     </div>

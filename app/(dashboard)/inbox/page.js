@@ -6,7 +6,9 @@
 //     lib/inboxRules.js) — a number used on two sites shows in both
 //   • All, Unread (new messages or "Mark as unread"), Unresponded (the contact wrote last)
 //     and 24h open (they wrote in the last 24 h: free text can still go out) with counts
-//   • the thread: ticks, media, template buttons, Translate (one message or all), "Reply with
+//   • the thread: ticks, media, template messages as they land (header GIF / video / image
+//     from lib/waTemplateLook.js — Relay doesn't return a template's media —, footer, a working
+//     button), Translate (one message or all), "Reply with
 //     AI" on a message, the contact's Casa Libre account → their activity page
 //   • the reply: one slim row (text / photo / file inside the 24h window; outside it a
 //     template, whose form opens only when asked) and the AI assistant — a small chat beside
@@ -22,6 +24,8 @@ import { refreshUnread } from '@/components/unread';
 import { useDialog } from '@/components/Dialog';
 import { formatPhone } from '@/lib/inboxRules';
 import { WA_TEMPLATES } from '@/lib/whatsappTemplates';
+import { TEMPLATE_LOOK, templateLook } from '@/lib/waTemplateLook';
+import { TemplateHeader } from '@/components/campaigns/WhatsAppPreview';
 
 const GREEN = '#0F6E4A';
 const BUBBLE_OUT = '#D9FDD3';
@@ -92,7 +96,17 @@ function Bubble({ m, mode, english, onTranslate, onAiReply, tplMeta }) {
   const out = m.direction === 'outbound';
   const tplName = typeof m.template === 'string' ? m.template : m.template?.name;
   const created = m.timestamps?.created || m.created_at;
-  const button = tplName ? buttonOf(tplName, tplMeta[tplName]) : null;
+  // a template message drawn as it landed: its header (GIF / video / image), the text, the
+  // footer apart in grey, and its button (opens where it leads, untracked)
+  const look = tplName ? templateLook(tplName, tplMeta[tplName]) : null;
+  const known = !!(tplName && TEMPLATE_LOOK[tplName]);
+  const button = tplName ? (known && look.buttons[0]) || buttonOf(tplName, tplMeta[tplName]) : null;
+  let text = m.text;
+  let footer = null;
+  if (look?.footer && typeof text === 'string' && text.trimEnd().endsWith(look.footer)) {
+    text = text.trimEnd().slice(0, -look.footer.length).trimEnd();
+    footer = look.footer;
+  }
   return (
     <div className={`group flex ${out ? 'justify-end' : 'justify-start'} mb-2`} data-testid={`bubble-${m.direction}`}>
       <div className="max-w-[72%]">
@@ -105,8 +119,10 @@ function Bubble({ m, mode, english, onTranslate, onAiReply, tplMeta }) {
           )}
           {!tplName && out && m.sent_by && m.sent_by !== 'api' && <div className="text-[11px] mb-0.5" style={{ color: T.textMuted }}>{m.sent_by}</div>}
           {m.media && <Media m={m} mode={mode} />}
+          {!m.media && look?.header && <div className="mb-1.5 -mx-1.5 -mt-0.5" data-testid="template-media"><TemplateHeader h={look.header} maxW={300} /></div>}
           {m.location && <a className="text-[13px] underline" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}`}>📍 {m.location.name || 'Location'}</a>}
-          {m.text && <div className="text-[14px] whitespace-pre-wrap break-words" style={{ color: T.textPrimary }}><Rich text={m.text} /></div>}
+          {text && <div className="text-[14px] whitespace-pre-wrap break-words" style={{ color: T.textPrimary }}><Rich text={text} /></div>}
+          {footer && <div className="text-[12.5px] mt-1" style={{ color: T.textMuted }}>{footer}</div>}
           {english && english !== m.text && <div className="text-[12.5px] mt-1 pt-1 border-t italic whitespace-pre-wrap" style={{ color: T.textSecondary, borderColor: 'rgba(0,0,0,.08)' }} data-testid="translation">EN · {english}</div>}
           {!m.text && !m.media && !m.location && <div className="text-[13px] italic" style={{ color: T.textMuted }}>({m.type || 'message'})</div>}
           <div className="flex items-center justify-end gap-1.5 mt-0.5 text-[11px]" style={{ color: T.textMuted }}>
@@ -114,8 +130,9 @@ function Bubble({ m, mode, english, onTranslate, onAiReply, tplMeta }) {
             {timeOf(created)}{out && <Ticks status={m.status} />}
           </div>
         </div>
-        {button && (
-          <div className="mt-1 rounded-[10px] px-3 py-1.5 text-center text-[12.5px] font-semibold shadow-sm" style={{ background: out ? BUBBLE_OUT : '#fff', color: '#027EB5' }} title="The button the person sees under this message" data-testid="template-button">↗ {button}</div>
+        {button && (known && look.url
+          ? <a href={look.url} target="_blank" rel="noopener noreferrer" className="mt-1 block rounded-[10px] px-3 py-1.5 text-center text-[12.5px] font-semibold shadow-sm hover:brightness-[.97]" style={{ background: out ? BUBBLE_OUT : '#fff', color: '#027EB5' }} title={`The button the person sees — opens ${look.url} (not counted as a click)`} data-testid="template-button">↗ {button}</a>
+          : <div className="mt-1 rounded-[10px] px-3 py-1.5 text-center text-[12.5px] font-semibold shadow-sm" style={{ background: out ? BUBBLE_OUT : '#fff', color: '#027EB5' }} title="The button the person sees under this message" data-testid="template-button">↗ {button}</div>
         )}
         {m.text && (
           <div className={`flex gap-3 mt-0.5 text-[11.5px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity ${out ? 'justify-end' : 'justify-start'}`}>

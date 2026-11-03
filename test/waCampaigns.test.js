@@ -162,3 +162,14 @@ describe('campaignResults · not delivered yet', () => {
     expect([r.recipients, r.delivered, r.pending, r.failed]).toEqual([50, 44, 5, 1]);
   });
 });
+
+describe('SÍ / BAJA per batch', () => {
+  it('counts the words people tapped (meta.keyword)', () => {
+    const rows = [
+      { status: 'read', meta: { keyword: 'si', replied_at: '2026-11-03T10:00:00Z' } },
+      { status: 'read', meta: { keyword: 'baja', replied_at: '2026-11-03T10:00:00Z' } },
+      { status: 'delivered', meta: {} },
+    ];
+    expect(campaignResults(rows)).toMatchObject({ si: 1, baja: 1, replied: 2, delivered: 3 });
+  });
+});

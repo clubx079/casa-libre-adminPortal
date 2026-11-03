@@ -87,7 +87,7 @@ export default function CampaignPage({ params }) {
           ['Sent', s.sent, s.waiting ? `${s.waiting} waiting` : ''],
           ['Delivered', s.delivered, pct(s.deliveredRate)],
           ['Read', s.read, s.readRate != null ? `read rate ${s.readRate}%` : ''],
-          ['Replied', s.replied, s.replyRate != null ? `${s.replyRate}% of delivered` : ''],
+          ['Replied', s.replied, [s.replyRate != null ? `${s.replyRate}% of delivered` : '', (s.si || s.baja) ? `${s.si} SÍ · ${s.baja} BAJA` : ''].filter(Boolean).join(' · ')],
           ['Clicked', s.clicked, clicks?.note ? 'PostHog n/a' : s.clickRate != null ? `${s.clickRate}% of delivered` : 'people who opened the link'],
           ['Landed on website', landed ?? 0, 'from the link (PostHog)'],
           ['Signed in', signins?.length ?? 0, landed ? `${Math.round(((signins?.length || 0) / landed) * 1000) / 10}% of landed` : 'after this batch'],
@@ -158,7 +158,10 @@ export default function CampaignPage({ params }) {
                     {r.meta?.skipped ? SKIP[r.meta.skipped] || 'Skipped' : r.status === 'sending' ? 'Waiting' : r.status}
                     {r.meta?.error ? <span className="block text-[10px] font-normal normal-case" style={{ color: T.danger }}>{r.meta.error}</span> : null}
                   </td>
-                  <td className="px-4 py-2 text-right" style={{ color: r.meta?.replied_at ? T.success : T.textMuted }}>{r.meta?.replied_at ? fmtDate(r.meta.replied_at, true) : '—'}</td>
+                  <td className="px-4 py-2 text-right" style={{ color: r.meta?.replied_at ? T.success : T.textMuted }}>
+                    {r.meta?.keyword && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mr-1.5" style={{ background: r.meta.keyword === 'baja' ? T.dangerSurface || '#FBE9E7' : T.successSurface || '#E8F5E9', color: r.meta.keyword === 'baja' ? T.danger : T.success }} data-testid="keyword">{r.meta.keyword === 'baja' ? 'BAJA' : 'SÍ'}</span>}
+                    {r.meta?.replied_at ? fmtDate(r.meta.replied_at, true) : '—'}
+                  </td>
                   <td className="px-4 py-2 text-right" style={{ color: r.meta?.clicked_at ? T.success : T.textMuted }}>{r.meta?.clicked_at ? fmtDate(r.meta.clicked_at, true) : '—'}</td>
                 </tr>
               ))}

@@ -22,6 +22,10 @@ function Body({ text }) {
   });
 }
 
+export function TemplateHeader({ h, maxW }) {
+  return <div style={maxW ? { maxWidth: maxW } : undefined}><Header h={h} /></div>;
+}
+
 function Header({ h }) {
   const box = 'block w-full rounded-[6px] overflow-hidden';
   if (!h.src) {

@@ -34,3 +34,18 @@ describe('matchSignins', () => {
   });
   it('phoneKey8', () => { expect(phoneKey8('+595 (971) 823-000')).toBe('71823000'); });
 });
+
+describe('formula SÍ links: the person code (utm_term) ties visits and sign-ups to the batch', () => {
+  const camp = { id: 'c9', slug: 'wc-agentes-1-ab12', sent_at: '2026-11-03T10:00:00Z' };
+  const recipients = [{ run_id: 'c9', phone: '+595981111111', ref: '1f0y4oh' }];
+  it('a sign-up whose attribution carries the code counts, as a new account from the link', () => {
+    const users = [{ id: 'u1', email: 'a@x.com', created_at: '2026-11-03T11:00:00Z', attribution: { campaign: 'agentes_lanzamiento', term: '1f0y4oh' } }];
+    expect(matchSignins({ campaigns: [camp], recipients, users }).get('c9')).toMatchObject([{ user_id: 'u1', new_account: true, how: ['link'] }]);
+  });
+  it('a visit with the code, signed in, counts too; another code does not', () => {
+    const users = [{ id: 'u2', email: 'b@x.com', created_at: '2026-10-01T00:00:00Z' }];
+    const landed = [{ slug: '', ref: '1f0y4oh', email: 'b@x.com', at: '2026-11-03T12:00:00Z' }, { slug: '', ref: 'zzzzzzz', email: 'b@x.com', at: '2026-11-03T12:00:00Z' }];
+    expect(matchSignins({ campaigns: [camp], recipients, users, landed }).get('c9')).toMatchObject([{ user_id: 'u2', new_account: false, how: ['visit'] }]);
+    expect(matchSignins({ campaigns: [camp], recipients, users, landed: [landed[1]] }).get('c9')).toEqual([]);
+  });
+});

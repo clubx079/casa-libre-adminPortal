@@ -19,6 +19,8 @@ import EmailPreview from '@/components/manager/EmailPreview';
 import { slug } from '@/lib/manager/memory';
 import MemoryPanel from '@/components/manager/MemoryPanel';
 import PreviewEnglish from '@/components/PreviewEnglish';
+// which payment an email is about: Verified badge / home page display / extra listing
+import { payLabel } from '@/lib/manager/payFollowups';
 
 const COUNTRY = { py: ['Paraguay', '.py'], bo: ['Bolivia', '.bo'], uy: ['Uruguay', '.uy'], ve: ['Venezuela', '.ve'], sv: ['El Salvador', '.sv'] };
 const OWNERS = ['Omar', 'Tahir', 'Roland'];
@@ -262,7 +264,7 @@ function Draft({ a, busy, onAct, site, tld }) {
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="min-w-0 flex-1 text-left">
           <span className="flex flex-wrap items-center gap-2">
-            <Tag color={T.info} bg={T.infoSurface}>{KIND[a.kind] || a.kind}</Tag>
+            <Tag color={T.info} bg={T.infoSurface}>{a.kind === 'unpaid_listing' ? payLabel(a.plan) : KIND[a.kind] || a.kind}</Tag>
             {sent ? <Tag color={T.success} bg={T.successSurface}>Sent</Tag> : dismissed ? <Tag color={T.textSecondary} bg={T.bgSurface}>Dismissed</Tag> : null}
             <span className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{a.subject}</span>
           </span>

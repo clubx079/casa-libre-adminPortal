@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newCheckouts, firstPayDraft, payKind, payThreads, unpaidKind, payLabel } from '../lib/manager/payFollowups.js';
+import { newCheckouts, firstPayDraft, payKind, payThreads, unpaidKind, payLabel, planPayFollowups } from '../lib/manager/payFollowups.js';
 import { dailyDrafts } from '../lib/manager/dailyDrafts.js';
 
 const U = '11111111-1111-1111-1111-111111111111';
@@ -23,6 +23,8 @@ describe('daily: the first payment email', () => {
     const pend = new Map([[P, { status: 'payment_pending' }]]);
     expect(newCheckouts({ payments: [st(3 * H, { kind: 'listing', plan: null })], listingsById: pend, now: NOW })).toMatchObject([{ plan: 'listing' }]);
     expect(newCheckouts({ payments: [st(3 * H, { kind: 'listing', plan: null })], listingsById: live, now: NOW })).toEqual([]);
+    // a promotion on a listing that isn't live (photos rejected…) → no email
+    expect(newCheckouts({ payments: [st(3 * H)], listingsById: new Map([[P, { status: 'rejected' }]]), now: NOW })).toEqual([]);
     // two checkouts for one listing → one email (the latest)
     expect(newCheckouts({ payments: [st(5 * H, { plan: 'home' }), st(3 * H)], listingsById: live, now: NOW })).toMatchObject([{ plan: 'verified' }]);
   });
@@ -38,6 +40,12 @@ describe('daily: the first payment email', () => {
     const ext = firstPayDraft({ ...c, plan: 'extend' }, { listing: live.get(P), user: {}, site: 'https://x.py' });
     expect(ext.button_url).toBe(`https://x.py/cuenta/publicaciones?extend=${P}`);
     expect(ext.body).not.toMatch(/sigue activa/);
+  });
+
+  it('no promotion reminder while the listing is held', () => {
+    const th = payThreads([{ id: 'r', created_at: 'x', actions: [{ status: 'sent', kind: 'unpaid_listing', user_id: U, property_id: P, sent_at: iso(NOW - 3 * DAY), subject: 'S', plan: 'home' }] }]);
+    expect(planPayFollowups(th, new Map([[P, { status: 'rejected' }]]), [], NOW).resend).toEqual([]);
+    expect(planPayFollowups(th, live, [], NOW).resend.length).toBe(1);
   });
 
   it('a listing extension is its own kind, with its own name', () => {

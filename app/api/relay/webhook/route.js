@@ -23,10 +23,24 @@ export async function POST(req) {
   try { evt = JSON.parse(raw); } catch { return NextResponse.json({ error: 'bad_json' }, { status: 400 }); }
   const type = String(evt?.type || '');
   if (type !== 'message.inbound') return NextResponse.json({ ok: true, ignored: type });
-  try {
-    const r = await handleInbound(evt.data || {}, { dryRun: evt.dry === true });   // dry: only our own signed test events carry it
-    return NextResponse.json({ ok: true, ...r });
-  } catch (e) {
-    return NextResponse.json({ ok: true, action: 'error', reason: String(e?.message || e).slice(0, 200) });
+  // our own signed dry-run tests wait for the answer (they read it back)
+  if (evt.dry === true) {
+    try { return NextResponse.json({ ok: true, ...(await handleInbound(evt.data || {}, { dryRun: true })) }); }
+    catch (e) { return NextResponse.json({ ok: true, action: 'error', reason: String(e?.message || e).slice(0, 200) }); }
   }
+  // Relay wants a 2xx within 10 s and retries otherwise; sorting + answering takes longer. So:
+  // answer at once and do the work in the background (a long-running server, not serverless).
+  // The same message arriving again while it is being handled (a retry) is dropped here; after
+  // that, the email_log row (dedupe ai:<message id>) and the send's Idempotency-Key stop it.
+  const id = String(evt.data?.id || '');
+  if (id && inFlight.has(id)) return NextResponse.json({ ok: true, queued: false, reason: 'already_in_progress' }, { status: 202 });
+  if (id) inFlight.add(id);
+  handleInbound(evt.data || {}, { dryRun: false })
+    .then((r) => { if (r?.action && !['ignored', 'website', 'skipped', 'off'].includes(r.action)) console.log('[inbox-ai]', id, r.action, r.reason || ''); })
+    .catch((e) => console.error('[inbox-ai]', id, String(e?.message || e).slice(0, 200)))
+    .finally(() => { if (id) setTimeout(() => inFlight.delete(id), 10 * 60 * 1000); });
+  return NextResponse.json({ ok: true, queued: true }, { status: 202 });
 }
+
+// message ids being handled right now on this server (Relay retries within minutes)
+const inFlight = (globalThis.__clInboxInFlight ||= new Set());

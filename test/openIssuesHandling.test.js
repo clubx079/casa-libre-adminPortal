@@ -80,3 +80,28 @@ describe('payment cards', () => {
     expect(card.evidence).toContain('Admin Manager payment emails: 1 (10-23)');
   });
 });
+
+describe('unanswered = no TYPED reply (an automatic template is not an answer)', () => {
+  const at = (h) => new Date(NOW - h * 3600000).toISOString();
+  const chat = (msgs) => ({ phone: '+595992702850', name: 'Canell', tags: [], messages: msgs.map((m, k) => ({ id: `m${k}`, timestamps: { created: m.at }, ...m })) });
+  const real = () => ({ kind: 'text', real: true });
+  it('a template after their message (views / reminder / code) leaves it unanswered — Daniel', () => {
+    const issues = buildIssues({ now: NOW, kindOf: real, chats: [chat([
+      { direction: 'outbound', sent_by: 'api', template: { name: 'cl_borrador' }, text: 'Hola Daniel, tu borrador…', at: at(130) },
+      { direction: 'inbound', text: 'Si pero me quieren cobrar', at: at(129) },
+      { direction: 'outbound', sent_by: 'api', template: { name: 'cl_visitas' }, text: 'Hola Daniel, tu publicación ya recibió 13 visitas', at: at(64) },
+    ])] });
+    expect(issues.map((i) => i.type)).toEqual(['unanswered']);
+  });
+  it('a typed reply from our Inbox (Relay: sent_by api) answers it — Beatriz', () => {
+    const issues = buildIssues({ now: NOW, kindOf: real, chats: [chat([
+      { direction: 'inbound', text: '¿Por qué veo un número de EEUU?', at: at(100) },
+      { direction: 'outbound', sent_by: 'api', text: '¡Hola Beatriz! Sí, este es el WhatsApp oficial de Casa-Libre…', at: at(97) },
+    ])] });
+    expect(issues).toEqual([]);
+  });
+  it('older than a week is still listed (up to 30 days) — Tato, 13 days', () => {
+    const issues = buildIssues({ now: NOW, kindOf: real, chats: [chat([{ direction: 'inbound', text: 'Nadie me llama', at: at(13 * 24) }])] });
+    expect(issues.map((i) => i.type)).toEqual(['unanswered']);
+  });
+});

@@ -15,7 +15,7 @@ describe('AI sorting of incoming WhatsApp messages', () => {
     expect(CLASSIFY_SYSTEM).toMatch(/seconds_after_ours/);
     expect(CLASSIFY_SYSTEM).toMatch(/When unsure between auto and a person, choose the person/);
     expect(CLASSIFY_SYSTEM).toMatch(/Any language/);
-    expect(CLASSIFY_SCHEMA.properties.items.items.properties.kind.enum).toEqual(['keyword', 'emoji', 'ack', 'auto', 'greeting', 'question', 'text']);
+    expect(CLASSIFY_SCHEMA.properties.items.items.properties.kind.enum).toEqual(['keyword', 'emoji', 'ack', 'auto', 'greeting', 'question', 'text', 'offtopic']);
   });
   it('the request carries the text, the seconds after our message and what we said', () => {
     const a = classifyAsk([{ id: 'm1', text: 'Hola, en breve te respondemos', secondsAfterOurs: 4, ourLast: 'Publicá gratis en Casa-Libre' }]);

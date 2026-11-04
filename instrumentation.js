@@ -20,6 +20,9 @@ export async function register() {
     };
   }
   if (process.env.NODE_ENV !== 'production' || process.env.NEXT_PHASE === 'phase-production-build') return;
+  // the Inbox assistant reads new WhatsApp messages from Relay's API every minute (lib/inboxPoll.js)
+  // (inside the NEXT_RUNTIME check so the edge build drops it: the chain uses Node's crypto)
+  if (process.env.NEXT_RUNTIME === 'nodejs') import('./lib/inboxPoll.js').then((m) => m.startInboxPoller()).catch((e) => console.error('[inbox-poll]', e?.message || e));
   const t = setTimeout(async () => {
     try {
       const [{ warmEmails }, { internalEmails }] = await Promise.all([

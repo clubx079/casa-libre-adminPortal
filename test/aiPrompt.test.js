@@ -11,10 +11,10 @@ describe('Inbox AI prompt — company context', () => {
     expect(p).toContain('NEVER say Casa-Libre is only in Paraguay');
     expect(p).not.toMatch(/properties only from/);
   });
-  it('explains why the number is a US number', () => {
-    expect(p).toMatch(/US number/);
-    expect(p).toContain('the founder and the company are in the United States');
-    expect(p).toContain('a local team for each country, Paraguay included');
+  it('never justifies where we are based or why the number is from the US (Roland, Nov 4)', () => {
+    expect(p).toMatch(/We never justify ourselves/);
+    expect(p).toMatch(/answer ONLY the real question/);
+    expect(p).not.toMatch(/the founder and the company are in the United States/);
     expect(p).toMatch(/2–4 short sentences \(about 50–70 words\)/);
   });
   it('carries the offer, the proof and the banned claims', () => {
@@ -46,7 +46,8 @@ describe('Inbox AI prompt — automatic mode', () => {
   });
   it('explains when to send and when a person is needed', () => {
     expect(p).toContain('# Automatic mode');
-    expect(p).toMatch(/"send" — .*why the US number/);
+    expect(p).toMatch(/"send" — .*what it costs, how to publish/);
+    expect(p).not.toMatch(/why the US number/);
     expect(p).toMatch(/"send_and_person" — .*refund/);
     expect(p).toMatch(/FIRST HELP/);
     expect(p).toMatch(/ALWAYS include the one link that solves it/);

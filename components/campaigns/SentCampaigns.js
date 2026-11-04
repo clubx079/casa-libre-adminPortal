@@ -119,7 +119,8 @@ export default function SentCampaigns() {
                       <td className="px-3 py-3 text-right align-top" data-testid="replied">
                         <div className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{fmt(s.replied)}</div>
                         <div className="text-[10.5px] tabular-nums" style={{ color: T.textMuted }}>{s.replyRate == null ? '—' : `${s.replyRate}%`}{s.delivered != null ? ` of ${fmt(s.delivered)}` : ''}</div>
-                        {(s.si > 0 || s.baja > 0) && <div className="text-[10.5px] font-semibold mt-0.5" style={{ color: T.textSecondary }} data-testid="keywords">{fmt(s.si)} SÍ · {fmt(s.baja)} BAJA</div>}
+                        {(s.si > 0 || s.baja > 0 || s.cartera > 0 || s.proyecto > 0) && <div className="text-[10.5px] font-semibold mt-0.5" style={{ color: T.textSecondary }} data-testid="keywords">{[s.si ? `${fmt(s.si)} SÍ` : '', s.cartera ? `${fmt(s.cartera)} CARTERA` : '', s.proyecto ? `${fmt(s.proyecto)} PROYECTO` : '', s.baja ? `${fmt(s.baja)} BAJA` : ''].filter(Boolean).join(' · ')}</div>}
+                        {s.robots > 0 && <div className="text-[10.5px] mt-0.5" style={{ color: T.textMuted }} data-testid="robots" title="Automatic greetings from the other side's business account — not counted as replies">+{fmt(s.robots)} automatic</div>}
                       </td>
                       <Rate n={s.clicked} of={s.delivered} rate={s.clickRate ?? pct(s.clicked, s.delivered)} color="#B8741A" />
                       <td className="px-3 py-3 text-right align-top" data-testid="landed">

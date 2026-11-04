@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 
 const EVENT = 'cl:unread-changed';
 
-// Sidebar: { reports, feedbacks, inbox } for the signed-in admin. Refreshes on mount, when `path`
+// Sidebar: { reports, feedbacks, inbox, alerts } for the signed-in admin (alerts = open Alerts of
+// the country, shared by the team; they clear only when someone answers or marks them handled). Refreshes on mount, when `path`
 // changes, every minute, and right after a page marks itself seen.
 export function useUnreadCounts(path) {
   const [counts, setCounts] = useState({});

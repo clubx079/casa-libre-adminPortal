@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
+import UserTimeline from '@/components/users/UserTimeline';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -73,6 +74,12 @@ function RangeSelect({ range, options = RANGES, ariaLabel = 'Range', className =
 }
 
 const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home, Smartphone];
+const FUNNEL_ICONS_APP = [Smartphone, Search, MapPin, Heart, Phone, Users, Home];
+
+// The Mobile users tab asks the same routes for the app's events only
+// (&platform=app, lib/analyticsPlatform.js); the website tabs send nothing extra, so
+// their requests (and cached answers) are exactly as before.
+const pf = (platform) => (platform && platform !== 'web' ? `&platform=${platform}` : '');
 
 const EVENT_LABELS = {
   '$pageview': 'Viewed a page',
@@ -216,194 +223,11 @@ const SOURCE_LABELS = {
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
 const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
 
-// Every message this person was sent — emails (Resend + our automation log) and WhatsApp
-// (automations, status from Relay's webhook) — in ONE list, newest first, with each
-// channel's open / read / click rates. /api/users/emails + /api/users/whatsapp.
-const EMAIL_STATUS_COLOR = (s) => (s === 'opened' || s === 'clicked' ? T.success
-  : s === 'delivered' ? T.info
-  : ['bounced', 'complained', 'failed', 'suppressed'].includes(s) ? T.danger
-  : T.textMuted);
-const WA_STATUS_COLOR = (s) => (s === 'read' ? T.success : s === 'delivered' ? T.info : s === 'failed' ? T.danger : T.textMuted);
-const ChannelChip = ({ ch }) => (
-  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-    style={ch === 'whatsapp' ? { background: '#E3F3EA', color: '#0F6E4A' } : ch === 'activity' ? { background: '#F5EAD5', color: '#8A5A12' } : ch === 'listing' ? { background: '#F6E4E1', color: T.danger } : { background: T.bgSurface, color: T.textSecondary }}>
-    {ch === 'whatsapp' ? <MessageCircle className="w-3 h-3" /> : ch === 'activity' ? <Home className="w-3 h-3" /> : ch === 'listing' ? <Trash2 className="w-3 h-3" /> : <Mail className="w-3 h-3" />}{ch === 'whatsapp' ? 'WhatsApp' : ch === 'activity' ? 'Paid listing' : ch === 'listing' ? 'Listing' : 'Email'}
-  </span>
-);
-// Paid-listing steps and deleted listings (/api/users/paywall, lib/paywallActivity.js +
-// lib/listingDeletion.js) shown in the same list, by time.
-const STEP_STATUS = { deleted: ['deleted', T.danger], paywall: ['payment step', '#8A5A12'], checkout: ['card form', T.info], paid: ['paid', T.success], gift: ['gift offered', T.info], gift_taken: ['gift taken', T.success], gift_lapsed: ['gift expired', T.textMuted],
-  ph_opened: ['pay screen', T.info], ph_started: ['tapped pay', T.info], ph_paid: ['paid', T.success], ph_gift: ['gift taken', T.success], ph_gift_failed: ['gift failed', T.danger] };
-const UserMessages = ({ email, userId }) => {
-  const [em, setEm] = useState(null);   // /api/users/emails body or { error }
-  const [wa, setWa] = useState(null);   // /api/users/whatsapp body or { error }
-  const [pw, setPw] = useState(null);   // /api/users/paywall body or { error }
-  const [only, setOnly] = useState('all');
-  const [asking, setAsking] = useState(null);
-  const [askErr, setAskErr] = useState('');
-  const [reload, setReload] = useState(0);
-  // a deleted listing → send its "why did you delete it?" email now (/api/users/deleted-ask)
-  const askWhy = async (propertyId) => {
-    setAsking(propertyId);
-    try {
-      const r = await fetch('/api/users/deleted-ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ propertyId }) });
-      const j = await r.json().catch(() => ({}));
-      setAskErr(!r.ok && r.status !== 409 ? (j.error || 'Could not send it.') : '');
-    } finally { setAsking(null); setReload((n) => n + 1); }
-  };
-  useEffect(() => {
-    if (!email) return undefined;
-    let cancelled = false;
-    setEm(null); setWa(null); setPw(null);
-    const get = (path, set) => fetch(`${path}${path.includes('?') ? '&' : '?'}email=${encodeURIComponent(email)}`).then((r) => r.json())
-      .then((j) => { if (!cancelled) set(j); }).catch(() => { if (!cancelled) set({ error: 'unavailable' }); });
-    get('/api/users/emails', setEm);
-    get('/api/users/whatsapp', setWa);
-    get(`/api/users/paywall${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`, setPw);
-    return () => { cancelled = true; };
-  }, [email, userId, reload]);
-
-  const pct = (v) => (v == null ? '—' : `${v}%`);
-  const loading = em === null || wa === null || pw === null;
-  const steps = pw && !pw.error && pw.found ? pw.events.map((e, i) => ({ ...e, id: `${e.kind}-${e.listingId}-${i}`, ch: e.kind === 'deleted' ? 'listing' : 'activity' })) : [];
-  const es = em && !em.error ? em.summary : null;
-  const ws = wa && !wa.error ? wa.summary : null;
-  const rows = [
-    ...(em && !em.error ? em.emails.map((e) => ({ ...e, ch: 'email' })) : []),
-    ...(wa && !wa.error ? wa.messages.map((m) => ({ ...m, ch: 'whatsapp' })) : []),
-    ...steps,
-  ].filter((r) => only === 'all' || r.ch === only).sort((a, b) => String(b.at).localeCompare(String(a.at)));
-
-  return (
-    <div className="bg-white p-5" style={CARD} data-testid="user-messages">
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Mail className="w-4 h-4" style={{ color: T.primary }} />
-        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Messages sent</h2>
-        <span className="text-xs" style={{ color: T.textMuted }}>emails, WhatsApp, paid-listing steps and deleted listings, newest first</span>
-        {wa && !wa.error ? (
-          <span className="text-[11px] ml-auto" style={{ color: T.textMuted }}>
-            WhatsApp: {wa.phone ? `${wa.phone} · ${wa.verified ? 'verified' : 'not verified'}` : 'no number'}{wa.optedOut ? ' · opted out' : ''}
-          </span>
-        ) : null}
-      </div>
-
-      {loading ? (
-        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
-            {[
-              ['Emails sent', es ? es.total : '—', es?.codes ? `${es.codes} code${es.codes === 1 ? '' : 's'}` : ''],
-              ['Email open rate', es ? pct(es.openRate) : '—', es?.measured ? `${es.opened} of ${es.measured}` : ''],
-              ['Email click rate', es ? pct(es.clickRate) : '—', es?.measured ? `${es.clicked} of ${es.measured}` : ''],
-              ['WhatsApp sent', ws ? ws.sent : '—', ws?.failed ? `${ws.failed} failed` : ''],
-              ['WhatsApp read rate', ws ? pct(ws.readRate) : '—', ws?.delivered ? `${ws.read} of ${ws.delivered}` : ''],
-              ['WhatsApp clicks', ws ? ws.clicked : '—', wa?.clicksNote ? 'PostHog not available' : ''],
-            ].map(([label, value, sub]) => (
-              <div key={label}>
-                <p className="text-lg font-bold" style={{ color: T.textPrimary }}>{value}</p>
-                <p className="text-[10px]" style={{ color: T.textMuted }}>{label}{sub ? ` · ${sub}` : ''}</p>
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] mb-3" style={{ color: T.textMuted }}>
-            Rates leave out sign-in / password-reset codes and test sends.
-            {em?.error ? ' Couldn’t load their emails right now.' : ''}
-            {wa?.error ? ' Couldn’t load their WhatsApp messages right now.' : ''}
-            {em?.emails?.some((e) => e.untracked === 'before') && em.trackingSince ? ` Email opens and clicks are only recorded since ${fmtDateOnly(em.trackingSince)}.` : ''}
-            {em?.tracking === 'no_key' ? ' Email opens/clicks need RESEND_READ_API_KEY: only automation emails from our own log are shown.' : ''}
-            {em?.tracking === 'error' ? ` Resend couldn't be read right now (${em.trackingError}).` : ''}
-          </p>
-          {askErr ? <p className="text-[12px] mb-3" style={{ color: T.danger }}>Ask-why email: {askErr}</p> : null}
-          <div className="inline-flex rounded-full p-0.5 mb-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-            {[['all', 'All'], ['email', 'Email'], ['whatsapp', 'WhatsApp'], ...(steps.some((s) => s.ch === 'activity') ? [['activity', 'Paid listing']] : []), ...(steps.some((s) => s.ch === 'listing') ? [['listing', 'Deleted listings']] : [])].map(([v, l]) => (
-              <button key={v} type="button" onClick={() => setOnly(v)} className="px-3 py-1 rounded-full text-[11px] font-medium" style={only === v ? { background: '#fff', color: T.textPrimary, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: T.textSecondary }}>{l}</button>
-            ))}
-          </div>
-          {rows.length === 0 ? (
-            <p className="text-xs" style={{ color: T.textMuted }}>No messages sent to this person yet.</p>
-          ) : (
-            <div className="overflow-x-auto cl-scroll">
-              <table className="w-full text-xs min-w-[620px]">
-                <thead>
-                  <tr style={{ color: T.textMuted }}>
-                    {['Sent', 'Channel', 'Message', 'Subject / template', 'Status'].map((h, i) => (
-                      <th key={h} className={`py-1.5 font-semibold ${i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    r.ch === 'activity' || r.ch === 'listing' ? (
-                      <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight, background: r.ch === 'listing' ? '#FDF5F3' : '#FFFBF3' }} data-testid={r.ch === 'listing' ? 'deleted-step' : 'paywall-step'}>
-                        <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
-                        <td className="py-2 pr-3 align-top"><ChannelChip ch={r.ch} /></td>
-                        <td className="py-2 pr-3 align-top font-medium" style={{ color: T.textPrimary }} colSpan={2}>
-                          {r.title}
-                          {r.detail ? <span className="block text-[11px] font-normal" style={{ color: T.textSecondary }}>{r.detail}</span> : null}
-                          {r.kind === 'deleted' && r.askedAt ? (
-                            <span className="block text-[11px] font-normal mt-0.5" style={{ color: T.success }} data-testid="asked-why">Ask-why email sent {fmtDateOnly(r.askedAt)} · {fmtTime(r.askedAt)} (its opens / clicks are on the email row)</span>
-                          ) : r.kind === 'deleted' && r.askable ? (
-                            <button type="button" onClick={() => askWhy(r.listingId)} disabled={asking === r.listingId} data-testid="send-ask-why"
-                              className="mt-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border disabled:opacity-50" style={{ borderColor: T.borderLight, color: T.textPrimary, background: '#fff' }}>
-                              {asking === r.listingId ? 'Sending…' : 'Send the “why did you delete it?” email'}
-                            </button>
-                          ) : null}
-                        </td>
-                        <td className="py-2 text-right font-semibold whitespace-nowrap align-top" style={{ color: (STEP_STATUS[r.kind] || [])[1] || T.textMuted }}>{(STEP_STATUS[r.kind] || [r.kind])[0]}</td>
-                      </tr>
-                    ) : (
-                    <tr key={`${r.ch}-${r.id}`} className="border-t" style={{ borderColor: T.borderLight }}>
-                      <td className="py-2 pr-3 whitespace-nowrap align-top" style={{ color: T.textSecondary }}>{fmtDateOnly(r.at)} · {fmtTime(r.at)}</td>
-                      <td className="py-2 pr-3 align-top"><ChannelChip ch={r.ch} /></td>
-                      <td className="py-2 pr-3 align-top" style={{ color: T.textPrimary }}>
-                        <span className="whitespace-nowrap">
-                          {r.ch === 'email' ? (r.type_en || r.type) : r.type}
-                          {r.manager ? (
-                            <>
-                              <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: T.infoSurface || T.bgSurface, color: T.info || T.textPrimary }}>Admin Manager</span>
-                              {r.testSend ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textMuted }}>test send</span> : null}
-                              {r.reportId ? <a href={`/manager/${r.reportId}#emails`} className="ml-1.5 text-[10.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>report</a> : null}
-                            </>
-                          ) : (r.automation || r.ch === 'whatsapp') ? <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: T.bgSurface, color: T.textSecondary }}>automation</span> : null}
-                        </span>
-                        {r.ch === 'email' && r.type_en && r.type_en !== r.type ? <span className="block text-[11px]" style={{ color: T.textMuted }}>{r.type}</span> : null}
-                        {r.ch === 'whatsapp' && r.template ? <span className="block text-[11px] font-mono" style={{ color: T.textMuted }}>{r.template}</span> : null}
-                      </td>
-                      <td className="py-2 pr-3 max-w-[320px] align-top" style={{ color: T.textBody }}>
-                        {r.ch === 'email' ? (
-                          <>
-                            <span className="block truncate" title={r.subject}>{r.subject}</span>
-                            {r.subject_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={r.subject_en}>EN · {r.subject_en}</span> : null}
-                          </>
-                        ) : r.text ? (
-                          <>
-                            <span className="block truncate" title={r.text}>{r.text}</span>
-                            {r.text_en ? <span className="block truncate text-[11px]" style={{ color: T.textMuted }} title={r.text_en}>EN · {r.text_en}</span> : null}
-                          </>
-                        ) : <span className="font-mono">{r.template}</span>}
-                      </td>
-                      <td className="py-2 text-right font-semibold capitalize whitespace-nowrap align-top" style={{ color: r.ch === 'email' ? EMAIL_STATUS_COLOR(r.status) : WA_STATUS_COLOR(r.status) }}>
-                        {r.status}
-                        {r.ch === 'whatsapp' && r.clicked ? <span className="block text-[10px] font-normal normal-case" style={{ color: T.success }}>clicked</span> : null}
-                        {r.ch === 'email' && r.untracked ? (
-                          <span className="block text-[10px] font-normal normal-case" style={{ color: T.textMuted }}>
-                            {r.untracked === 'before' ? 'before open tracking' : r.untracked === 'off' ? 'not tracked' : 'from our log'}
-                          </span>
-                        ) : null}
-                      </td>
-                    </tr>
-                    )
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-};
+// Everything that happened with this person — their WhatsApp chat, the team's and the AI
+// assistant's replies (+ clicks on its links), the Admin Manager, their feedback, the emails and
+// WhatsApp automations we sent, paid-listing steps, deleted listings — in ONE English timeline,
+// newest first (components/users/UserTimeline.js, lib/userTimeline.js).
+const UserMessages = ({ email, userId }) => <UserTimeline email={email} userId={userId} />;
 
 
 // Who this is: where their first visit came from, IP + location, and — for
@@ -541,7 +365,7 @@ const UserActivityDetail = ({ user, onBack }) => {
     if (!user.person_id && !(user.is_anon && user.ip)) { setData({ activity: [], profile: null }); setLoading(false); return () => { cancelled = true; }; }
     (async () => {
       try {
-        const qs = user.is_anon && user.ip
+        const qs = user.is_anon && user.ip && user.by !== 'person'
           ? `type=activity&ip=${encodeURIComponent(user.ip)}`
           : `type=activity&personId=${encodeURIComponent(user.person_id)}`;
         const json = await loadAnalytics(
@@ -936,7 +760,7 @@ function AiCard({ master }) {
   );
 }
 
-const GeoDonut = ({ master }) => {
+const GeoDonut = ({ master, platform = 'web' }) => {
   const [level, setLevel] = useState('countries');
   const [country, setCountry] = useState('');
   const [rows, setRows] = useState([]);
@@ -947,7 +771,7 @@ const GeoDonut = ({ master }) => {
   const load = async (c = '', d = days) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/analytics/posthog?type=geo&days=${d}${c ? `&country=${encodeURIComponent(c)}` : ''}`);
+      const res = await fetch(`/api/analytics/posthog?type=geo&days=${d}${c ? `&country=${encodeURIComponent(c)}` : ''}${pf(platform)}`);
       const j = await res.json();
       setRows(Array.isArray(j.rows) ? j.rows : []);
       setLevel(j.level || (c ? 'cities' : 'countries'));
@@ -1028,6 +852,52 @@ const GeoDonut = ({ master }) => {
         </div>
       )}
       <OtherList />
+    </div>
+  );
+};
+
+// The app's own cut of "what people use": phone system, its version, and which app
+// version they run (the website's SourcesCard shows browsers instead).
+const AppTechCard = ({ master }) => {
+  const range = useSectionRange(master);
+  const { days } = range;
+  const [tech, setTech] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setTech(null);
+    fetch(`/api/analytics/posthog?type=tech&days=${days}&platform=app`).then((r) => r.json())
+      .then((d) => { if (alive) setTech(d?.configured ? d : { error: true }); }).catch(() => { if (alive) setTech({ error: true }); });
+    return () => { alive = false; };
+  }, [days]);
+  const lists = tech && !tech.error ? [['System', tech.systems], ['System version', tech.osVersions], ['App version', tech.versions]] : [];
+  return (
+    <div className="bg-white p-5" style={CARD} data-testid="app-tech">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Phones and app versions</h2>
+        <RangeSelect range={range} ariaLabel="Phones range" />
+      </div>
+      <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>distinct app users per phone system and app version</p>
+      {!tech ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
+      ) : tech.error ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>Unavailable right now.</p>
+      ) : lists.every(([, l]) => !(l || []).length) ? (
+        <p className="text-xs" style={{ color: T.textMuted }}>No app activity in this window.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {lists.map(([label, list]) => (
+            <div key={label}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: T.textMuted }}>{label}</p>
+              {(list || []).slice(0, 6).map((r) => (
+                <div key={r.name} className="flex items-center justify-between text-[11px] py-0.5">
+                  <span style={{ color: T.textBody }}>{r.name}</span>
+                  <span style={{ color: T.textPrimary }}>{r.visitors}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1213,8 +1083,10 @@ const VerifiedBy = () => {
   );
 };
 
-const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => {
+// platform 'app' = the Mobile users tab: the same sections, from the app's events only.
+const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platform = 'web' }) => {
   const days = master;   // summary window (cards + funnel)
+  const app = platform === 'app';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1233,7 +1105,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
     setLoading(true); setError(null); setBusy(false);
     (async () => {
       try {
-        const json = await loadAnalytics(`/api/analytics/posthog?days=${days}`, {
+        const json = await loadAnalytics(`/api/analytics/posthog?days=${days}${pf(platform)}`, {
           onBusy: () => { if (!cancelled) setBusy(true); },
           isCancelled: () => cancelled,
         });
@@ -1252,7 +1124,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
     setUsersLoading(true);
     (async () => {
       try {
-        const json = await loadAnalytics('/api/analytics/posthog?type=users', { isCancelled: () => cancelled });
+        const json = await loadAnalytics(`/api/analytics/posthog?type=users${pf(platform)}`, { isCancelled: () => cancelled });
         if (!cancelled && Array.isArray(json.users)) setUsers(json.users);
       } catch { /* leave empty */ } finally {
         if (!cancelled) setUsersLoading(false);
@@ -1266,6 +1138,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
   // Deep-link from the users page: ?user=<id>&email=<email> → open that
   // user's drilldown directly.
   useEffect(() => {
+    if (app) return;   // the deep link opens on the website tab
     const params = new URLSearchParams(window.location.search);
     const uid = params.get('user');
     const email = params.get('email');
@@ -1313,7 +1186,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
   if (loading && !data) {
     return shell(<>
       <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} />
-      <p className="text-sm mt-3" style={{ color: T.textSecondary }}>{busy ? BUSY_MESSAGE : 'Loading user analytics…'}</p>
+      <p className="text-sm mt-3" style={{ color: T.textSecondary }}>{busy ? BUSY_MESSAGE : app ? 'Loading app analytics…' : 'Loading user analytics…'}</p>
     </>);
   }
   if (error) {
@@ -1338,10 +1211,11 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
 
   const cards = [
     { label: 'Active now', value: (data?.activeNow ?? 0).toLocaleString(), Icon: Radio, sub: 'last 5 min' },
-    { label: 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: Users, sub: rangeLabel(days) },
-    { label: 'Page views', value: (totals.pageviews || 0).toLocaleString(), Icon: Eye, sub: rangeLabel(days) },
-    { label: 'Page views today', value: (today.pageviews || 0).toLocaleString(), Icon: TrendingUp, sub: 'so far' },
+    { label: app ? 'App users' : 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: app ? Smartphone : Users, sub: rangeLabel(days) },
+    { label: app ? 'Screen views' : 'Page views', value: (totals.pageviews || 0).toLocaleString(), Icon: Eye, sub: rangeLabel(days) },
+    { label: app ? 'Screen views today' : 'Page views today', value: (today.pageviews || 0).toLocaleString(), Icon: TrendingUp, sub: 'so far' },
   ];
+  const funnelIcons = app ? FUNNEL_ICONS_APP : FUNNEL_ICONS;
 
   return (
     <div className="space-y-4">
@@ -1364,19 +1238,24 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
         ))}
       </div>
 
-      <VerifiedBy />
+      {app ? (
+        <p className="text-[11px] px-1" style={{ color: T.textMuted }} data-testid="mobile-note">
+          From the Casa Libre app (PostHog React Native SDK, plus the app&apos;s launch ping). A signed-out phone counts once per install;
+          a signed-in person is the same person as on the website. Publishing happens on the website, so new listings are counted there.
+        </p>
+      ) : <VerifiedBy />}
 
       {/* User funnel + country donut, side by side */}
       <div className="grid lg:grid-cols-2 gap-4 items-start">
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-4 h-4" style={{ color: T.primary }} />
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>User funnel</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{app ? 'App funnel' : 'User funnel'}</h2>
           <span className="text-[10px]" style={{ color: T.textMuted }}>· distinct users, {rangeLabel(days)}</span>
         </div>
         <div className="space-y-2">
           {funnel.map((s, i) => {
-            const Icon = FUNNEL_ICONS[i] || Activity;
+            const Icon = funnelIcons[i] || Activity;
             const pct = funnelTop > 0 ? Math.round((s.persons / funnelTop) * 100) : 0;
             return (
               <div key={s.step} className="flex items-center gap-3">
@@ -1395,32 +1274,34 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
           })}
         </div>
         {funnelTop === 0 && (
-          <p className="text-xs mt-3" style={{ color: T.textMuted }}>No events yet — data appears once users use the site.</p>
+          <p className="text-xs mt-3" style={{ color: T.textMuted }}>{app ? 'No app events yet — they appear once people use an app version with analytics.' : 'No events yet — data appears once users use the site.'}</p>
         )}
       </div>
-        <GeoDonut master={master} />
+        <GeoDonut master={master} platform={platform} />
       </div>
 
-      <WhatsAppCard master={master} />
+      {app ? null : <WhatsAppCard master={master} />}
 
       <AppDownloadsCard master={master} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SourcesCard master={master} />
-        <AiCard master={master} />
-      </div>
+      {app ? <AppTechCard master={master} /> : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SourcesCard master={master} />
+          <AiCard master={master} />
+        </div>
+      )}
 
       {/* Users — click to drill into activity */}
       <div className="bg-white" style={CARD}>
         <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: T.borderLight }}>
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Users</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{app ? 'App users' : 'Users'}</h2>
           <span className="text-[10px]" style={{ color: T.textMuted }}>click a user to see their activity</span>
         </div>
         <div className="cl-scroll" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 520 }}>
           <table className="w-full min-w-[1000px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'IP address', 'Location', 'Source', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
+                {['User', 'IP address', 'Location', app ? 'App' : 'Source', 'Events', 'Views', 'Saves', 'Contacts', 'Last active'].map((h, i) => (
                   <th key={h} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i < 4 ? 'text-left' : 'text-right'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
@@ -1429,22 +1310,27 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
               {usersLoading ? (
                 <tr><td colSpan="9" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>Loading users…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan="9" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>No user activity yet.</td></tr>
+                <tr><td colSpan="9" className="px-4 py-8 text-center text-xs" style={{ color: T.textMuted }}>{app ? 'No app users yet.' : 'No user activity yet.'}</td></tr>
               ) : users.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).map((u) => (
-                <tr key={u.is_anon && u.ip ? `ip:${u.ip}` : u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
+                <tr key={u.is_anon && u.ip && u.by !== 'person' ? `ip:${u.ip}` : u.person_id} className="border-b cursor-pointer transition-colors" style={{ borderColor: T.borderLight }}
                   onClick={() => setSelected(u)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = T.bgSurface)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
                   <td className="px-4 py-2.5">
                     <p className="text-xs font-medium" style={{ color: T.textPrimary }}>{u.name || u.email || 'Visitor'}</p>
                     {u.email && u.name && <p className="text-[10px] font-mono" style={{ color: T.textMuted }}>{u.email}</p>}
-                    {u.is_anon && <p className="text-[10px]" style={{ color: T.textMuted }}>anonymous · counted by IP</p>}
+                    {u.is_anon && <p className="text-[10px]" style={{ color: T.textMuted }}>{app ? 'signed out · counted per phone' : 'anonymous · counted by IP'}</p>}
                   </td>
                   <td className="px-4 py-2.5 text-left text-[11px] font-mono" style={{ color: T.textBody }}>{u.ip || '—'}</td>
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>{u.location || '—'}</td>
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>
-                    {u.source || 'direct'}
-                    {u.campaign ? <span className="block text-[10px]" style={{ color: T.textMuted }}>{u.campaign_label || u.campaign}</span> : null}
+                    {app ? (
+                      <>{u.app_platform ? (u.app_platform === 'ios' ? 'iPhone' : u.app_platform === 'android' ? 'Android' : u.app_platform) : 'App'}
+                        {u.app_version ? <span className="block text-[10px]" style={{ color: T.textMuted }}>v{u.app_version}</span> : null}</>
+                    ) : (
+                      <>{u.source || 'direct'}
+                        {u.campaign ? <span className="block text-[10px]" style={{ color: T.textMuted }}>{u.campaign_label || u.campaign}</span> : null}</>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right text-xs font-semibold" style={{ color: T.textPrimary }}>{u.events}</td>
                   <td className="px-4 py-2.5 text-right text-xs" style={{ color: T.textBody }}>{u.views}</td>
@@ -1492,7 +1378,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS }) => 
 // Deliberately two numbers per row: `views` counts every opening (so a listing
 // someone keeps coming back to stands out) and `visitors` counts distinct people
 // (so one person refreshing does not read as demand).
-const PropertyAnalytics = ({ master }) => {
+// platform 'app' = only views from the app (Mobile users tab). Without it: website + app,
+// the same count sellers get in their views email — that request is unchanged.
+const PropertyAnalytics = ({ master, platform }) => {
   const range = useSectionRange(master);
   const { days } = range;
   const [limit, setLimit] = useState(20);
@@ -1502,7 +1390,7 @@ const PropertyAnalytics = ({ master }) => {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(`/api/analytics/posthog?type=properties&days=${days}&limit=${limit}`)
+    fetch(`/api/analytics/posthog?type=properties&days=${days}&limit=${limit}${pf(platform)}`)
       .then((r) => r.json())
       .then((d) => { if (alive) setData(d?.error ? null : d); })
       .catch(() => { if (alive) setData(null); })
@@ -1519,7 +1407,7 @@ const PropertyAnalytics = ({ master }) => {
     <div className="space-y-5">
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>Most viewed properties</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{platform === 'app' ? 'Most viewed properties in the app' : 'Most viewed properties'}</h2>
           <div className="flex items-center gap-2">
             <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={selectStyle}>
               <option value={10}>Top 10</option>
@@ -1532,7 +1420,7 @@ const PropertyAnalytics = ({ master }) => {
           </div>
         </div>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
-          one row per listing · views counts every opening, people counts distinct visitors
+          one row per listing · views counts every opening, people counts distinct visitors · {platform === 'app' ? 'app only' : 'website + app'}
         </p>
 
         {data && (
@@ -1846,6 +1734,7 @@ const WhatsAppAnalytics = ({ master }) => {
 
 const TABS = [
   { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
+  { key: 'mobile', label: 'Mobile users', sub: 'The same analytics for the Casa Libre app (Android / iPhone), from PostHog' },
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
   { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
   { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'WhatsApp messages from the automations: sent, delivered, read, clicked' },
@@ -1864,6 +1753,9 @@ export default function AnalyticsPage() {
   useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
   const [waSeen, setWaSeen] = useState(false);
   useEffect(() => { if (tab === 'whatsapp') setWaSeen(true); }, [tab]);
+  // The app's queries run only once its tab is opened.
+  const [mobileSeen, setMobileSeen] = useState(false);
+  useEffect(() => { if (tab === 'mobile') setMobileSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
 
   if (deep) {
@@ -1906,6 +1798,12 @@ export default function AnalyticsPage() {
 
       {/* Both stay mounted: switching tabs should not re-run every PostHog query. */}
       <div hidden={tab !== 'users'}><UsersAnalytics master={master} /></div>
+      <div hidden={tab !== 'mobile'}>{mobileSeen ? (
+        <div className="space-y-5" data-testid="mobile-users-tab">
+          <UsersAnalytics master={master} platform="app" />
+          <PropertyAnalytics master={master} platform="app" />
+        </div>
+      ) : null}</div>
       <div hidden={tab !== 'properties'}><PropertyAnalytics master={master} /></div>
       <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics master={master} /> : null}</div>
       <div hidden={tab !== 'whatsapp'}>{waSeen ? <WhatsAppAnalytics master={master} /> : null}</div>

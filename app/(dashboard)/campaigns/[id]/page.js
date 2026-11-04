@@ -87,7 +87,7 @@ export default function CampaignPage({ params }) {
           ['Sent', s.sent, s.waiting ? `${s.waiting} waiting` : ''],
           ['Delivered', s.delivered, pct(s.deliveredRate)],
           ['Read', s.read, s.readRate != null ? `read rate ${s.readRate}%` : ''],
-          ['Replied', s.replied, [s.replyRate != null ? `${s.replyRate}% of delivered` : '', (s.si || s.baja) ? `${s.si} SÍ · ${s.baja} BAJA` : ''].filter(Boolean).join(' · ')],
+          ['Replied', s.replied, [s.replyRate != null ? `${s.replyRate}% of delivered` : '', [s.si ? `${s.si} SÍ` : '', s.cartera ? `${s.cartera} CARTERA` : '', s.proyecto ? `${s.proyecto} PROYECTO` : '', s.baja ? `${s.baja} BAJA` : ''].filter(Boolean).join(' · '), s.robots ? `${s.robots} automatic, not counted` : ''].filter(Boolean).join(' · ')],
           ['Clicked', s.clicked, clicks?.note ? 'PostHog n/a' : s.clickRate != null ? `${s.clickRate}% of delivered` : 'people who opened the link'],
           ['Landed on website', landed ?? 0, 'from the link (PostHog)'],
           ['Signed in', signins?.length ?? 0, landed ? `${Math.round(((signins?.length || 0) / landed) * 1000) / 10}% of landed` : 'after this batch'],

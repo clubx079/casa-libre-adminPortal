@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automations/ui';
+import OpenIssuesDays from '@/components/manager/OpenIssuesDays';
 
 const STATUS ={ running: ['info', 'Writing…'], done: ['success', 'Ready'], failed: ['danger', 'Failed'] };
 
@@ -38,6 +39,8 @@ export default function ManagerPage() {
       {err === 'migration_pending' || data?.pending ? (
         <Banner tone="warning"><b>Not set up for this country yet.</b> Apply <span className="font-mono">migrations/007_admin_manager.sql</span> (admin repo) to this country&apos;s database in the AiroBase SQL editor, then reload.</Banner>
       ) : err ? <Banner>Could not load: {err}</Banner> : null}
+
+      <OpenIssuesDays />
 
       <div className="bg-white overflow-hidden" style={CARD}>
         {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (

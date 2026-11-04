@@ -328,8 +328,9 @@ export default function InboxPage() {
   const [modes, setModes] = useState({ live: true, test: false });
   const [err, setErr] = useState('');
   const [sel, setSel] = useState(null);       // phone
-  // /inbox?phone=595981… (Users → "Open chat") opens that conversation (live)
-  useEffect(() => { try { const d = (new URLSearchParams(window.location.search).get('phone') || '').replace(/\D/g, ''); if (d.length >= 8) setSel(`+${d}`); } catch { /* none */ } }, []);
+  // /inbox?phone=595981… (Users → "Open chat") opens that conversation (live); &mode=test → the test number (Open issues in a local demo)
+  const urlMode = useRef(false);
+  useEffect(() => { try { const sp = new URLSearchParams(window.location.search); const d = (sp.get('phone') || '').replace(/\D/g, ''); if (sp.get('mode') === 'test') { urlMode.current = d.length >= 8 ? `+${d}` : true; setMode('test'); } else if (d.length >= 8) setSel(`+${d}`); } catch { /* none */ } }, []);
   const [conv, setConv] = useState(null);
   const [msgs, setMsgs] = useState([]);
   const [contact, setContact] = useState(undefined);   // undefined = loading, null = not found
@@ -368,7 +369,7 @@ export default function InboxPage() {
 
   useEffect(() => { setList(null); loadList(); const t = setInterval(loadList, 6000); return () => clearInterval(t); }, [loadList]);
   const modeSeen = useRef(false);   // not on the first render: a ?phone= link already picked the chat
-  useEffect(() => { if (!modeSeen.current) { modeSeen.current = true; return; } setSel(null); setConv(null); setMsgs([]); }, [mode]);
+  useEffect(() => { if (!modeSeen.current) { modeSeen.current = true; return; } if (urlMode.current) { const want = urlMode.current; urlMode.current = false; if (typeof want === 'string') setSel(want); return; } setSel(null); setConv(null); setMsgs([]); }, [mode]);
   useEffect(() => {
     fetch(`/api/inbox/templates?mode=${mode}`).then((r) => r.json()).then((j) => setTplMeta(Object.fromEntries((j.data || []).map((t) => [t.name, t])))).catch(() => setTplMeta({}));
   }, [mode]);

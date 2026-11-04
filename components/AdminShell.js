@@ -22,6 +22,7 @@ const NAV = [
   ['/partners', 'Partners', 'users'],
   ['/leads', 'Leads', 'users'],
   ['/inbox', 'Inbox', 'chat'],
+  ['/alerts', 'Alerts', 'bell'],
   ['/campaigns', 'WhatsApp Marketing', 'chat'],
   ['/automations', 'Automations', 'bolt'],
   ['/paid-listings', 'Paid listings', 'card'],
@@ -100,6 +101,13 @@ function Icon({ name }) {
         <path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
       </svg>
     );
+  if (name === 'bell')
+    return (
+      <svg {...p}>
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      </svg>
+    );
   if (name === 'mail')
     return (
       <svg {...p}>
@@ -162,7 +170,8 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
 
   // Per-admin unread badges (each team member has their own — lib/unread.js).
   const unread = useUnreadCounts(path);
-  const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox };
+  // '/alerts' = OPEN alerts (lib/alerts.js): clears only when a team member answers or marks it handled.
+  const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox, '/alerts': unread.alerts };
 
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 
@@ -252,7 +261,7 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
                 </span>
                 {label}
                 {BADGE[href] > 0 ? (
-                  <span className={`ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums flex items-center justify-center ${on ? 'bg-paper text-ink' : 'bg-[#B23A3A] text-white'}`} aria-label={`${BADGE[href]} unread`}>
+                  <span className={`ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums flex items-center justify-center ${on ? 'bg-paper text-ink' : 'bg-[#B23A3A] text-white'}`} aria-label={`${BADGE[href]} ${href === '/alerts' ? 'open' : 'unread'}`}>
                     {BADGE[href] > 99 ? '99+' : BADGE[href]}
                   </span>
                 ) : null}

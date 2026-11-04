@@ -26,7 +26,7 @@ const COUNTRY = { py: ['Paraguay', '.py'], bo: ['Bolivia', '.bo'], uy: ['Uruguay
 const OWNERS = ['Omar', 'Tahir', 'Roland'];
 const ROLE = { Omar: 'Lead developer', Tahir: 'Google Ads', Roland: 'CEO' };
 // the specialist areas (lib/manager/brief.js SECTIONS) and which action areas belong to each
-const SECTION_TABS = [['feedback', 'Feedback'], ['listings', 'Listings & payments'], ['messages', 'Messages & email clicks'], ['campaigns', 'WhatsApp campaigns'], ['growth', 'Traffic & ads'], ['security', 'Security watch']];
+const SECTION_TABS = [['inbox', 'Inbox & open issues'], ['feedback', 'Feedback'], ['listings', 'Listings & payments'], ['messages', 'Messages & email clicks'], ['campaigns', 'WhatsApp campaigns'], ['growth', 'Traffic & ads'], ['security', 'Security watch']];
 const SECTION_OF = { feedback: 'feedback', listings: 'listings', payments: 'listings', messages: 'messages', followups: 'messages', campaigns: 'campaigns', growth: 'growth', ads: 'growth', security: 'security' };
 const TREND = { better: [T.success, T.successSurface, 'Better'], worse: [T.danger, T.dangerSurface, 'Worse'], steady: [T.textSecondary, T.bgSurface, 'Steady'], mixed: [T.warning, T.warningSurface, 'Mixed'], too_early: [T.textSecondary, T.bgSurface, 'Too early'] };
 const AREA = { feedback: 'Feedback', listings: 'Listings', payments: 'Payments', messages: 'Messages', campaigns: 'WhatsApp campaigns', growth: 'Traffic', ads: 'Google Ads', security: 'Security', data: 'Data' };
@@ -488,7 +488,7 @@ export default function ManagerReportPage({ params }) {
   const guard = r.guard;
   // old reports (5 researchers) call the messages area 'followups'
   const sections = new Map((r.sections || []).map((x) => [SECTION_OF[x.id] || x.id, x]));
-  const areaTabs = sections.size ? SECTION_TABS.filter(([id]) => !['campaigns', 'security'].includes(id) || sections.has(id) || pack[id === 'campaigns' ? 'whatsappCampaigns' : 'security']) : [];
+  const areaTabs = sections.size ? SECTION_TABS.filter(([id]) => !['campaigns', 'security', 'inbox'].includes(id) || sections.has(id) || pack[id === 'campaigns' ? 'whatsappCampaigns' : id]) : [];
   const tabs = [['overview', 'Overview'], ...areaTabs, ['emails', 'Emails'], ...(r.tracker ? [['loop', 'Earlier actions']] : []), ...(areaTabs.length ? [] : [['numbers', 'Numbers']]), ['memory', 'Memory'], ['method', 'How it was made']];
   const actionsIn = (id) => actions.filter((a) => SECTION_OF[a.area || a.section] === id);
   const funnelBlock = Array.isArray(pack.traffic?.funnel) ? <Funnel funnel={pack.traffic.funnel} /> : <Empty>No visitor data in this report.</Empty>;

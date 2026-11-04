@@ -1,4 +1,4 @@
-// GET  /api/unread → { reports, feedbacks, inbox }: rows the SIGNED-IN admin hasn't seen yet in
+// GET  /api/unread → { reports, feedbacks, inbox, alerts }: rows the SIGNED-IN admin hasn't seen yet in
 //                    the active country (sidebar badges). Each team member has their own.
 //                    inbox = WhatsApp conversations with unread messages (Relay, the real
 //                    number) — shared by the team like WhatsApp itself: opening the chat reads it.
@@ -13,6 +13,7 @@ import { isMissingTable } from '@/lib/automationDb';
 import { adminKey, unreadCounts, markSeen, UNREAD_PAGES } from '@/lib/unread';
 import { conversationsWithCountry } from '@/lib/inboxData';
 import { isUnread, inSite } from '@/lib/inboxRules';
+import { openAlertCount } from '@/lib/alertsData';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,10 +31,12 @@ export async function GET() {
   const key = adminKey(getSession());
   if (!key) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const inbox = inboxUnread(activeCountry());
+  // open Alerts (lib/alertsData.js, cached 15 s; inboxMode()) — 0 when Relay / the DB can't be read
+  const alerts = openAlertCount(activeCountry());
   try {
-    return NextResponse.json({ ...(await unreadCounts(dbFor(activeCountry()), key)), inbox: await inbox });
+    return NextResponse.json({ ...(await unreadCounts(dbFor(activeCountry()), key)), inbox: await inbox, alerts: await alerts });
   } catch (e) {
-    if (isMissingTable(e)) return NextResponse.json({ reports: 0, feedbacks: 0, inbox: await inbox, pending: true });
+    if (isMissingTable(e)) return NextResponse.json({ reports: 0, feedbacks: 0, inbox: await inbox, alerts: await alerts, pending: true });
     return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: 500 });
   }
 }

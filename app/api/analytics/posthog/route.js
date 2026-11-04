@@ -15,6 +15,7 @@ import { isInternalContact } from '@/lib/internalTraffic';
 import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
 import { batchNames } from '@/lib/waCampaignStore';
+import { normPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -30,6 +31,10 @@ import { batchNames } from '@/lib/waCampaignStore';
 //   activity   a single user's event timeline (&personId=<uuid>)
 //   resolve    map a DB user (distinctId/email) → a PostHog person
 //   links      one UTM link per channel: times opened + people landed (UTM Links page)
+//
+// &platform= web (default) | app | all — website events only, the mobile app's only
+// (Analytics -> Mobile users), or both (lib/analyticsPlatform.js). Property views default
+// to all: that tab must match the view counts sellers are sent, which count app views too.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -53,24 +58,28 @@ const currentSite = () => { try { return activeCountry(); } catch { return ''; }
 
 // Every aggregate query filters through this, so the header's country switcher
 // scopes the whole page — totals, funnel, trend, map, sources, AI and users.
-const geoFilter = () => `${GEO_BASE}${siteClause(currentSite())}`;
+// The platform (website / app / all) is part of it: see lib/analyticsPlatform.js.
+const geoFilter = (platform = 'web') => `${GEO_BASE}${siteClause(currentSite())}${platformClause(platform)}`;
 
 const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r)));
 
 // ── users list: identified users by person_id, anonymous visitors by IP ──
 // Grouped on UKEY, so all same-IP anonymous sessions become one row. Each row
 // carries its IP + geo location; identified rows also show their most recent IP.
-async function usersList() {
+async function usersList(platform = 'web') {
+  const app = normPlatform(platform) === 'app';
+  // the app's app_opened ping carries the website server's IP / location, not the phone's
+  const lastSeenAt = (expr) => (app ? `argMaxIf(${expr}, timestamp, event != 'app_opened')` : `argMax(${expr}, timestamp)`);
   const rows = await hogql(`
     SELECT
-      ${UKEY} AS idkey,
+      ${ukeyFor(platform)} AS idkey,
       any(person_id) AS person_id,
       any(person.properties.email) AS email,
       any(person.properties.first_name) AS first_name,
       any(person.properties.last_name) AS last_name,
-      argMax(properties.$ip, timestamp) AS ip,
-      argMax(properties.$geoip_city_name, timestamp) AS city,
-      argMax(properties.$geoip_country_name, timestamp) AS country,
+      ${lastSeenAt('properties.$ip')} AS ip,
+      ${lastSeenAt('properties.$geoip_city_name')} AS city,
+      ${lastSeenAt('properties.$geoip_country_name')} AS country,
       argMin(${SOURCE_EXPR}, timestamp) AS source,
       argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
       argMax(${SITE_EXPR}, timestamp) AS site,
@@ -80,9 +89,11 @@ async function usersList() {
       countIf(${CONTACT_IN}) AS contacts,
       countIf(event = 'listing_created') AS listings,
       min(timestamp) AS first_seen,
-      max(timestamp) AS last_seen
+      max(timestamp) AS last_seen${app ? `,
+      argMax(coalesce(nullIf(properties.app_platform, ''), nullIf(properties.platform, ''), ''), timestamp) AS app_platform,
+      argMax(coalesce(properties.app_version, ''), timestamp) AS app_version` : ''}
     FROM events
-    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${geoFilter()}
+    WHERE timestamp >= now() - INTERVAL 90 DAY AND ${geoFilter(platform)}
     GROUP BY idkey
     ORDER BY last_seen DESC
     LIMIT 300
@@ -110,6 +121,10 @@ async function usersList() {
       listings: Number(r[15] || 0),
       first_seen: r[16],
       last_seen: r[17],
+      // how the activity drill-down finds this row: the website groups anonymous
+      // visitors by IP, the app by phone (person_id)
+      by: app || email ? 'person' : 'ip',
+      ...(app ? { app_platform: r[18] || '', app_version: r[19] || '' } : {}),
     };
   });
   // Pakistan events are already filtered out (geoFilter); this also drops team / test
@@ -246,7 +261,9 @@ async function userActivity({ personId, ip }) {
 
 // ── geo breakdown for the donut: unique visitors by country, or by city
 // within one country when ?country= is given. Honors the geo policy. ──
-async function geoBreakdown(country, days) {
+async function geoBreakdown(country, days, platform = 'web') {
+  const UKEY = ukeyFor(platform);
+  const where = `${geoFilter(platform)}${geoEventsClause(platform)}`;
   const q = (s) => String(s || '').replace(/'/g, "''");
   // Whitelist the window (7d / 30d / 3mo / 6mo / 12mo) — never interpolate raw input.
   const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
@@ -255,7 +272,7 @@ async function geoBreakdown(country, days) {
       SELECT coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS name,
              count(DISTINCT ${UKEY}) AS visitors
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
+      WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${where}
         AND coalesce(properties.$geoip_country_name, '') = '${q(country)}'
       GROUP BY name ORDER BY visitors DESC LIMIT 30`);
     return NextResponse.json({ level: 'cities', country, days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
@@ -264,7 +281,7 @@ async function geoBreakdown(country, days) {
     SELECT coalesce(nullIf(properties.$geoip_country_name, ''), 'Unknown') AS name,
            count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${where}
     GROUP BY name ORDER BY visitors DESC LIMIT 30`);
   return NextResponse.json({ level: 'countries', days: d, rows: flat(rows).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) })) });
 }
@@ -384,13 +401,25 @@ async function linksData(days) {
 
 // What people browse with. "From Google" is a source (above); "from Safari" is a
 // browser — different question, so it gets its own cut.
-async function techBreakdown(days, site) {
+async function techBreakdown(days, site, platform = 'web') {
   const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
+  const UKEY = ukeyFor(platform);
   const one = async (expr) => flat(await hogql(`
     SELECT coalesce(nullIf(${expr}, ''), 'Unknown') AS name, count(DISTINCT ${UKEY}) AS visitors
     FROM events
-    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}
+    WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter(platform)}
     GROUP BY name ORDER BY visitors DESC LIMIT 12`)).map((r) => ({ name: r[0], visitors: Number(r[1] || 0) }));
+
+  // The app: phone system, its version, and which app version people run (the app_opened
+  // ping counts too: it carries platform android | ios and app_version).
+  if (normPlatform(platform) === 'app') {
+    const [systems, osVersions, versions] = await Promise.all([
+      one("coalesce(nullIf(properties.$os, ''), multiIf(properties.platform = 'android', 'Android', properties.platform = 'ios', 'iOS', ''))"),
+      one("trim(concat(coalesce(properties.$os, ''), ' ', coalesce(toString(properties.$os_version), '')))"),
+      one('properties.app_version'),
+    ]);
+    return NextResponse.json({ configured: true, days: d, platform: 'app', systems, osVersions, versions });
+  }
 
   const [browsers, devices, systems] = await Promise.all([
     one('properties.$browser'),
@@ -409,7 +438,8 @@ async function techBreakdown(days, site) {
 // The label fields (address, city, type…) are taken from the most recent event
 // rather than the database: it keeps this a single query, and it still reflects
 // how the listing looked when people were viewing it.
-async function propertyViews(days, limit) {
+async function propertyViews(days, limit, platform = 'all') {
+  const UKEY = ukeyFor(platform);
   const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
   const n = [10, 20, 30, 50, 100].includes(Number(limit)) ? Number(limit) : 20;
   const rows = flat(await hogql(`
@@ -425,7 +455,7 @@ async function propertyViews(days, limit) {
            max(timestamp) AS last_seen
     FROM events
     WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY
-      AND ${geoFilter()}
+      AND ${geoFilter(platform)}
     GROUP BY pid
     ORDER BY views DESC
     LIMIT ${n}`));
@@ -440,12 +470,13 @@ async function propertyViews(days, limit) {
            count(DISTINCT ${UKEY}) AS visitors
     FROM events
     WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY
-      AND ${geoFilter()}`));
+      AND ${geoFilter(platform)}`));
 
   return NextResponse.json({
     configured: true,
     days: d,
     limit: n,
+    platform: normPlatform(platform, 'all'),
     totals: {
       views: Number(tot?.[0] || 0),
       properties: Number(tot?.[1] || 0),
@@ -555,19 +586,20 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
+  const platform = normPlatform(searchParams.get('platform'));   // the website unless asked
 
   try {
-    if (type === 'users') return await usersList();
+    if (type === 'users') return await usersList(platform);
     if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
-    if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '');
+    if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '', platform);
     if (type === 'sources') return await sourcesBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'usage') return await usage();
     if (type === 'ai') return await aiBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
     if (type === 'clicks') return await linkClicks(searchParams.get('days') || '');
     if (type === 'links') return await linksData(searchParams.get('days') || '');
-    if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '');
-    if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '');
+    if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '', platform);
+    if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '', normPlatform(searchParams.get('platform'), 'all'));
     if (type === 'whatsapp') return await whatsappData(searchParams.get('days') || '');
 
     // ── default: dashboard ──
@@ -575,35 +607,20 @@ export async function GET(request) {
     const d = [7, 30, 90, 180, 365].includes(Number(searchParams.get('days'))) ? Number(searchParams.get('days')) : 7;
     // ONE scan for the cards + funnel (PostHog queues queries it gets at the same time:
     // 12 separate ones took ~5 s, one takes <1 s). "Active now" stays its own live query.
-    const step = (cond) => `uniqExactIf(${UKEY}, ${cond})`;
+    // Website: $pageview + the website funnel; app: $screen + the app funnel
+    // (lib/analyticsPlatform.js).
     const [summary, activeNow] = await Promise.all([
-      hogql(`SELECT countIf(event = '$pageview'), uniqExact(${UKEY}),
-               countIf(event = '$pageview' AND toDate(timestamp) = today()), ${step('toDate(timestamp) = today()')},
-               ${step("event = '$pageview'")}, ${step("event = 'search_applied'")}, ${step("event = 'property_viewed'")},
-               ${step("event = 'property_saved'")}, ${step(CONTACT_IN)}, ${step("event = 'listing_created'")}, ${step("event = 'app_badge_clicked'")}
-             FROM events WHERE timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter()}`),
-      hogql(`SELECT count(DISTINCT ${UKEY}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter()}`),
+      hogql(summarySql({ days: d, where: geoFilter(platform), platform })),
+      hogql(`SELECT count(DISTINCT ${ukeyFor(platform)}) AS u FROM events WHERE timestamp >= now() - INTERVAL 5 MINUTE AND ${geoFilter(platform)}`),
     ]);
-    const v = (flat(summary)[0] || []).map((x) => Number(x || 0));
     const num = (rows) => Number(flat(rows)[0]?.[0] || 0);
 
     return NextResponse.json({
       configured: true,
       days: d,
-      totals: { pageviews: v[0] || 0, uniqueUsers: v[1] || 0 },
-      today: { pageviews: v[2] || 0, uniqueUsers: v[3] || 0 },
+      platform,
+      ...summaryFromRow(flat(summary)[0], platform),
       activeNow: num(activeNow),
-      funnel: [
-        // everyone who used the site in the window — same number as the Unique users card
-        { step: 'Visited the site', persons: v[1] || 0 },
-        { step: 'Searched', persons: v[5] || 0 },
-        { step: 'Viewed a property', persons: v[6] || 0 },
-        { step: 'Saved a property', persons: v[7] || 0 },
-        { step: 'Contacted a seller', persons: v[8] || 0 },
-        { step: 'Listed a property', persons: v[9] || 0 },
-        // tapped the App Store / Google Play badge on the website (buyer components/AppBadges.js)
-        { step: 'Clicked an app button', persons: v[10] || 0 },
-      ],
       project_url: `${POSTHOG_HOST}/project/${POSTHOG_PROJECT_ID}`,
     });
   } catch (err) {

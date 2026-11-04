@@ -130,7 +130,8 @@ describe('variables', () => {
 describe('results', () => {
   const sentAt = '2026-10-20T22:42:43.000Z';
   const msgs = [
-    { direction: 'inbound', kind: 'inbound', timestamps: { created: '2026-10-20T22:50:00Z' } },
+    { direction: 'inbound', kind: 'inbound', type: 'text', text: 'Gracias por comunicarte con Aldo Zarza. En breve te respondemos.', timestamps: { created: '2026-10-20T22:42:50Z' } },   // a robot
+    { direction: 'inbound', kind: 'inbound', type: 'text', text: 'Hola, me interesa', timestamps: { created: '2026-10-20T22:50:00Z' } },
     { direction: 'outbound', kind: 'campaign', template: { name: 'cl_cuenta_lista' }, status: 'read', timestamps: { created: '2026-10-20T22:42:43.836Z' } },
     { direction: 'outbound', kind: 'campaign', template: { name: 'cl_cuenta_lista' }, status: 'read', timestamps: { created: '2026-10-01T10:00:00Z' } },  // an older campaign
     { direction: 'outbound', kind: 'template', template: { name: 'cl_cuenta_lista' }, status: 'sent', timestamps: { created: '2026-10-20T22:45:00Z' } },  // an automation, not the campaign
@@ -139,14 +140,16 @@ describe('results', () => {
     const m = matchCampaignMessage(msgs, { template: 'cl_cuenta_lista', sentAt });
     expect(m.message.timestamps.created).toBe('2026-10-20T22:42:43.836Z');
     expect(m.replied_at).toBe('2026-10-20T22:50:00.000Z');
+    expect(m.robot_at).toBe('2026-10-20T22:42:50.000Z');   // the automatic greeting is not the reply
+    expect(matchCampaignMessage(msgs.filter((x) => x.text !== 'Hola, me interesa'), { template: 'cl_cuenta_lista', sentAt })).toMatchObject({ replied_at: null, robot_at: '2026-10-20T22:42:50.000Z' });
     expect(matchCampaignMessage(msgs, { template: 'cl_visitas', sentAt })).toBeNull();
   });
   it('totals: waiting / skipped / sent / delivered / read / failed / replied / clicked', () => {
     const r = campaignResults([
-      { status: 'read', meta: { replied_at: 'x' } }, { status: 'delivered' }, { status: 'sent' }, { status: 'failed' },
+      { status: 'read', meta: { replied_at: 'x' } }, { status: 'delivered', meta: { robot_at: 'y' } }, { status: 'sent' }, { status: 'failed' },
       { status: 'sending' }, { status: 'failed', meta: { skipped: 'no_opt_in' } },
     ], 1);
-    expect(r).toMatchObject({ recipients: 6, waiting: 1, skipped: 1, sent: 4, delivered: 2, read: 1, failed: 1, replied: 1, clicked: 1, readRate: 50, replyRate: 50 });
+    expect(r).toMatchObject({ recipients: 6, waiting: 1, skipped: 1, sent: 4, delivered: 2, read: 1, failed: 1, replied: 1, robots: 1, clicked: 1, readRate: 50, replyRate: 50 });
   });
   it('clicks: PostHog people or recipients marked clicked, whichever is larger', () => {
     const rows = [{ status: 'read', meta: { clicked_at: 'x' } }, { status: 'read', meta: { clicked_at: 'y' } }, { status: 'delivered' }];

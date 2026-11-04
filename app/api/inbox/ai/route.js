@@ -13,6 +13,7 @@ import { threadForAi } from '@/lib/inboxRules';
 import { loadFactSheet, siteFor } from '@/lib/aiContext';
 import { activeCountry, canAccessCountry } from '@/lib/adminCountry';
 import { MODEL, SCHEMA, systemPrompt, buildAsk, AI_SETTINGS } from '@/lib/aiPrompt';
+import { answerRef } from '@/lib/aiLinks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export async function POST(req) {
   if (!msgs.ok) return NextResponse.json({ error: msgs.data?.error?.message || 'Could not read the conversation.' }, { status: msgs.status });
   const cc = siteFor(conv.ok ? conv.data : null, activeCountry());
   if (!canAccessCountry(cc)) return NextResponse.json({ error: 'This conversation belongs to a country you can\'t access.' }, { status: 403 });
-  const facts = await loadFactSheet(phone, conv.ok ? conv.data : null, activeCountry());
+  const facts = await loadFactSheet(phone, conv.ok ? conv.data : null, activeCountry(), { answer: answerRef('') });   // links tracked (lib/aiLinks.js)
   // ?facts=1 → only what the assistant would know (no Claude call) — to check / debug
   if (new URL(req.url).searchParams.get('facts') === '1') return NextResponse.json({ facts, context: contextLine(facts) });
   const thread = threadForAi([...(msgs.data.data || [])].reverse());

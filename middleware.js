@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server';
 // real in the server layout / API routes (Node runtime); here we only gate on
 // presence so unauthenticated traffic never reaches a protected page.
 const COOKIE = 'cl_admin_session';
-// /api/media = public image proxy (no session); /api/cron = Bearer CRON_SECRET auth.
+// /api/media = public image proxy (no session); /api/cron = Bearer CRON_SECRET auth;
+// /api/relay/webhook = Relay's signed events (HMAC, RELAY_WEBHOOK_SECRET).
 // The invite / password-recovery surface is reachable pre-login (logged-out users
 // set/reset their password) — the APIs validate the one-time token themselves.
 const PUBLIC = [
@@ -13,6 +14,7 @@ const PUBLIC = [
   '/api/auth/login',
   '/api/media',
   '/api/cron',
+  '/api/relay/webhook',
   // Pre-login account flows (pages + their token-validated APIs):
   '/aceptar-invitacion',
   '/recuperar-clave',

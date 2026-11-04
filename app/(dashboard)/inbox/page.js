@@ -476,7 +476,7 @@ export default function InboxPage() {
                       <Avatar c={c} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[15px] truncate" style={{ color: T.textPrimary, fontWeight: c.unread ? 700 : 500 }}>{c.name || formatPhone(c.phone)}</span>
+                          <span className="text-[15px] truncate" title={c.wa_name && c.wa_name !== c.name ? `WhatsApp name: ${c.wa_name}` : undefined} style={{ color: T.textPrimary, fontWeight: c.unread ? 700 : 500 }}>{c.name || formatPhone(c.phone)}</span>
                           <span className="text-[12px] shrink-0" style={{ color: c.unread ? GREEN : T.textMuted }}>{ago(lm.created_at)}</span>
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">

@@ -83,10 +83,10 @@ describe('payment follow-ups', () => {
     expect(unpaidKind('home')).toBe('unpaid_home');
     expect(unpaidKind('listing')).toBe('unpaid_extra');
     expect(unpaidKind('promo')).toBe('unpaid_listing');
-    expect(payLabel('home')).toBe('Waiting for home page display payment');
-    expect(managerName('manager_unpaid_verified')).toBe('Admin Manager: Waiting for Verified badge payment');
-    expect(managerName('manager_unpaid_home')).toBe('Admin Manager: Waiting for home page display payment');
-    expect(managerName('manager_unpaid_extra')).toBe('Admin Manager: Waiting for payment: extra listing');
+    expect(payLabel('home')).toBe('Waiting for payment: Home page display');
+    expect(managerName('manager_unpaid_verified')).toBe('Admin Manager: Waiting for payment: Verified badge');
+    expect(managerName('manager_unpaid_home')).toBe('Admin Manager: Waiting for payment: Home page display');
+    expect(managerName('manager_unpaid_extra')).toBe('Admin Manager: Waiting for payment: Extra listing');
     expect(managerName('manager_unpaid_listing')).toBe('Admin Manager: Waiting for payment');
   });
 });

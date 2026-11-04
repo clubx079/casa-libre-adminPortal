@@ -96,7 +96,7 @@ describe('default emails', () => {
       expect(validateTemplate(tpl).ok).toBe(true);
       expect(d.button_url).toBe('{{publish_url}}');
     }
-    expect(NO_LISTING_TEMPLATES[0].subject).toMatch(/Bienvenido a Casa Libre/);
+    expect(NO_LISTING_TEMPLATES[0].subject).toMatch(/Bienvenido a Casa-Libre/);
   });
   it('have English for the admin, matching the Spanish defaults', () => {
     for (const d of NO_LISTING_TEMPLATES) {
@@ -104,7 +104,7 @@ describe('default emails', () => {
       for (const f of TEMPLATE_FIELDS) expect(TEMPLATE_EN[d.key][f].es).toBe(d[f]);
       expect(englishName({ key: d.key, name: d.name })).toBe(TEMPLATE_EN[d.key].name.en);
     }
-    expect(TEMPLATE_EN['no-listing-welcome'].subject.en).toBe('Welcome to Casa Libre — post your first listing for free now');
+    expect(TEMPLATE_EN['no-listing-welcome'].subject.en).toBe('Welcome to Casa-Libre — post your first listing for free now');
   });
   it('show as in use by the automation', () => {
     expect(templateUsage('a', [{ id: NO_LISTING_AUTOMATION_ID, template_id: 'a', reminder_template_id: 'b', milestones: [2] }])).toEqual(['Signed up, no listing → welcome email']);

@@ -308,7 +308,7 @@ function Draft({ a, busy, onAct, site, tld }) {
             ) : null}
           </div>
           <div className="min-w-0">
-            <EmailPreview subject={view.subject} heading={view.heading} body={view.body} buttonLabel={view.button_label} buttonUrl={view.button_url} tld={tld} from={`Casa Libre <hola@${host}>`} />
+            <EmailPreview subject={view.subject} heading={view.heading} body={view.body} buttonLabel={view.button_label} buttonUrl={view.button_url} tld={tld} from={`Casa-Libre <hola@${host}>`} />
             <PreviewEnglish key={englishText(view)} text={englishText(view)} />
           </div>
         </div>

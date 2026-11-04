@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildQuery, checkHogql, cleanRow, maskEmail, maskPhone, runTool, READABLE_TABLES, capJson } from '../lib/manager/tools.js';
 import { periods, change, countBy, followUpResults, feedbackSummary, paymentSummary, scraperHealth, listingSummary } from '../lib/manager/packMath.js';
-import { buildActions, recentActionKeys, applyEdit, safeUrl, safeBody, MAX_DRAFTS } from '../lib/manager/actions.js';
+import { buildActions, answeredItems, itemKey, applyEdit, safeUrl, safeBody } from '../lib/manager/actions.js';
 import { REPORT_SCHEMA, systemPrompt } from '../lib/manager/prompt.js';
 import { costUsd, addUsage, emptyUsage, parseReport } from '../lib/manager/agent.js';
 
@@ -135,30 +135,34 @@ describe('drafts → review queue', () => {
     expect(safeUrl('https://casa-libre.com.py.evil.com/', SITE)).toBe(null);
     expect(safeBody(base.body, SITE)).toBe('Texto aquí y [acá](https://casa-libre.com.py/contacto)');
   });
-  it('drops team accounts, duplicates, recent ones, and caps at 10', () => {
+  it('drops team accounts, duplicates and problems already answered — no cap, no 14-day rule', () => {
+    const L1 = '44444444-4444-4444-4444-444444444444';
     const drafts = [
       base,
       { ...base },                                             // duplicate
       { ...base, user_id: U2 },                                // team account
       { ...base, user_id: null, feedback_id: '42', kind: 'complaint', button_url: 'https://evil.com' },
       { ...base, user_id: null, feedback_id: null },           // nobody to send to
-      { ...base, user_id: '33333333-3333-3333-3333-333333333333', kind: 'listing_fix' },
+      { ...base, user_id: '33333333-3333-3333-3333-333333333333', kind: 'listing_fix', property_id: L1 },   // that listing problem was already emailed
+      { ...base, kind: 'complaint' },                          // the same person, a NEW problem → sent
     ];
-    const { actions, dropped } = buildActions(drafts, { site: SITE, newId, skipUser: (id) => id === U2, recentKeys: new Set(['user:33333333-3333-3333-3333-333333333333:listing_fix']) });
-    expect(actions.map((a) => [a.user_id, a.feedback_id, a.kind])).toEqual([[U1, null, 'negative_feedback'], [null, '42', 'complaint']]);
+    const { actions, dropped } = buildActions(drafts, { site: SITE, newId, skipUser: (id) => id === U2, answered: new Set([`listing_fix:listing:${L1}`]) });
+    expect(actions.map((a) => [a.user_id, a.feedback_id, a.kind])).toEqual([[U1, null, 'negative_feedback'], [null, '42', 'complaint'], [U1, null, 'complaint']]);
     expect(actions[1].button_url).toBe(null);
     expect(actions[1].button_label).toBe(null);
     expect(actions[0].status).toBe('draft');
-    expect(dropped.map((d) => d.reason)).toEqual(['duplicate in this report', 'team / test / unknown account', 'no user or feedback to send to', 'already handled in the last 14 days']);
-    const many = Array.from({ length: 14 }, (_, i) => ({ ...base, user_id: `${String(i).padStart(8, '0')}-1111-1111-1111-111111111111` }));
-    expect(buildActions(many, { site: SITE, newId }).actions).toHaveLength(MAX_DRAFTS);
+    expect(dropped.map((d) => d.reason)).toEqual(['duplicate in this report', 'team / test / unknown account', 'no user or feedback to send to', 'this problem was already answered']);
+    const many = Array.from({ length: 25 }, (_, i) => ({ ...base, user_id: `${String(i).padStart(8, '0')}-1111-1111-1111-111111111111` }));
+    expect(buildActions(many, { site: SITE, newId }).actions).toHaveLength(25);   // no cap
   });
-  it('remembers what was sent or dismissed in the last 14 days', () => {
-    const keys = recentActionKeys([
-      { created_at: '2026-10-20T00:00:00Z', actions: [{ user_id: U1, kind: 'complaint', status: 'sent' }, { user_id: U2, kind: 'other', status: 'draft' }] },
-      { created_at: '2026-09-01T00:00:00Z', actions: [{ feedback_id: '9', kind: 'complaint', status: 'sent' }] },
-    ], Date.parse('2026-10-10T00:00:00Z'));
-    expect([...keys]).toEqual([`user:${U1}:complaint`]);
+  it('remembers every problem already answered (sent or dismissed), with no time limit', () => {
+    const keys = answeredItems([
+      { created_at: '2026-10-20T00:00:00Z', actions: [{ user_id: U1, feedback_id: '7', kind: 'negative_feedback', status: 'sent' }, { user_id: U2, property_id: 'p1', kind: 'listing_fix', status: 'draft' }] },
+      { created_at: '2026-09-01T00:00:00Z', actions: [{ feedback_id: '9', kind: 'complaint', status: 'dismissed' }, { user_id: U1, kind: 'other', status: 'sent' }] },
+    ]);
+    expect([...keys]).toEqual(['negative_feedback:feedback:7', 'complaint:feedback:9']);
+    expect(itemKey({ kind: 'listing_fix', property_id: 'p1' })).toBe('listing_fix:listing:p1');
+    expect(itemKey({ kind: 'other', user_id: U1 })).toBe(null);   // a general email never blocks a later one
   });
   it('admin edits are checked the same way', () => {
     const a = buildActions([base], { site: SITE, newId }).actions[0];

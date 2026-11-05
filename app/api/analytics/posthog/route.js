@@ -14,7 +14,8 @@ import { clickSql, applyClicks, OPEN_TRACKING_GAP } from '@/lib/contactsReport';
 import { isInternalContact } from '@/lib/internalTraffic';
 import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
-import { batchNames } from '@/lib/waCampaignStore';
+import { batchNames, batchNamesByRef } from '@/lib/waCampaignStore';
+import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
 import { normPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
@@ -81,7 +82,7 @@ async function usersList(platform = 'web') {
       ${lastSeenAt('properties.$geoip_city_name')} AS city,
       ${lastSeenAt('properties.$geoip_country_name')} AS country,
       argMin(${SOURCE_EXPR}, timestamp) AS source,
-      argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+      argMin(${CAMPAIGN_KEY}, timestamp) AS campaign,
       argMax(${SITE_EXPR}, timestamp) AS site,
       count() AS events,
       countIf(event = 'property_viewed') AS views,
@@ -98,8 +99,9 @@ async function usersList(platform = 'web') {
     ORDER BY last_seen DESC
     LIMIT 300
   `);
-  const names = await batchNames();   // WhatsApp campaign batch slug → its name
+  const [names, byRef] = await Promise.all([batchNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug → name · person code → batch name
   const users = flat(rows).map((r) => {
+    const camp = campaignOf(r[9], names, byRef);
     const email = r[2] || '';
     return {
       person_id: r[1],
@@ -111,8 +113,8 @@ async function usersList(platform = 'web') {
       country: r[7] || '',
       location: [r[6], r[7]].filter(Boolean).join(', '),
       source: r[8] || 'direct',
-      campaign: r[9] || '',
-      campaign_label: names.get(r[9]) || '',
+      campaign: camp.campaign,
+      campaign_label: camp.label,
       site: r[10] || 'py',
       events: Number(r[11] || 0),
       views: Number(r[12] || 0),
@@ -196,7 +198,7 @@ async function userActivity({ personId, ip }) {
         min(timestamp) AS first_seen,
         max(timestamp) AS last_seen,
         argMin(${SOURCE_EXPR}, timestamp) AS source,
-        argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+        argMin(${CAMPAIGN_KEY}, timestamp) AS campaign,
         argMin(coalesce(properties.$referring_domain, ''), timestamp) AS referrer
       FROM events
       WHERE ${scope} AND timestamp >= now() - INTERVAL 90 DAY
@@ -230,8 +232,7 @@ async function userActivity({ personId, ip }) {
     last_seen: p[9],
     // where the FIRST visit came from (google, chatgpt, direct, an /r/ campaign tag…)
     source: p[10] || 'direct',
-    campaign: p[11] || '',
-    campaign_label: (await batchNames()).get(p[11]) || '',   // a WhatsApp campaign batch's name
+    ...(await (async () => { const c = campaignOf(p[11], await batchNames(), await batchNamesByRef().catch(() => new Map())); return { campaign: c.campaign, campaign_label: c.label }; })()),   // a WhatsApp campaign batch's name
     referrer: p[12] && p[12] !== '$direct' ? p[12] : '',
   };
   const pathOf = (url) => {
@@ -295,7 +296,7 @@ async function sourcesBreakdown(days, site) {
     WITH first_touch AS (
       SELECT ${UKEY} AS idkey,
              argMin(${SOURCE_EXPR}, timestamp) AS source,
-             argMin(coalesce(nullIf(properties.utm_campaign, ''), ''), timestamp) AS campaign,
+             argMin(${CAMPAIGN_KEY}, timestamp) AS campaign,
              max(coalesce(person.properties.email, '')) != '' AS known,
              max(timestamp) AS last_seen,
              countIf(event = 'listing_created') AS listings,
@@ -306,17 +307,22 @@ async function sourcesBreakdown(days, site) {
     )
     SELECT source, campaign, count() AS visitors, countIf(known = 0) AS anon, countIf(known = 1) AS signed_in,
            sum(listings) AS listings, sum(contacts) AS contacts
-    FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 40`);
-  const names = await batchNames();   // WhatsApp campaign batch slug → its name
+    FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 2000`);
+  const [names, byRef] = await Promise.all([batchNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug → name · person code → batch name
+  // reply-link visitors come one code each: merged per batch (or per audience) here
+  const merged = new Map();
+  for (const r of flat(rows)) {
+    const c = campaignOf(r[1], names, byRef);
+    const k = `${r[0] || 'direct'}\u0000${c.label || c.campaign}`;
+    const m = merged.get(k) || { source: r[0] || 'direct', campaign: c.campaign, label: c.label, visitors: 0, anon: 0, signedIn: 0, listings: 0, contacts: 0 };
+    // anonymous visitors count too — by IP, the same way the rest of this page does
+    m.visitors += Number(r[2] || 0); m.anon += Number(r[3] || 0); m.signedIn += Number(r[4] || 0);
+    m.listings += Number(r[5] || 0); m.contacts += Number(r[6] || 0);
+    merged.set(k, m);
+  }
   return NextResponse.json({
     configured: true, days: d,
-    rows: flat(rows).map((r) => ({
-      source: r[0] || 'direct', campaign: r[1] || '', label: names.get(r[1]) || '',
-      visitors: Number(r[2] || 0),
-      // anonymous visitors count too — by IP, the same way the rest of this page does
-      anon: Number(r[3] || 0), signedIn: Number(r[4] || 0),
-      listings: Number(r[5] || 0), contacts: Number(r[6] || 0),
-    })),
+    rows: [...merged.values()].sort((a, b) => b.visitors - a.visitors).slice(0, 60),
   });
 }
 

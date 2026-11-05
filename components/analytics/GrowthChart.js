@@ -1,7 +1,7 @@
 'use client';
 // Analytics → Growth: one line chart from the first day with data (lib/growthSeries.js via
-// /api/analytics/posthog?type=growth). The thin line is each day; the thick one is the 7-day
-// average, so a real drop shows and one quiet day doesn't. Pick the metric (visitors /
+// /api/analytics/posthog?type=growth). One black line: each day's real number (user, Nov 6:
+// no second average line). The line above the chart compares the last 7 days with the 7 before. Pick the metric (visitors /
 // property views / contacted a seller) and the span (all / 90 / 30 days). Hover a day for
 // its numbers. Today is still running, so its point is hollow.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -59,7 +59,7 @@ export default function GrowthChart({ platform = 'web' }) {
 
   const chart = useMemo(() => {
     if (days.length < 2) return null;
-    const max = niceMax(Math.max(...days.map((d) => Math.max(d[metric], d.avg[metric]))));
+    const max = niceMax(Math.max(...days.map((d) => d[metric])));
     const iw = w - PAD.l - PAD.r;
     const ih = H - PAD.t - PAD.b;
     const x = (i) => PAD.l + (i / (days.length - 1)) * iw;
@@ -69,7 +69,7 @@ export default function GrowthChart({ platform = 'web' }) {
     // x labels: the first day of each month (every other month when the span is long)
     const months = days.map((d, i) => ({ d, i })).filter(({ d, i }) => i === 0 || d.date.endsWith('-01'));
     const step = months.length > 8 ? 2 : 1;
-    return { x, y, ih, daily: line((d) => d[metric]), avg: line((d) => d.avg[metric]), ticks, labels: months.filter((_, k) => k % step === 0) };
+    return { x, y, ih, daily: line((d) => d[metric]), ticks, labels: months.filter((_, k) => k % step === 0) };
   }, [days, metric, w]);
 
   const last = days[days.length - 1];
@@ -92,7 +92,7 @@ export default function GrowthChart({ platform = 'web' }) {
         <TrendingUp className="w-4 h-4" style={{ color: C.ink }} />
         <h2 className="text-sm font-bold" style={{ color: C.ink }}>Growth</h2>
         <span className="text-[10px]" style={{ color: C.muted }}>
-          · per day since {data?.start ? fmtDay(data.start) : '…'}, thick line = 7-day average
+          · each day since {data?.start ? fmtDay(data.start) : '…'}
         </span>
         <div className="ml-auto flex flex-wrap gap-1.5">
           {METRICS.map(([k, label]) => (
@@ -109,9 +109,9 @@ export default function GrowthChart({ platform = 'web' }) {
 
       {last && (
         <p className="text-xs mb-3" style={{ color: C.secondary }}>
-          7-day average now <b style={{ color: C.ink }}>{n(last.avg[metric])}</b> a day
+          Last 7 days: <b style={{ color: C.ink }}>{n(last.avg[metric])}</b> a day on average
           {change != null && (
-            <> · <b style={{ color: change >= 0 ? C.up : C.down }}>{change >= 0 ? '+' : ''}{change}%</b> vs a week ago ({n(weekAgo.avg[metric])})</>
+            <> · <b style={{ color: change >= 0 ? C.up : C.down }}>{change >= 0 ? '+' : ''}{change}%</b> vs the 7 days before ({n(weekAgo.avg[metric])})</>
           )}
         </p>
       )}
@@ -132,16 +132,14 @@ export default function GrowthChart({ platform = 'web' }) {
             {chart.labels.map(({ d, i }) => (
               <text key={d.date} x={chart.x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : 'middle'} fontSize="10" fill={C.muted}>{fmtMonth(d.date)}</text>
             ))}
-            <path d={chart.daily} fill="none" stroke={C.daily} strokeWidth="1.5" strokeLinejoin="round" />
-            <path d={chart.avg} fill="none" stroke={C.ink} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={chart.daily} fill="none" stroke={C.ink} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {last?.date === today && (
-              <circle cx={chart.x(days.length - 1)} cy={chart.y(last[metric])} r="3.5" fill="#fff" stroke={C.daily} strokeWidth="1.5" />
+              <circle cx={chart.x(days.length - 1)} cy={chart.y(last[metric])} r="3.5" fill="#fff" stroke={C.ink} strokeWidth="1.5" />
             )}
             {hd && (
               <g>
                 <line x1={chart.x(hover)} x2={chart.x(hover)} y1={PAD.t} y2={PAD.t + chart.ih} stroke={C.muted} strokeDasharray="3 3" />
-                <circle cx={chart.x(hover)} cy={chart.y(hd[metric])} r="3.5" fill={C.daily} />
-                <circle cx={chart.x(hover)} cy={chart.y(hd.avg[metric])} r="4" fill={C.ink} />
+                <circle cx={chart.x(hover)} cy={chart.y(hd[metric])} r="4" fill={C.ink} />
               </g>
             )}
           </svg>
@@ -150,8 +148,7 @@ export default function GrowthChart({ platform = 'web' }) {
           <div className="absolute pointer-events-none bg-white px-3 py-2 text-[11px] shadow-md" data-testid="growth-tip"
             style={{ ...CARD, top: 4, left: Math.min(Math.max(chart.x(hover) + 10, 0), w - 190), width: 180 }}>
             <div className="font-semibold mb-0.5" style={{ color: C.ink }}>{fmtDay(hd.date)}{hd.date === today ? ' (today, so far)' : ''}</div>
-            <div style={{ color: C.body }}>That day: <b>{n(hd[metric])}</b></div>
-            <div style={{ color: C.body }}>7-day average: <b>{n(hd.avg[metric])}</b></div>
+            <div style={{ color: C.body }}>{METRICS.find(([k]) => k === metric)[1]}: <b>{n(hd[metric])}</b></div>
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
 import UserTimeline from '@/components/users/UserTimeline';
+import GrowthChart from '@/components/analytics/GrowthChart';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -1244,6 +1245,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
           a signed-in person is the same person as on the website. Publishing happens on the website, so new listings are counted there.
         </p>
       ) : <VerifiedBy />}
+
+      {/* Growth: per day since analytics started, with the 7-day average (components/analytics/GrowthChart.js) */}
+      <GrowthChart platform={platform} />
 
       {/* User funnel + country donut, side by side */}
       <div className="grid lg:grid-cols-2 gap-4 items-start">

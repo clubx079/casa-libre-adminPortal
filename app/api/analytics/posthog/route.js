@@ -17,6 +17,17 @@ import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posth
 import { batchNames, batchNamesByRef } from '@/lib/waCampaignStore';
 import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
 import { normPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
+import { growthSql, buildGrowth } from '@/lib/growthSeries';
+
+// Growth chart: visitors / property views / contacts per day since the first day with data
+// (lib/growthSeries.js), in the country's time zone.
+async function growthData(platform = 'web') {
+  const cc = currentSite() || 'py';
+  const tz = COUNTRY_TZ[cc] || 'America/Asuncion';
+  const rows = await hogql(growthSql({ where: geoFilter(platform), ukey: ukeyFor(platform), tz }));
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+  return NextResponse.json({ configured: true, platform, tz, ...buildGrowth(flat(rows), { today }) });
+}
 
 // Casa Libre buyer-behaviour analytics, read from PostHog via the HogQL query
 // API. Protected by the admin session. Returns { configured:false } until the
@@ -607,6 +618,7 @@ export async function GET(request) {
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '', platform);
     if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '', normPlatform(searchParams.get('platform'), 'all'));
     if (type === 'whatsapp') return await whatsappData(searchParams.get('days') || '');
+    if (type === 'growth') return await growthData(platform);
 
     // ── default: dashboard ──
     // The summary's window (?days=, whitelisted; default the last 7 days).

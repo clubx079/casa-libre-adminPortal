@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automations/ui';
 import OpenIssuesDays from '@/components/manager/OpenIssuesDays';
+import SecurityCard from '@/components/manager/SecurityCard';
 
 const STATUS ={ running: ['info', 'Writing…'], done: ['success', 'Ready'], failed: ['danger', 'Failed'] };
 
@@ -41,6 +42,9 @@ export default function ManagerPage() {
       ) : err ? <Banner>Could not load: {err}</Banner> : null}
 
       <OpenIssuesDays />
+
+      {/* the IP detector: limits, blocked IPs, busiest IPs (components/manager/SecurityCard.js) */}
+      <SecurityCard />
 
       <div className="bg-white overflow-hidden" style={CARD}>
         {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (

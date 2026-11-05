@@ -7,7 +7,7 @@
 // changes (lib/analyticsRange.js). Hover a day for its numbers. Today is still running, so its
 // point is hollow.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Loader2 } from 'lucide-react';
 import { RANGES, DEFAULT_DAYS, sectionDays, pickSection, rangeName } from '@/lib/analyticsRange';
 
 const C = {
@@ -128,6 +128,7 @@ export default function GrowthChart({ platform = 'web', master = DEFAULT_DAYS })
         </div>
       </div>
 
+      {!data && !error && <div className="h-3.5 w-72 rounded-full mb-3 animate-pulse" style={{ background: C.border }} />}
       {last && (
         <p className="text-xs mb-3" style={{ color: C.secondary }}>
           Last 7 days: <b style={{ color: C.ink }}>{n(last.avg[metric])}</b> a day on average
@@ -139,7 +140,18 @@ export default function GrowthChart({ platform = 'web', master = DEFAULT_DAYS })
 
       <div ref={box} className="relative" style={{ height: H }}>
         {error && <p className="text-xs" style={{ color: C.down }}>{error}</p>}
-        {!error && !data && <div className="h-full rounded-lg animate-pulse" style={{ background: C.surface }} />}
+        {/* loading: the chart's grid with a spinner, so the card keeps its size and clearly says it's coming */}
+        {!error && !data && (
+          <div className="absolute inset-0 rounded-lg overflow-hidden" style={{ background: C.surface }} data-testid="growth-loading">
+            <div className="absolute inset-0 flex flex-col justify-between py-3 px-3 animate-pulse" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-px" style={{ background: C.border }} />)}
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs" style={{ color: C.secondary }} role="status">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading growth…
+            </div>
+          </div>
+        )}
         {data && !chart && <p className="text-xs" style={{ color: C.muted }}>Not enough days of data yet.</p>}
         {chart && (
           <svg width={w} height={H} viewBox={`0 0 ${w} ${H}`} role="img" aria-label={`${METRICS.find(([k]) => k === metric)[1]} per day`}

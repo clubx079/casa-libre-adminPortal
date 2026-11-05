@@ -19,6 +19,6 @@ describe('tracked links in the assistant\'s replies', () => {
     expect(aiLink('https://casa-libre.com.py', '//evil.com')).toBe('https://casa-libre.com.py/');
   });
   it('the pages it can link to', () => {
-    for (const k of ['publish_a_property', 'my_listings', 'my_drafts', 'buy', 'rent', 'faq', 'download_the_android_app']) expect(SITE_PAGES[k]).toMatch(/^\//);
+    for (const k of ['publish_a_property', 'my_listings', 'my_drafts', 'buy', 'rent', 'faq', 'download_the_app']) expect(SITE_PAGES[k]).toMatch(/^\//);
   });
 });

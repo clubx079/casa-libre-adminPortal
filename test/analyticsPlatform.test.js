@@ -60,11 +60,15 @@ describe('website vs app events', () => {
 });
 
 describe('summary + funnel', () => {
-  it('the website funnel is unchanged', () => {
+  it('the website funnel: the app-button total stays, split by store under it', () => {
     expect(funnelSteps('web').map(([s]) => s)).toEqual([
       'Visited the site', 'Searched', 'Viewed a property', 'Saved a property', 'Contacted a seller', 'Listed a property', 'Clicked an app button',
+      'Clicked Android app button', 'Clicked iPhone app button',
     ]);
     expect(funnelSteps('web')[4][1]).toBe(CONTACT_IN);
+    expect(funnelSteps('web')[6][1]).toBe("event = 'app_badge_clicked'");   // the same total as before
+    expect(funnelSteps('web')[7][1]).toContain("properties.store = 'google_play'");
+    expect(funnelSteps('web')[8][1]).toContain("properties.store = 'app_store'");
   });
 
   it('the app funnel uses the same event names as the website', () => {

@@ -73,7 +73,7 @@ function RangeSelect({ range, options = RANGES, ariaLabel = 'Range', className =
   );
 }
 
-const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home, Smartphone];
+const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home, Smartphone, Smartphone, Smartphone];
 const FUNNEL_ICONS_APP = [Smartphone, Search, MapPin, Heart, Phone, Users, Home];
 
 // The Mobile users tab asks the same routes for the app's events only

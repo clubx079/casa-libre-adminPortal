@@ -1247,7 +1247,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
       ) : <VerifiedBy />}
 
       {/* Growth: per day since analytics started, with the 7-day average (components/analytics/GrowthChart.js) */}
-      <GrowthChart platform={platform} />
+      <GrowthChart platform={platform} master={days} />
 
       {/* User funnel + country donut, side by side */}
       <div className="grid lg:grid-cols-2 gap-4 items-start">

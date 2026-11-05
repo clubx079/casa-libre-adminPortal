@@ -2,10 +2,13 @@
 // Analytics → Growth: one line chart from the first day with data (lib/growthSeries.js via
 // /api/analytics/posthog?type=growth). One black line: each day's real number (user, Nov 6:
 // no second average line). The line above the chart compares the last 7 days with the 7 before. Pick the metric (visitors /
-// property views / contacted a seller) and the span (all / 90 / 30 days). Hover a day for
-// its numbers. Today is still running, so its point is hollow.
+// property views / contacted a seller) and the span. The span follows the page's main date
+// filter (master) like every other section; picking one here lasts until the main filter
+// changes (lib/analyticsRange.js). Hover a day for its numbers. Today is still running, so its
+// point is hollow.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { TrendingUp } from 'lucide-react';
+import { RANGES, DEFAULT_DAYS, sectionDays, pickSection, rangeName } from '@/lib/analyticsRange';
 
 const C = {
   ink: '#111111', body: '#3A3A37', secondary: '#6B6862', muted: '#9C978C', border: '#E7E1D6',
@@ -13,11 +16,11 @@ const C = {
 };
 const CARD = { border: `1px solid ${C.border}`, borderRadius: '14px' };
 const METRICS = [['visitors', 'Visitors'], ['views', 'Property views'], ['contacts', 'Contacted a seller']];
-const SPANS = [['all', 'All'], [90, '90 days'], [30, '30 days']];
+const SPANS = [...RANGES.map((r) => [r.v, r.l]), ['all', 'All']];
 const H = 240;
 const PAD = { l: 44, r: 12, t: 12, b: 28 };
 const fmtDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const fmtMonth = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+const fmtMonth = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
 const n = (v) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 1 });
 
 // a round top for the y axis
@@ -27,11 +30,15 @@ function niceMax(v) {
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
 }
 
-export default function GrowthChart({ platform = 'web' }) {
+export default function GrowthChart({ platform = 'web', master = DEFAULT_DAYS }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [metric, setMetric] = useState('visitors');
-  const [span, setSpan] = useState('all');
+  // follows the page's range until a span is picked here; a new page range resets it
+  const [override, setOverride] = useState(null);
+  const span = sectionDays(master, override);
+  const setSpan = (k) => setOverride(pickSection(master, k));
+  const custom = span !== master;
   const [hover, setHover] = useState(null);
   const [w, setW] = useState(800);
   const box = useRef(null);
@@ -66,10 +73,18 @@ export default function GrowthChart({ platform = 'web' }) {
     const y = (v) => PAD.t + ih - (v / max) * ih;
     const line = (key) => days.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(key(d)).toFixed(1)}`).join('');
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f));
-    // x labels: the first day of each month (every other month when the span is long)
-    const months = days.map((d, i) => ({ d, i })).filter(({ d, i }) => i === 0 || d.date.endsWith('-01'));
-    const step = months.length > 8 ? 2 : 1;
-    return { x, y, ih, daily: line((d) => d[metric]), ticks, labels: months.filter((_, k) => k % step === 0) };
+    // x labels: up to a month → about 6 days spread out ("Nov 3"); longer → the first of each
+    // month ("Oct"), every other month when there are many
+    let labels;
+    if (days.length <= 35) {
+      const every = Math.max(1, Math.ceil(days.length / 6));
+      labels = days.map((d, i) => ({ d, i, text: fmtDay(d.date) })).filter(({ i }) => i % every === 0);
+    } else {
+      const months = days.map((d, i) => ({ d, i, text: fmtMonth(d.date) })).filter(({ d, i }) => i === 0 || d.date.endsWith('-01'));
+      const step = months.length > 8 ? 2 : 1;
+      labels = months.filter((_, k) => k % step === 0);
+    }
+    return { x, y, ih, daily: line((d) => d[metric]), ticks, labels };
   }, [days, metric, w]);
 
   const last = days[days.length - 1];
@@ -92,8 +107,14 @@ export default function GrowthChart({ platform = 'web' }) {
         <TrendingUp className="w-4 h-4" style={{ color: C.ink }} />
         <h2 className="text-sm font-bold" style={{ color: C.ink }}>Growth</h2>
         <span className="text-[10px]" style={{ color: C.muted }}>
-          · each day since {data?.start ? fmtDay(data.start) : '…'}
+          · each day, {span === 'all' ? `since ${data?.start ? fmtDay(data.start) : '…'}` : `last ${rangeName(span)}`}
         </span>
+        {custom && (
+          <button type="button" onClick={() => setOverride(null)} title={`The page range is ${rangeName(master)}. Click to follow it again.`}
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: '#F5EAD5', color: '#8A5A12' }}>
+            Custom · page is {rangeName(master)} ×
+          </button>
+        )}
         <div className="ml-auto flex flex-wrap gap-1.5">
           {METRICS.map(([k, label]) => (
             <button key={k} type="button" onClick={() => setMetric(k)} className="text-[11px] px-2.5 py-1 rounded-full"
@@ -129,8 +150,8 @@ export default function GrowthChart({ platform = 'web' }) {
                 <text x={PAD.l - 6} y={chart.y(t) + 3} textAnchor="end" fontSize="10" fill={C.muted}>{n(t)}</text>
               </g>
             ))}
-            {chart.labels.map(({ d, i }) => (
-              <text key={d.date} x={chart.x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : 'middle'} fontSize="10" fill={C.muted}>{fmtMonth(d.date)}</text>
+            {chart.labels.map(({ d, i, text }) => (
+              <text key={d.date} x={chart.x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : 'middle'} fontSize="10" fill={C.muted}>{text}</text>
             ))}
             <path d={chart.daily} fill="none" stroke={C.ink} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {last?.date === today && (

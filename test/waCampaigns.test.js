@@ -41,6 +41,16 @@ describe('batches', () => {
     expect(b3).toMatchObject({ from: 201, to: 250, left: 0 });
     expect(pickBatch(leads, { size: 0 }).batch).toHaveLength(250);   // 0 = everyone
   });
+  it('someone in two lists (an agent who is also an agency) is skipped by phone too', () => {
+    const agencies = [
+      { phone: '+595981100000', name: 'Same person, agency entry', key: 'lead:9001' },   // phone of "Lead 1" (already messaged as an agent)
+      { phone: '+595981999999', name: 'New agency', key: 'lead:9002' },
+    ];
+    const done = new Set(['lead:1', '+595981100000']);
+    const b = pickBatch(agencies, { size: 10, done });
+    expect(b.batch.map((r) => r.name)).toEqual(['New agency']);
+    expect(b).toMatchObject({ already: 1, from: 2, to: 2 });
+  });
   it('re-send to an earlier batch: everyone / didn\'t read / read, no reply / no click / replied', () => {
     const rows = [
       { phone: '+595999000001', status: 'read', meta: { key: 'lead:1', name: 'A', sim: true, real_phone: '+595981100000', replied_at: 'x' } },

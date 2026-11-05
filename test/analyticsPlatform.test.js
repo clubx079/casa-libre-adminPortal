@@ -60,15 +60,14 @@ describe('website vs app events', () => {
 });
 
 describe('summary + funnel', () => {
-  it('the website funnel: the app-button total stays, split by store under it', () => {
+  it('the website funnel: app-button clicks, one row per store (no combined row)', () => {
     expect(funnelSteps('web').map(([s]) => s)).toEqual([
-      'Visited the site', 'Searched', 'Viewed a property', 'Saved a property', 'Contacted a seller', 'Listed a property', 'Clicked an app button',
+      'Visited the site', 'Searched', 'Viewed a property', 'Saved a property', 'Contacted a seller', 'Listed a property',
       'Clicked Android app button', 'Clicked iPhone app button',
     ]);
     expect(funnelSteps('web')[4][1]).toBe(CONTACT_IN);
-    expect(funnelSteps('web')[6][1]).toBe("event = 'app_badge_clicked'");   // the same total as before
-    expect(funnelSteps('web')[7][1]).toContain("properties.store = 'google_play'");
-    expect(funnelSteps('web')[8][1]).toContain("properties.store = 'app_store'");
+    expect(funnelSteps('web')[6][1]).toBe("event = 'app_badge_clicked' AND properties.store = 'google_play'");
+    expect(funnelSteps('web')[7][1]).toBe("event = 'app_badge_clicked' AND properties.store = 'app_store'");
   });
 
   it('the app funnel uses the same event names as the website', () => {
@@ -85,7 +84,7 @@ describe('summary + funnel', () => {
     expect(sql).toContain("countIf(event = '$pageview')");
     expect(sql).toContain(`uniqExact(${UKEY})`);
     expect(sql).toContain(`uniqExactIf(${UKEY}, event = 'search_applied')`);
-    expect(sql).toContain(`uniqExactIf(${UKEY}, event = 'app_badge_clicked')`);
+    expect(sql).toContain(`uniqExactIf(${UKEY}, event = 'app_badge_clicked' AND properties.store = 'app_store')`);
     expect(sql).toContain('INTERVAL 7 DAY AND X');
     expect(sql).not.toContain('$screen');
   });
@@ -103,7 +102,7 @@ describe('summary + funnel', () => {
     expect(out.totals).toEqual({ pageviews: 120, uniqueUsers: 40 });
     expect(out.today).toEqual({ pageviews: 9, uniqueUsers: 5 });
     expect(out.funnel[0]).toEqual({ step: 'Visited the site', persons: 40 });
-    expect(out.funnel[6]).toEqual({ step: 'Clicked an app button', persons: 2 });
+    expect(out.funnel[6]).toEqual({ step: 'Clicked Android app button', persons: 2 });
     const empty = summaryFromRow(undefined, 'app');
     expect(empty.totals).toEqual({ pageviews: 0, uniqueUsers: 0 });
     expect(empty.funnel).toHaveLength(7);

@@ -130,3 +130,27 @@ describe('buildAlerts', () => {
     expect(chatLink('595981111', 'test')).toBe('/inbox?phone=595981111&mode=test');
   });
 });
+
+describe('agency portfolio alerts (Roland, Nov 5 2026)', () => {
+  it('an agency that told the assistant its size: the card names the count, the snapshot keeps it', () => {
+    const chats = [{ phone: '+595971340234', name: 'CENTURY 21 Access', tags: ['needs-a-person', 'cartera'], window: windowFor(1), messages: [
+      msg('tap', 'inbound', 2, { type: 'button', text: 'CARTERA', button: { text: 'CARTERA' } }),
+      msg('ask', 'outbound', 1.99, { sent_by: 'api', text: '¡Genial! Para preparar la migración de tu cartera a Casa-Libre, contanos: …' }),
+      msg('n', 'inbound', 1, { text: 'Tenemos 63 propiedades en nuestra web' }),
+      msg('offer', 'outbound', 0.99, { sent_by: 'api', text: 'Migramos hasta 100 propiedades gratis por 6 meses…' }),
+    ] }];
+    const ho = handover('595971340234', 'n', 0.99, { question: 'Tenemos 63 propiedades en nuestra web', note: 'Agency portfolio: 63 listings (11–200 listings: we migrate up to 100 free for 6 months).', portfolio_listings: 63 });
+    const alerts = buildAlerts({ chats, handovers: [ho], now: NOW });
+    const p = alerts.find((a) => a.type === 'person');
+    expect(p).toMatchObject({ label: 'Agency portfolio — 63 listings', portfolio: 63, status: 'open' });
+    expect(p.reason).toMatch(/63 listings/);
+    expect(alertSnapshot(p).portfolio).toBe(63);
+    // the CARTERA card is still there, with their answer
+    const c = alerts.find((a) => a.type === 'cartera');
+    expect(c.wrote).toContain('Tenemos 63 propiedades en nuestra web');
+  });
+  it('a plain hand-over keeps its usual label', () => {
+    const chats = [{ phone: '+595981111111', tags: ['needs-a-person'], messages: [msg('in1', 'inbound', 2)] }];
+    expect(buildAlerts({ chats, handovers: [handover('595981111111', 'in1', 1.9)], now: NOW })[0].label).toBe('Needs a person');
+  });
+});

@@ -78,3 +78,24 @@ describe('Inbox AI prompt — every language, unclear = ask', () => {
     expect(p).toMatch(/asking them to explain their issue and saying someone from our team will get back to them/);
   });
 });
+
+describe('Inbox AI prompt — agency offer by portfolio size (Roland, Nov 5 2026)', () => {
+  const p = systemPrompt('Paraguay');
+  it('the schema returns the portfolio count', () => {
+    expect(SCHEMA.required).toContain('portfolio');
+    expect(SCHEMA.properties.portfolio.type).toBe('integer');
+  });
+  it('has the three tiers and who takes over', () => {
+    expect(p).toContain('# Agencies: the offer by portfolio size');
+    expect(p).toMatch(/1 to 10: they publish themselves/);
+    expect(p).toMatch(/11 to 200: "migramos hasta 100 propiedades gratis por 6 meses/);
+    expect(p).toMatch(/More than 200: .*propuesta a medida/);
+    expect(p).toMatch(/WITHOUT a number yet: .*ask how many properties they have and where they publish them/);
+  });
+  it('never promises the whole portfolio free and never mentions scraping', () => {
+    expect(p).toContain('Never promise a whole portfolio free');
+    expect(p).toContain('never mention scraping, robots or tools');
+    expect(p).toContain('our automatic reply asked how many properties they have');
+    expect(p).not.toMatch(/CARTERA \(an agency with many listings → we migrate their portfolio for them, a person will contact them\)/);
+  });
+});

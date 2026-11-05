@@ -42,6 +42,10 @@ describe('autoGuards — every real question gets an answer, once', () => {
     expect(isTeamReply({ direction: 'outbound', sent_by: 'omar@airosofts.com', text: 'hola' })).toBe(true);
     expect(isTeamReply({ direction: 'outbound', sent_by: 'api', text: 'hola' })).toBe(false);
     expect(isKeywordReplyText('¡Genial! …\nhttps://casa-libre.com.py/r/si-in?r=1')).toBe(true);
+    // the CARTERA reply now only asks the size (no link): still our automatic reply, not a person's
+    const ask = '¡Genial! Para preparar la migración de tu cartera a Casa-Libre, contanos: ¿cuántas propiedades tenés hoy y dónde las publicás (tu web, otro portal o un Excel)?';
+    expect(isKeywordReplyText(ask)).toBe(true);
+    expect(isTeamReply({ direction: 'outbound', sent_by: 'omar@airosofts.com', text: ask })).toBe(false);
   });
 });
 

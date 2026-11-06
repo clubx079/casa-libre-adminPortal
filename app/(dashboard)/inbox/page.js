@@ -388,14 +388,20 @@ export default function InboxPage() {
   // keep the thread scrolled to the newest message when one arrives
   useEffect(() => { const last = msgs[msgs.length - 1]?.id; if (last && last !== lastIdRef.current) { lastIdRef.current = last; requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }); } }, [msgs]);
 
-  const translate = async (items) => {
-    const todo = items.filter((m) => m.text && english[m.id] === undefined);
+  // English for these messages, 30 per request (the API takes 40). A message that couldn't be
+  // translated is marked false (not shown) and tried again the next time English is switched on.
+  // force: also the ones that failed before (one message's "Translate")
+  const translate = async (items, force = false) => {
+    const todo = items.filter((m) => m.text && (force ? !english[m.id] : english[m.id] === undefined));
+    if (todo.length > 30) { for (let i = 0; i < todo.length; i += 30) await translate(todo.slice(i, i + 30), force); return; }
     if (!todo.length) return;
     const r = await fetch('/api/inbox/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts: todo.map((m) => m.text) }) }).then((x) => x.json()).catch(() => null);
     if (!r?.english) return;
-    setEnglish((e) => { const n = { ...e }; todo.forEach((m, i) => { n[m.id] = r.english[i] || null; }); return n; });
+    setEnglish((e) => { const n = { ...e }; todo.forEach((m, i) => { n[m.id] = r.english[i] || false; }); return n; });
   };
-  const toggleOne = (m) => { if (english[m.id]) setEnglish((e) => { const n = { ...e }; delete n[m.id]; return n; }); else translate([m]); };
+  const toggleOne = (m) => { if (english[m.id]) setEnglish((e) => { const n = { ...e }; delete n[m.id]; return n; }); else translate([m], true); };
+  // switching English on again retries the messages that failed before
+  const toggleAll = () => setAllEnglish((v) => { if (!v) setEnglish((e) => Object.fromEntries(Object.entries(e).filter(([, t]) => t !== false))); return !v; });
   useEffect(() => { if (allEnglish) translate(msgs); }, [allEnglish, msgs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = async (body) => {
@@ -528,7 +534,7 @@ export default function InboxPage() {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button type="button" onClick={addTag} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={{ border: `1px dashed ${T.borderLight}`, color: T.textSecondary }}>+ Tag</button>
-                  <button type="button" onClick={() => setAllEnglish((v) => !v)} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={allEnglish ? { background: T.textPrimary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary }} data-testid="translate-all">{allEnglish ? 'English on' : 'Translate all'}</button>
+                  <button type="button" onClick={toggleAll} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={allEnglish ? { background: T.textPrimary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textSecondary }} data-testid="translate-all">{allEnglish ? 'English on' : 'Translate all'}</button>
                   <button type="button" onClick={setDnc} className="text-[12.5px] px-2.5 py-1.5 rounded-full" style={conv?.dnc ? { background: T.danger, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.danger }} data-testid="dnc">{conv?.dnc ? 'Do not contact ✓' : 'Do not contact'}</button>
                   <button type="button" onClick={markUnread} className="text-[13px] font-semibold px-3 py-1.5 rounded-[10px] text-white inline-flex items-center gap-1.5" style={{ background: GREEN }} data-testid="mark-unread" title="Put the dot back so someone comes back to it">
                     <span className="w-2 h-2 rounded-full bg-white" aria-hidden="true" />Mark as unread

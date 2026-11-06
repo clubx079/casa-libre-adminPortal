@@ -6,6 +6,8 @@ describe('analytics country site', () => {
     expect(siteOf({ $host: 'casa-libre-el-salvador.apps.airosofts.com', site_country: 'py' })).toBe('sv');
     expect(siteOf({ $host: 'casa-libre.com.sv' })).toBe('sv');
     expect(siteOf({ $host: 'www.casa-libre.com.sv' })).toBe('sv');
+    expect(siteOf({ $host: 'sv.casa-libre.com', site_country: 'py' })).toBe('sv');   // the live address since Nov 6 2026
+    expect(siteOf({ $host: 'casa-libre.com' })).toBe('py');                          // the hub is not El Salvador
     expect(siteOf({ $host: 'localhost:3000', site_country: 'sv' })).toBe('sv');
   });
 

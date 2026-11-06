@@ -154,3 +154,12 @@ describe('agency portfolio alerts (Roland, Nov 5 2026)', () => {
     expect(buildAlerts({ chats, handovers: [handover('595981111111', 'in1', 1.9)], now: NOW })[0].label).toBe('Needs a person');
   });
 });
+
+describe('developer project alerts', () => {
+  it('a developer that told the assistant its units: the card says so', () => {
+    const chats = [{ phone: '+595981222333', tags: ['needs-a-person', 'proyecto'], messages: [msg('p', 'inbound', 2, { text: 'PROYECTO' }), msg('n', 'inbound', 1, { text: 'Son 120 departamentos' })] }];
+    const ho = handover('595981222333', 'n', 0.9, { portfolio_listings: 120, portfolio_kind: 'developer', note: 'Developer project: 120 units' });
+    const p = buildAlerts({ chats, handovers: [ho], now: NOW }).find((a) => a.type === 'person');
+    expect(p.label).toBe('Developer project — 120 units');
+  });
+});

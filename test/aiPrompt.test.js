@@ -86,16 +86,26 @@ describe('Inbox AI prompt — agency offer by portfolio size (Roland, Nov 5 2026
     expect(SCHEMA.properties.portfolio.type).toBe('integer');
   });
   it('has the three tiers and who takes over', () => {
-    expect(p).toContain('# Agencies: the offer by portfolio size');
+    expect(p).toContain('# Agencies and developers: the offer by portfolio size');
     expect(p).toMatch(/1 to 10: they publish themselves/);
     expect(p).toMatch(/11 to 200: "migramos hasta 100 propiedades gratis por 6 meses/);
     expect(p).toMatch(/More than 200: .*propuesta a medida/);
-    expect(p).toMatch(/WITHOUT a number yet: .*ask how many properties they have and where they publish them/);
+    expect(p).toMatch(/WITHOUT a number yet .*ask how many properties they have and where they publish them/);
   });
   it('never promises the whole portfolio free and never mentions scraping', () => {
     expect(p).toContain('Never promise a whole portfolio free');
     expect(p).toContain('never mention scraping, robots or tools');
     expect(p).toContain('our automatic reply asked how many properties they have');
     expect(p).not.toMatch(/CARTERA \(an agency with many listings → we migrate their portfolio for them, a person will contact them\)/);
+  });
+});
+
+describe('Inbox AI prompt — developers (PROYECTO) get the same offer in units', () => {
+  const p = systemPrompt('Paraguay');
+  it('knows the PROYECTO ask and the unit wording', () => {
+    expect(p).toContain("our automatic reply asked the project's name, where it is and how many units it has");
+    expect(p).toContain('cargamos hasta 100 unidades gratis por 6 meses');
+    expect(p).toContain('Para un proyecto de ese tamaño preparamos una propuesta a medida');
+    expect(SCHEMA.properties.portfolio.description).toMatch(/units their project has/);
   });
 });

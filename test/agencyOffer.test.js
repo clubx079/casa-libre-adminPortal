@@ -43,3 +43,24 @@ describe('agency offer by portfolio size (Roland, Nov 5 2026)', () => {
     expect(m.html).not.toMatch(/<script/);
   });
 });
+
+describe('developers (PROYECTO): the same tiers, counted in units (user, Nov 6 2026)', () => {
+  it('tells a developer from an agency by the newest CARTERA / PROYECTO tap', async () => {
+    const { kindFromThread } = await import('../lib/agencyOffer');
+    const at = (iso) => ({ timestamps: { created: iso } });
+    expect(kindFromThread([{ direction: 'inbound', type: 'button', button: { text: 'PROYECTO' }, ...at('2026-11-06T10:00:00Z') }, { direction: 'inbound', text: 'Tiene 120 unidades', ...at('2026-11-06T10:05:00Z') }])).toBe('developer');
+    expect(kindFromThread([{ direction: 'inbound', text: 'CARTERA', ...at('2026-11-06T10:00:00Z') }])).toBe('agency');
+    expect(kindFromThread([{ direction: 'inbound', text: 'Cartera', ...at('2026-11-01T10:00:00Z') }, { direction: 'inbound', text: 'proyecto', ...at('2026-11-06T10:00:00Z') }])).toBe('developer');
+    expect(kindFromThread([{ direction: 'inbound', text: '¿cuánto cuesta?' }])).toBe('agency');
+  });
+  it('note, lead line and email speak of units and loading the project', async () => {
+    const { portfolioNote, leadNotes, portfolioEmail } = await import('../lib/agencyOffer');
+    expect(portfolioNote(120, 'developer')).toMatch(/^Developer project: 120 units \(11–200 units: we load up to 100 free for 6 months\)/);
+    expect(portfolioNote(120, 'developer')).toMatch(/brochure, price list \(Excel\) or web page/);
+    expect(leadNotes('x · Portfolio: 63 listings (WhatsApp, 2026-11-05)', 120, new Date('2026-11-06T00:00:00Z'), 'developer')).toBe('x · Project: 120 units (WhatsApp, 2026-11-06)');
+    const m = portfolioEmail({ count: 250, phone: '+595981000000', name: 'Torre Sol', kind: 'developer' });
+    expect(m.subject).toBe('WhatsApp: Torre Sol (+595981000000) has a project with 250 units');
+    expect(m.text).toMatch(/200\+ units: custom offer/);
+    expect(m.to).toBe('omar@airosofts.com');
+  });
+});

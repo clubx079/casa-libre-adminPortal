@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   APP_LIB, IS_APP, IS_IOS, IS_ANDROID, isAppEvent, appOsOf, isAppPlatform, normPlatform, platformClause, APP_UKEY, ukeyFor, pageviewEvent,
-  geoEventsClause, funnelSteps, summarySql, summaryFromRow,
-} from '../lib/analyticsPlatform.js';
+  geoEventsClause, funnelSteps, summarySql, summaryFromRow, HAS_PHONE_IP } from '../lib/analyticsPlatform.js';
 import { UKEY, CONTACT_IN } from '../lib/posthogSql.js';
 
 describe('website vs app events', () => {
@@ -168,5 +167,12 @@ describe('summary + funnel', () => {
     expect(empty.totals).toEqual({ pageviews: 0, uniqueUsers: 0 });
     expect(empty.funnel).toHaveLength(7);
     expect(empty.funnel.every((s) => s.persons === 0)).toBe(true);
+  });
+});
+
+describe('HAS_PHONE_IP', () => {
+  it('ignores only the old pings that carry the server address', () => {
+    expect(HAS_PHONE_IP).toContain("event != 'app_opened'");
+    expect(HAS_PHONE_IP).toContain("coalesce(properties.ip_source, '') = 'phone'");
   });
 });

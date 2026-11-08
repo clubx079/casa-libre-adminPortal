@@ -16,7 +16,7 @@ import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
 import { batchNames, batchNamesByRef } from '@/lib/waCampaignStore';
 import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
-import { normPlatform, isAppPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
+import { normPlatform, isAppPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow, HAS_PHONE_IP } from '@/lib/analyticsPlatform';
 import { growthSql, buildGrowth } from '@/lib/growthSeries';
 
 // Growth chart: visitors / property views / contacts per day since the first day with data
@@ -81,8 +81,8 @@ const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r))
 // carries its IP + geo location; identified rows also show their most recent IP.
 async function usersList(platform = 'web') {
   const app = isAppPlatform(platform);
-  // the app's app_opened ping carries the website server's IP / location, not the phone's
-  const lastSeenAt = (expr) => (app ? `argMaxIf(${expr}, timestamp, event != 'app_opened')` : `argMax(${expr}, timestamp)`);
+  // older app_opened pings carry the website server's IP / location, not the phone's
+  const lastSeenAt = (expr) => (app ? `argMaxIf(${expr}, timestamp, ${HAS_PHONE_IP})` : `argMax(${expr}, timestamp)`);
   const rows = await hogql(`
     SELECT
       ${ukeyFor(platform)} AS idkey,

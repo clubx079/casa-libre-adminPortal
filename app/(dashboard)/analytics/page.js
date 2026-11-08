@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
 import UserTimeline from '@/components/users/UserTimeline';
 import GrowthChart from '@/components/analytics/GrowthChart';
+import { isAppPlatform } from '@/lib/analyticsPlatform';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -77,10 +78,12 @@ function RangeSelect({ range, options = RANGES, ariaLabel = 'Range', className =
 const FUNNEL_ICONS = [Eye, Search, MapPin, Heart, Phone, Home, Smartphone, Smartphone];
 const FUNNEL_ICONS_APP = [Smartphone, Search, MapPin, Heart, Phone, Users, Home];
 
-// The Mobile users tab asks the same routes for the app's events only
-// (&platform=app, lib/analyticsPlatform.js); the website tabs send nothing extra, so
-// their requests (and cached answers) are exactly as before.
+// The iPhone users / Android users tabs ask the same routes for that phone system's app
+// events only (&platform=ios | android, lib/analyticsPlatform.js); the server caches each
+// query by its text, so each tab has its own cached answers. The website tabs send
+// nothing extra, so their requests (and cached answers) are exactly as before.
 const pf = (platform) => (platform && platform !== 'web' ? `&platform=${platform}` : '');
+const APP_NAME = { ios: 'iPhone', android: 'Android' };   // the two app tabs
 
 const EVENT_LABELS = {
   '$pageview': 'Viewed a page',
@@ -859,17 +862,17 @@ const GeoDonut = ({ master, platform = 'web' }) => {
 
 // The app's own cut of "what people use": phone system, its version, and which app
 // version they run (the website's SourcesCard shows browsers instead).
-const AppTechCard = ({ master }) => {
+const AppTechCard = ({ master, platform = 'app' }) => {
   const range = useSectionRange(master);
   const { days } = range;
   const [tech, setTech] = useState(null);
   useEffect(() => {
     let alive = true;
     setTech(null);
-    fetch(`/api/analytics/posthog?type=tech&days=${days}&platform=app`).then((r) => r.json())
+    fetch(`/api/analytics/posthog?type=tech&days=${days}&platform=${platform}`).then((r) => r.json())
       .then((d) => { if (alive) setTech(d?.configured ? d : { error: true }); }).catch(() => { if (alive) setTech({ error: true }); });
     return () => { alive = false; };
-  }, [days]);
+  }, [days, platform]);
   const lists = tech && !tech.error ? [['System', tech.systems], ['System version', tech.osVersions], ['App version', tech.versions]] : [];
   return (
     <div className="bg-white p-5" style={CARD} data-testid="app-tech">
@@ -906,7 +909,9 @@ const AppTechCard = ({ master }) => {
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── App downloads: installs from the App Store and Google Play (store reports) ──
 // Data: /api/app-installs (lib/storeReports.js). Both stores report with a 1–2 day delay.
-const AppDownloadsCard = ({ master }) => {
+// On a phone-system tab only that store's box shows: the store reports are per store, not
+// PostHog, so they filter by store rather than by $os.
+const AppDownloadsCard = ({ master, platform }) => {
   const range = useSectionRange(master);
   const { days } = range;
   const [data, setData] = useState(null);
@@ -935,25 +940,26 @@ const AppDownloadsCard = ({ master }) => {
   const day = (k) => (k ? new Date(`${k}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null);
   const stores = data && !data.error ? [
     {
-      name: 'App Store downloads', s: data.apple, latest: data.latest?.apple,
+      key: 'ios', name: 'App Store downloads', s: data.apple, latest: data.latest?.apple,
       tiles: [['Downloads', t.ios], ['Deletions', t.iosDeletions]],
       accounts: acc?.accounts?.byPlatform?.ios,
       waiting: 'Connected — the first numbers arrive 1–2 days after the app is live on the App Store.',
     },
     {
-      name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
+      key: 'android', name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
       tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls]],
       accounts: acc?.accounts?.byPlatform?.android,
       waiting: 'Connected — waiting for the first Google Play report.',
     },
-  ] : [];
+  ].filter((st) => !APP_NAME[platform] || st.key === platform) : [];
+  const reportsFrom = platform === 'ios' ? 'the App Store report (not PostHog)' : platform === 'android' ? 'the Google Play report (not PostHog)' : 'the App Store and Google Play reports';
 
   return (
-    <div className="bg-white p-5" style={CARD}>
+    <div className="bg-white p-5" style={CARD} data-testid="app-downloads">
       <div className="flex items-center gap-2 mb-1 flex-wrap">
         <Smartphone className="w-4 h-4" style={{ color: T.primary }} />
         <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>App downloads</h2>
-        <span className="text-[10px]" style={{ color: T.textMuted }}>· from the App Store and Google Play reports, 1–2 days behind</span>
+        <span className="text-[10px]" style={{ color: T.textMuted }}>· from {reportsFrom}, 1–2 days behind</span>
         <div className="ml-auto flex items-center gap-2">
           {loading && data ? <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} /> : null}
           <a href="/app-installs" className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Per day →</a>
@@ -1084,10 +1090,12 @@ const VerifiedBy = () => {
   );
 };
 
-// platform 'app' = the Mobile users tab: the same sections, from the app's events only.
+// platform 'ios' | 'android' = the iPhone users / Android users tabs: the same sections,
+// from that phone system's app events only ('app' = the whole app, still understood by the API).
 const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platform = 'web' }) => {
   const days = master;   // summary window (cards + funnel)
-  const app = platform === 'app';
+  const app = isAppPlatform(platform);
+  const appName = APP_NAME[platform] || 'App';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1187,7 +1195,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
   if (loading && !data) {
     return shell(<>
       <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: T.borderLight, borderTopColor: T.primary }} />
-      <p className="text-sm mt-3" style={{ color: T.textSecondary }}>{busy ? BUSY_MESSAGE : app ? 'Loading app analytics…' : 'Loading user analytics…'}</p>
+      <p className="text-sm mt-3" style={{ color: T.textSecondary }}>{busy ? BUSY_MESSAGE : app ? `Loading ${APP_NAME[platform] ? `${appName} app` : 'app'} analytics…` : 'Loading user analytics…'}</p>
     </>);
   }
   if (error) {
@@ -1212,7 +1220,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
 
   const cards = [
     { label: 'Active now', value: (data?.activeNow ?? 0).toLocaleString(), Icon: Radio, sub: 'last 5 min' },
-    { label: app ? 'App users' : 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: app ? Smartphone : Users, sub: rangeLabel(days) },
+    { label: app ? `${appName} users` : 'Unique users', value: (totals.uniqueUsers || 0).toLocaleString(), Icon: app ? Smartphone : Users, sub: rangeLabel(days) },
     { label: app ? 'Screen views' : 'Page views', value: (totals.pageviews || 0).toLocaleString(), Icon: Eye, sub: rangeLabel(days) },
     { label: app ? 'Screen views today' : 'Page views today', value: (today.pageviews || 0).toLocaleString(), Icon: TrendingUp, sub: 'so far' },
   ];
@@ -1241,8 +1249,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
 
       {app ? (
         <p className="text-[11px] px-1" style={{ color: T.textMuted }} data-testid="mobile-note">
-          From the Casa Libre app (PostHog React Native SDK, plus the app&apos;s launch ping). A signed-out phone counts once per install;
+          From the Casa Libre {APP_NAME[platform] ? `${appName} app` : 'app'} (PostHog React Native SDK, plus the app&apos;s launch ping). A signed-out phone counts once per install;
           a signed-in person is the same person as on the website. Publishing happens on the website, so new listings are counted there.
+          {platform === 'ios' ? ' Until the next App Store build, an iPhone reports its launch ping from the first open, but its other events only from the second start of the app.' : ''}
         </p>
       ) : <VerifiedBy />}
 
@@ -1254,7 +1263,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-4 h-4" style={{ color: T.primary }} />
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{app ? 'App funnel' : 'User funnel'}</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{app ? `${appName} funnel` : 'User funnel'}</h2>
           <span className="text-[10px]" style={{ color: T.textMuted }}>· distinct users, {rangeLabel(days)}</span>
         </div>
         <div className="space-y-2">
@@ -1286,9 +1295,9 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
 
       {app ? null : <WhatsAppCard master={master} />}
 
-      <AppDownloadsCard master={master} />
+      <AppDownloadsCard master={master} platform={platform} />
 
-      {app ? <AppTechCard master={master} /> : (
+      {app ? <AppTechCard master={master} platform={platform} /> : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <SourcesCard master={master} />
           <AiCard master={master} />
@@ -1329,7 +1338,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>{u.location || '—'}</td>
                   <td className="px-4 py-2.5 text-left text-[11px]" style={{ color: T.textBody }}>
                     {app ? (
-                      <>{u.app_platform ? (u.app_platform === 'ios' ? 'iPhone' : u.app_platform === 'android' ? 'Android' : u.app_platform) : 'App'}
+                      <>{u.app_platform ? (u.app_platform === 'ios' ? 'iPhone' : u.app_platform === 'android' ? 'Android' : u.app_platform) : (APP_NAME[platform] || 'App')}
                         {u.app_version ? <span className="block text-[10px]" style={{ color: T.textMuted }}>v{u.app_version}</span> : null}</>
                     ) : (
                       <>{u.source || 'direct'}
@@ -1382,7 +1391,7 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
 // Deliberately two numbers per row: `views` counts every opening (so a listing
 // someone keeps coming back to stands out) and `visitors` counts distinct people
 // (so one person refreshing does not read as demand).
-// platform 'app' = only views from the app (Mobile users tab). Without it: website + app,
+// platform 'ios' | 'android' = only views from that app (iPhone / Android users tabs). Without it: website + app,
 // the same count sellers get in their views email — that request is unchanged.
 const PropertyAnalytics = ({ master, platform }) => {
   const range = useSectionRange(master);
@@ -1411,7 +1420,7 @@ const PropertyAnalytics = ({ master, platform }) => {
     <div className="space-y-5">
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
-          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{platform === 'app' ? 'Most viewed properties in the app' : 'Most viewed properties'}</h2>
+          <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{isAppPlatform(platform) ? `Most viewed properties in the ${APP_NAME[platform] ? `${APP_NAME[platform]} ` : ''}app` : 'Most viewed properties'}</h2>
           <div className="flex items-center gap-2">
             <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={selectStyle}>
               <option value={10}>Top 10</option>
@@ -1424,7 +1433,7 @@ const PropertyAnalytics = ({ master, platform }) => {
           </div>
         </div>
         <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
-          one row per listing · views counts every opening, people counts distinct visitors · {platform === 'app' ? 'app only' : 'website + app'}
+          one row per listing · views counts every opening, people counts distinct visitors · {isAppPlatform(platform) ? `${APP_NAME[platform] ? `${APP_NAME[platform]} ` : ''}app only` : 'website + app'}
         </p>
 
         {data && (
@@ -1738,7 +1747,8 @@ const WhatsAppAnalytics = ({ master }) => {
 
 const TABS = [
   { key: 'users', label: 'User analytics', sub: 'User behaviour & funnel, from PostHog' },
-  { key: 'mobile', label: 'Mobile users', sub: 'The same analytics for the Casa Libre app (Android / iPhone), from PostHog' },
+  { key: 'iphone', label: 'iPhone users', sub: 'The same analytics for the Casa Libre iPhone app, from PostHog' },
+  { key: 'android', label: 'Android users', sub: 'The same analytics for the Casa Libre Android app, from PostHog' },
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
   { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
   { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'WhatsApp messages from the automations: sent, delivered, read, clicked' },
@@ -1757,9 +1767,11 @@ export default function AnalyticsPage() {
   useEffect(() => { if (tab === 'emails') setEmailsSeen(true); }, [tab]);
   const [waSeen, setWaSeen] = useState(false);
   useEffect(() => { if (tab === 'whatsapp') setWaSeen(true); }, [tab]);
-  // The app's queries run only once its tab is opened.
-  const [mobileSeen, setMobileSeen] = useState(false);
-  useEffect(() => { if (tab === 'mobile') setMobileSeen(true); }, [tab]);
+  // Each app tab's queries run only once that tab is opened.
+  const [iphoneSeen, setIphoneSeen] = useState(false);
+  useEffect(() => { if (tab === 'iphone') setIphoneSeen(true); }, [tab]);
+  const [androidSeen, setAndroidSeen] = useState(false);
+  useEffect(() => { if (tab === 'android') setAndroidSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
 
   if (deep) {
@@ -1802,10 +1814,16 @@ export default function AnalyticsPage() {
 
       {/* Both stay mounted: switching tabs should not re-run every PostHog query. */}
       <div hidden={tab !== 'users'}><UsersAnalytics master={master} /></div>
-      <div hidden={tab !== 'mobile'}>{mobileSeen ? (
-        <div className="space-y-5" data-testid="mobile-users-tab">
-          <UsersAnalytics master={master} platform="app" />
-          <PropertyAnalytics master={master} platform="app" />
+      <div hidden={tab !== 'iphone'}>{iphoneSeen ? (
+        <div className="space-y-5" data-testid="iphone-users-tab">
+          <UsersAnalytics master={master} platform="ios" />
+          <PropertyAnalytics master={master} platform="ios" />
+        </div>
+      ) : null}</div>
+      <div hidden={tab !== 'android'}>{androidSeen ? (
+        <div className="space-y-5" data-testid="android-users-tab">
+          <UsersAnalytics master={master} platform="android" />
+          <PropertyAnalytics master={master} platform="android" />
         </div>
       ) : null}</div>
       <div hidden={tab !== 'properties'}><PropertyAnalytics master={master} /></div>

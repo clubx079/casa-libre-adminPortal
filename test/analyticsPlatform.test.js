@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  APP_LIB, IS_APP, isAppEvent, normPlatform, platformClause, APP_UKEY, ukeyFor, pageviewEvent,
+  APP_LIB, IS_APP, IS_IOS, IS_ANDROID, isAppEvent, appOsOf, isAppPlatform, normPlatform, platformClause, APP_UKEY, ukeyFor, pageviewEvent,
   geoEventsClause, funnelSteps, summarySql, summaryFromRow,
 } from '../lib/analyticsPlatform.js';
 import { UKEY, CONTACT_IN } from '../lib/posthogSql.js';
@@ -56,6 +56,67 @@ describe('website vs app events', () => {
   it('geo cuts of the app leave out app_opened (it carries the server location)', () => {
     expect(geoEventsClause('app')).toBe(" AND event != 'app_opened'");
     expect(geoEventsClause('web')).toBe('');
+  });
+});
+
+describe('iPhone vs Android (one tab each)', () => {
+  it("tells the phones apart by $os, app_platform, or the ping's platform", () => {
+    expect(appOsOf('$screen', { $lib: 'posthog-react-native', $os: 'iOS' })).toBe('ios');
+    expect(appOsOf('$screen', { $lib: 'posthog-react-native', $os: 'Android' })).toBe('android');
+    expect(appOsOf('Application Installed', { $lib: 'posthog-react-native', $os: 'iPadOS' })).toBe('ios');   // before register()
+    expect(appOsOf('property_viewed', { platform: 'mobile', app_platform: 'android' })).toBe('android');
+    expect(appOsOf('app_opened', { platform: 'ios' })).toBe('ios');
+    expect(appOsOf('app_opened', { platform: 'android' })).toBe('android');
+    expect(appOsOf('$screen', { $lib: 'posthog-react-native' })).toBeNull();
+  });
+
+  it('an iPhone browsing the WEBSITE is not an iPhone app user', () => {
+    expect(appOsOf('$pageview', { $lib: 'web', $os: 'iOS' })).toBeNull();
+    expect(appOsOf('property_viewed', { $lib: 'web', $os: 'Android' })).toBeNull();
+    expect(IS_IOS).toContain(IS_APP);
+    expect(IS_ANDROID).toContain(IS_APP);
+  });
+
+  it('the HogQL filter for each phone system', () => {
+    expect(IS_IOS).toContain("properties.$os, '') IN ('iOS', 'iPadOS')");
+    expect(IS_IOS).toContain("properties.app_platform, '') = 'ios'");
+    expect(IS_IOS).toContain("event = 'app_opened' AND coalesce(properties.platform, '') = 'ios'");
+    expect(IS_ANDROID).toContain("properties.$os, '') IN ('Android')");
+    expect(IS_ANDROID).toContain("properties.platform, '') = 'android'");
+    expect(platformClause('ios')).toBe(` AND ${IS_IOS}`);
+    expect(platformClause('android')).toBe(` AND ${IS_ANDROID}`);
+    expect(platformClause('ios')).not.toBe(platformClause('android'));
+  });
+
+  it('platform names: ios and android are valid, iphone = ios', () => {
+    expect(normPlatform('ios')).toBe('ios');
+    expect(normPlatform('Android')).toBe('android');
+    expect(normPlatform('iphone')).toBe('ios');
+    expect(normPlatform('ios', 'all')).toBe('ios');
+  });
+
+  it("both phone tabs read the app's events the way the app does", () => {
+    for (const p of ['ios', 'android']) {
+      expect(isAppPlatform(p)).toBe(true);
+      expect(ukeyFor(p)).toBe(APP_UKEY);
+      expect(pageviewEvent(p)).toBe('$screen');
+      expect(geoEventsClause(p)).toBe(" AND event != 'app_opened'");
+      expect(funnelSteps(p)).toEqual(funnelSteps('app'));
+    }
+    expect(isAppPlatform('web')).toBe(false);
+    expect(isAppPlatform('all')).toBe(false);
+    expect(isAppPlatform(undefined)).toBe(false);
+  });
+
+  it('each phone tab is its own query, so its own cached answer', () => {
+    const where = (p) => `X${platformClause(p)}`;
+    const ios = summarySql({ days: 7, where: where('ios'), platform: 'ios' });
+    const android = summarySql({ days: 7, where: where('android'), platform: 'android' });
+    expect(ios).not.toBe(android);
+    expect(ios).toContain("countIf(event = '$screen')");
+    expect(ios).toContain(IS_IOS);
+    expect(android).toContain(IS_ANDROID);
+    expect(summaryFromRow([1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0], 'ios').funnel[0].step).toBe('Opened the app');
   });
 });
 

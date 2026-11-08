@@ -16,7 +16,7 @@ import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
 import { batchNames, batchNamesByRef } from '@/lib/waCampaignStore';
 import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
-import { normPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
+import { normPlatform, isAppPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow } from '@/lib/analyticsPlatform';
 import { growthSql, buildGrowth } from '@/lib/growthSeries';
 
 // Growth chart: visitors / property views / contacts per day since the first day with data
@@ -44,8 +44,9 @@ async function growthData(platform = 'web') {
 //   resolve    map a DB user (distinctId/email) → a PostHog person
 //   links      one UTM link per channel: times opened + people landed (UTM Links page)
 //
-// &platform= web (default) | app | all — website events only, the mobile app's only
-// (Analytics -> Mobile users), or both (lib/analyticsPlatform.js). Property views default
+// &platform= web (default) | app | ios | android | all — website events only, the mobile
+// app's only, one phone system of the app (Analytics -> iPhone users / Android users), or
+// everything (lib/analyticsPlatform.js). Property views default
 // to all: that tab must match the view counts sellers are sent, which count app views too.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -79,7 +80,7 @@ const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r))
 // Grouped on UKEY, so all same-IP anonymous sessions become one row. Each row
 // carries its IP + geo location; identified rows also show their most recent IP.
 async function usersList(platform = 'web') {
-  const app = normPlatform(platform) === 'app';
+  const app = isAppPlatform(platform);
   // the app's app_opened ping carries the website server's IP / location, not the phone's
   const lastSeenAt = (expr) => (app ? `argMaxIf(${expr}, timestamp, event != 'app_opened')` : `argMax(${expr}, timestamp)`);
   const rows = await hogql(`
@@ -429,13 +430,13 @@ async function techBreakdown(days, site, platform = 'web') {
 
   // The app: phone system, its version, and which app version people run (the app_opened
   // ping counts too: it carries platform android | ios and app_version).
-  if (normPlatform(platform) === 'app') {
+  if (isAppPlatform(platform)) {
     const [systems, osVersions, versions] = await Promise.all([
       one("coalesce(nullIf(properties.$os, ''), multiIf(properties.platform = 'android', 'Android', properties.platform = 'ios', 'iOS', ''))"),
       one("trim(concat(coalesce(properties.$os, ''), ' ', coalesce(toString(properties.$os_version), '')))"),
       one('properties.app_version'),
     ]);
-    return NextResponse.json({ configured: true, days: d, platform: 'app', systems, osVersions, versions });
+    return NextResponse.json({ configured: true, days: d, platform: normPlatform(platform), systems, osVersions, versions });
   }
 
   const [browsers, devices, systems] = await Promise.all([

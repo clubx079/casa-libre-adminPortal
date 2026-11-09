@@ -186,3 +186,24 @@ describe('SÍ / BAJA per batch', () => {
     expect(campaignResults(rows)).toMatchObject({ si: 1, baja: 1, replied: 2, delivered: 3 });
   });
 });
+
+describe('batches Relay sends late', () => {
+  const H = 3600 * 1000;
+  it('keeps checking people marked not sent, so a late message is picked up', async () => {
+    const { needsRefresh } = await import('../lib/waCampaigns');
+    expect(needsRefresh({ status: 'failed', meta: { skipped: 'not_sent' } })).toBe(true);
+  });
+  it('still leaves alone other kinds of skipped, and finished people', async () => {
+    const { needsRefresh } = await import('../lib/waCampaigns');
+    expect(needsRefresh({ status: 'failed', meta: { skipped: 'no_value' } })).toBe(false);
+    expect(needsRefresh({ status: 'read', meta: { replied_at: 'x' } })).toBe(false);
+    expect(needsRefresh({ status: 'sending', meta: {} })).toBe(true);
+  });
+  it('does not call a message not sent while Relay may still be pacing it', async () => {
+    const { notSentYet } = await import('../lib/waCampaigns');
+    const now = 100 * H;
+    expect(notSentYet({ status: 'sending' }, now - 2 * H, now)).toBe(false);
+    expect(notSentYet({ status: 'sending' }, now - 25 * H, now)).toBe(true);
+    expect(notSentYet({ status: 'delivered' }, now - 25 * H, now)).toBe(false);
+  });
+});

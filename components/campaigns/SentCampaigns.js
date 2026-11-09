@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { T, CARD, Pill, Banner, fmtDate } from '@/components/automations/ui';
 import { TemplatePreviewModal } from '@/components/campaigns/TemplatePreview';
 import { templateLook } from '@/lib/waTemplateLook';
+import { audienceTotals } from '@/lib/waCampaignTotals';
 
 const STATE = { draft: ['neutral', 'Draft'], sending: ['info', 'Sending'], sent: ['success', 'Sent'], scheduled: ['warning', 'Scheduled'], failed: ['danger', 'Failed'] };
 const fmt = (n) => Number(n || 0).toLocaleString('en-US');
@@ -57,6 +58,7 @@ export default function SentCampaigns() {
   const rate = (c, k) => c.results?.[k] ?? -1;
   const list = [...(data?.campaigns || [])].sort((a, b) => (sort === 'click' ? rate(b, 'clickRate') - rate(a, 'clickRate') : sort === 'read' ? rate(b, 'readRate') - rate(a, 'readRate') : 0));
   // the batch with the best click rate (of the ones that delivered anything) gets a badge
+  const totals = audienceTotals(data?.campaigns || []);
   const best = list.filter((c) => c.results?.delivered > 0 && c.results.clickRate > 0).sort((a, b) => b.results.clickRate - a.results.clickRate)[0]?.id;
 
   return (
@@ -75,6 +77,33 @@ export default function SentCampaigns() {
       </div>
       {err ? <Banner>Could not load: {err}</Banner> : null}
       <TemplatePreviewModal open={open} tpls={tpls} onClose={() => setOpen(null)} />
+      {totals.length > 0 && (
+        <div className="bg-white overflow-x-auto" style={CARD} data-testid="audience-totals">
+          <table className="w-full text-xs min-w-[760px]">
+            <thead>
+              <tr style={{ color: T.textMuted }}>
+                {['Totals, all live batches', 'Reached', 'Delivered', 'Read', 'Clicked', 'Landed on website', 'Signed in'].map((h, i) => <th key={h} className={`px-3 py-2.5 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {totals.map((t) => (
+                <tr key={t.segment} className="border-t" style={{ borderColor: T.borderLight }} data-testid="audience-total">
+                  <td className="px-3 py-3 align-top">
+                    <div className="font-semibold" style={{ color: T.textPrimary }}>{t.label}</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: T.textSecondary }}>{fmt(t.batches)} {t.batches === 1 ? 'batch' : 'batches'}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right align-top"><div className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{fmt(t.reached)}</div><div className="text-[10.5px]" style={{ color: T.textMuted }}>people messaged</div></td>
+                  <Rate n={t.delivered} of={t.reached} rate={t.deliveredRate} color={T.info} />
+                  <Rate n={t.read} of={t.delivered} rate={t.readRate} color={T.success} />
+                  <Rate n={t.clicked} of={t.delivered} rate={t.clickedRate} color="#B8741A" />
+                  <Rate n={t.landed} of={t.delivered} rate={t.landedRate} color={T.info} />
+                  <Rate n={t.signedIn} of={t.delivered} rate={t.signedInRate} color={T.success} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="bg-white overflow-hidden" style={CARD}>
         {!data && !err ? <p className="text-xs p-5" style={{ color: T.textMuted }}>Loading…</p> : list.length === 0 ? (
           <div className="p-10 text-center">

@@ -16,6 +16,7 @@ import { whatsappStats, COUNTRY_TZ } from '@/lib/whatsappStats';
 import { UKEY, SOURCE_EXPR, AI_SOURCES, GEO_BASE, CONTACT_IN } from '@/lib/posthogSql';
 import { batchNames, batchNamesByRef } from '@/lib/waCampaignStore';
 import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
+import { referralLinkNames } from '@/lib/referralsData';
 import { normPlatform, isAppPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow, HAS_PHONE_IP } from '@/lib/analyticsPlatform';
 import { growthSql, buildGrowth } from '@/lib/growthSeries';
 
@@ -68,6 +69,11 @@ const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
 // The country the admin picked in the header switcher. Every query on this page
 // is scoped to it, so "Bolivia" means Bolivia everywhere, not just in two cards.
 const currentSite = () => { try { return activeCountry(); } catch { return ''; } };
+// Campaign names for the source chips: WhatsApp batches + each person's referral link ("ref-<code>").
+async function campaignNames() {
+  const [names, refs] = await Promise.all([batchNames(), referralLinkNames(dbFor(currentSite() || 'py')).catch(() => new Map())]);
+  return new Map([...names, ...refs]);
+}
 
 // Every aggregate query filters through this, so the header's country switcher
 // scopes the whole page — totals, funnel, trend, map, sources, AI and users.
@@ -111,7 +117,7 @@ async function usersList(platform = 'web') {
     ORDER BY last_seen DESC
     LIMIT 300
   `);
-  const [names, byRef] = await Promise.all([batchNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug → name · person code → batch name
+  const [names, byRef] = await Promise.all([campaignNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug / referral link → name · person code → batch name
   const users = flat(rows).map((r) => {
     const camp = campaignOf(r[9], names, byRef);
     const email = r[2] || '';
@@ -244,7 +250,7 @@ async function userActivity({ personId, ip }) {
     last_seen: p[9],
     // where the FIRST visit came from (google, chatgpt, direct, an /r/ campaign tag…)
     source: p[10] || 'direct',
-    ...(await (async () => { const c = campaignOf(p[11], await batchNames(), await batchNamesByRef().catch(() => new Map())); return { campaign: c.campaign, campaign_label: c.label }; })()),   // a WhatsApp campaign batch's name
+    ...(await (async () => { const c = campaignOf(p[11], await campaignNames(), await batchNamesByRef().catch(() => new Map())); return { campaign: c.campaign, campaign_label: c.label }; })()),   // a WhatsApp campaign batch's name
     referrer: p[12] && p[12] !== '$direct' ? p[12] : '',
   };
   const pathOf = (url) => {
@@ -320,7 +326,7 @@ async function sourcesBreakdown(days, site) {
     SELECT source, campaign, count() AS visitors, countIf(known = 0) AS anon, countIf(known = 1) AS signed_in,
            sum(listings) AS listings, sum(contacts) AS contacts
     FROM first_touch GROUP BY source, campaign ORDER BY visitors DESC LIMIT 2000`);
-  const [names, byRef] = await Promise.all([batchNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug → name · person code → batch name
+  const [names, byRef] = await Promise.all([campaignNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug / referral link → name · person code → batch name
   // reply-link visitors come one code each: merged per batch (or per audience) here
   const merged = new Map();
   for (const r of flat(rows)) {

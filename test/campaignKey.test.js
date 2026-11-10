@@ -22,3 +22,19 @@ describe('campaignOf: the batch a visitor came from', () => {
     expect(CAMPAIGN_KEY).toContain('utm_term');
   });
 });
+
+describe('referral-link visits', () => {
+  it('the HogQL key gives one campaign per person\'s link, and campaignOf names it', async () => {
+    const { CAMPAIGN_KEY, campaignOf } = await import('../lib/campaignKey');
+    expect(CAMPAIGN_KEY).toContain("concat('ref-', toString(properties.utm_content))");
+    expect((CAMPAIGN_KEY.match(/\(/g) || []).length).toBe((CAMPAIGN_KEY.match(/\)/g) || []).length);
+    expect(campaignOf('ref-abcd2345', new Map([['ref-abcd2345', "Carlos G.'s link"]]))).toEqual({ campaign: 'ref-abcd2345', label: "Carlos G.'s link" });
+  });
+  it('SOURCE_EXPR calls it a referral link, before the generic utm_source branch', async () => {
+    const { SOURCE_EXPR } = await import('../lib/posthogSql');
+    const i = SOURCE_EXPR.indexOf("'referral link'");
+    expect(i).toBeGreaterThan(0);
+    expect(i).toBeLessThan(SOURCE_EXPR.indexOf('lower(properties.utm_source)'));
+    expect((SOURCE_EXPR.match(/\(/g) || []).length).toBe((SOURCE_EXPR.match(/\)/g) || []).length);
+  });
+});

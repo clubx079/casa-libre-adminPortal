@@ -101,3 +101,11 @@ describe('numbers and tables', () => {
     expect(maskName('Ana María Pérez')).toBe('Ana P.');
   });
 });
+
+describe('invite audience: Roland is left out', () => {
+  it('never includes roland@southerninvestment.co', async () => {
+    const { inviteAudience } = await import('../lib/referralsAdmin');
+    const users = [{ id: 1, email: 'Roland@SouthernInvestment.co', verified: true }, { id: 2, email: 'ana@example.com', verified: true }];
+    expect(inviteAudience(users).map((u) => u.id)).toEqual([2]);
+  });
+});

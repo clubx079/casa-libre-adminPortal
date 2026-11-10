@@ -186,6 +186,17 @@ function ProgramTab({ data, reload }) {
         </div>
       </Card>
       {data.setUp && <section className="rounded-[14px] overflow-hidden" style={CARD}><ChannelControl id="referrals" /></section>}
+      {data.promo && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] px-4 py-3 text-[13px]" style={{ ...CARD, color: T.textBody }} data-testid="promo-line">
+          <span>
+            <b>Promo emails to members</b> (“Invitá a alguien a publicar y ganá…”, with their link):{' '}
+            {!data.promo.setUp ? 'not set up for this country yet.'
+              : data.promo.enabled ? <>on — {data.promo.schedule}{data.promo.includeExisting ? `; existing members too, ${data.promo.perRun} per hour at most` : ''}.{f.enabled ? '' : ' Paused while the program is off.'}</>
+                : 'off.'}
+          </span>
+          <a className={btnSecondary} style={{ borderColor: T.borderLight }} href="/automations">Change in Automations</a>
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <button className={btnPrimary} disabled={saving} onClick={() => save()}>{saving ? 'Saving…' : 'Save settings'}</button>

@@ -214,6 +214,7 @@ export default function AutomationsPage() {
   const [hform, setHform] = useState(null);
   const [sform, setSform] = useState(null);
   const [pform, setPform] = useState(null);
+  const [rform, setRform] = useState(null);   // "Promote the referral program"
   const { dialog, confirm } = useDialog();
   // "Switch … on?\n\nwhat happens" → the admin dialog (title + text), Switch on / Switch off.
   const ask = (text) => {
@@ -245,6 +246,8 @@ export default function AutomationsPage() {
     setHform(hs ? { hours: hs.hours, reminderAfter: hs.reminderAfter } : null);
     const ps = j.paymentFollowup?.settings;
     setPform(ps ? { steps: stepsFromHours(ps.steps), reminderTemplateId: ps.reminderTemplateId || '', giftAfterDays: ps.giftAfterDays, giftTemplateId: ps.giftTemplateId || '', giftsPerPerson: ps.giftsPerPerson, giftWindowDays: ps.giftWindowDays, giftDays: ps.giftDays } : null);
+    const rp = j.referralPromo?.settings;
+    setRform(rp ? { firstAfterHours: rp.firstAfterHours, everyDays: rp.everyDays, maxSends: rp.maxSends, includeExisting: rp.includeExisting, perRun: rp.perRun, templateId: rp.templateId || '' } : null);
     const ss = j.saves?.settings;
     setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
@@ -263,7 +266,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : which === 'promo' ? { id: 'referral_promo', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -383,6 +386,31 @@ export default function AutomationsPage() {
     pf.reminders ? `${pf.reminders.toLocaleString('en-US')} reminders sent` : '',
     pf.offered ? `${pf.offered} ${pf.offered === 1 ? 'gift' : 'gifts'} offered · ${pf.claimed} taken` : '',
     pf.waiting != null ? `${pf.waiting} ${pf.waiting === 1 ? 'listing' : 'listings'} waiting for payment right now` : '',
+  ].filter(Boolean).join(' · ') : '';
+  // "Promote the referral program"
+  const rpd = data.referralPromo;
+  const rps = rpd?.settings;
+  const e9 = errors.promo || {};
+  const R_KEYS = ['firstAfterHours', 'everyDays', 'maxSends', 'includeExisting', 'perRun', 'templateId'];
+  const rDirty = !!(rps && rform && R_KEYS.some((k) => String(rform[k] ?? '') !== String(rps[k] ?? '')));
+  const rNum = (v) => (v === '' ? '' : Number(v));
+  const rPatch = () => rform && ({ ...rform, firstAfterHours: rNum(rform.firstAfterHours), everyDays: rNum(rform.everyDays), maxSends: rNum(rform.maxSends), perRun: rNum(rform.perRun) });
+  const rProgramOn = !!rpd?.program?.enabled;
+  // "day 1 · day 8 · day 15" — when each email goes, counted from sign-up
+  const rWhen = rform ? (() => {
+    const h = Number(rform.firstAfterHours) || 0, every = Number(rform.everyDays) || 0, n = Math.max(1, Math.min(10, Number(rform.maxSends) || 1));
+    const first = h % 24 === 0 ? `day ${h / 24}` : `${h} hours`;
+    return [first, ...Array.from({ length: n - 1 }, (_, i) => `day ${Math.floor(h / 24) + every * (i + 1)}`)].join(' · ');
+  })() : '';
+  const togglePromo = async () => {
+    const on = !rps.enabled;
+    if (on && !(await ask(`Switch "Promote the referral program" on?\n\nVerified members get an email about the referral program with their own link: ${rpd.schedule}. ${rform.includeExisting ? `People who signed up before now are included too — at most ${rform.perRun} emails go out per hourly run, so they are worked through a batch at a time.` : 'Only people who sign up from now on.'}${rProgramOn ? '' : '\n\nThe referral program is OFF in this country, so nothing is sent until you switch it on (Referrals page).'}${rpd.setUp ? '' : '\n\nThis also creates the default email (Spanish) — edit it in Templates.'}`))) return;
+    run('promo', 'toggle', () => put('promo', { enabled: on, ...(rpd.setUp ? {} : rPatch()) }, on ? '“Promote the referral program” is on.' : '“Promote the referral program” is off.'));
+  };
+  const rStats = rpd ? [
+    rpd.sent ? `${rpd.sent.toLocaleString('en-US')} sent to ${rpd.people.toLocaleString('en-US')} ${rpd.people === 1 ? 'person' : 'people'}${Object.keys(rpd.perStep || {}).length > 1 ? ` (${Object.keys(rpd.perStep).sort((x, y) => x - y).map((k) => `#${k}: ${rpd.perStep[k]}`).join(' · ')})` : ''}` : '',
+    rpd.optedOut ? `${rpd.optedOut} unsubscribed` : '',
+    rpd.bounced ? `${rpd.bounced} stopped (bounced / spam)` : '',
   ].filter(Boolean).join(' · ') : '';
   const nPerStep = nl?.perStep || {};
   const nStats = nl?.sent ? ` ${nl.sent.toLocaleString('en-US')} sent so far${nPerStep['2'] ? ` (welcome: ${nPerStep['1'] || 0} · second: ${nPerStep['2']})` : ''}.` : '';
@@ -605,6 +633,47 @@ export default function AutomationsPage() {
             <DayField value={nform.secondAfter} onChange={(v) => setNform((f) => ({ ...f, secondAfter: v }))} min={0} max={59} error={e5.secondAfter} suffix="more days later" />
             <p className="text-[11px]" style={{ color: T.textMuted }}>{nHasSecond ? `Sent ${Number(nform.days) + Number(nform.secondAfter)} days after sign-up.` : 'Leave empty (or 0) for no second email.'}</p>
             {nHasSecond && <TemplatePicker label="Email sent" value={nform.reminderTemplateId} templates={data.templates} onChange={(v) => setNform((f) => ({ ...f, reminderTemplateId: v }))} error={e5.reminderTemplateId} />}
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {rps && rform ? (
+        <AutomationCard
+          title="Promote the referral program"
+          description={<>Tells members about the referral program — “Invitá a alguien a publicar y ganá la insignia Verificada gratis + tu propiedad en la portada” — with their own referral link and a button to their Referrals page.{rProgramOn ? null : <b style={{ color: T.warning }}> The referral program is OFF in this country: nothing is sent until it is switched on (<Link href="/referrals" className="underline underline-offset-2">Referrals</Link>).</b>}{rProgramOn && rpd.program.referrerReward === false ? <b style={{ color: T.warning }}> The referrer reward is off on the Referrals page, so nothing is sent (the email promises it).</b> : null}</>}
+          enabled={rps.enabled} enabledAt={rps.enabledAt} busy={busy.promo}
+          onToggle={togglePromo} dirty={rDirty || !rpd.setUp}
+          onSave={() => run('promo', 'save', () => put('promo', rPatch(), rpd.setUp ? 'Changes saved.' : 'Saved — the default email was created (Templates).'))}
+          footnote={`Verified accounts only${rpd.program?.requireListing ? ', with a live listing (Referrals setting)' : ''}. Stops early when the person referred someone who signed up, unsubscribed (the link in the email, or BAJA on WhatsApp), closed or deleted their account, or their last email bounced or was marked as spam. Sends only while the referral program is on; the reward days and people count in the email are the Referrals page settings. Daytime only (9:00–19:00 local). Email only — no WhatsApp template carries the referral link yet.${rpd.setUp ? '' : ' Not set up for this country yet: saving creates it with the default email.'}${rStats ? ` ${rStats}.` : ''}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A verified user signs up" />
+          <Connector />
+          <StepCard n={2} kind="Wait" title="First email this long after sign-up">
+            <DayField value={rform.firstAfterHours} onChange={(v) => setRform((f) => ({ ...f, firstAfterHours: v }))} min={1} max={720} error={e9.firstAfterHours} suffix="hours after sign-up" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>24 = the day after they sign up.</p>
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Repeat" title="Then again, until they invite someone">
+            <DayField value={rform.everyDays} onChange={(v) => setRform((f) => ({ ...f, everyDays: v }))} min={1} max={60} error={e9.everyDays} suffix="days between emails" />
+            <DayField value={rform.maxSends} onChange={(v) => setRform((f) => ({ ...f, maxSends: v }))} min={1} max={10} error={e9.maxSends} suffix={Number(rform.maxSends) === 1 ? 'email at most' : 'emails at most'} />
+            <p className="text-[11px]" style={{ color: T.textMuted }} data-testid="promo-when">Sent at: {rWhen} (counted from sign-up).</p>
+          </StepCard>
+          <Connector />
+          <StepCard n={4} kind="Email" title="Email with their referral link">
+            <TemplatePicker label="Email sent every time" value={rform.templateId} templates={data.templates} onChange={(v) => setRform((f) => ({ ...f, templateId: v }))} error={e9.enabled} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              <span className="font-mono">{'{{referral_url}}'}</span> = their link, <span className="font-mono">{'{{referrals_url}}'}</span> = their Referrals page, <span className="font-mono">{'{{reward_plan}}'}</span> / <span className="font-mono">{'{{reward_days}}'}</span> / <span className="font-mono">{'{{milestone_count}}'}</span> = the program settings, <span className="font-mono">{'{{unsubscribe_url}}'}</span> = the opt-out link.
+            </p>
+          </StepCard>
+          <Connector />
+          <StepCard n={5} kind="Existing users" title="People who signed up before it was switched on">
+            <label className="flex items-start gap-2 text-[13px]" style={{ color: T.textBody }}>
+              <input type="checkbox" className="mt-0.5" checked={!!rform.includeExisting} onChange={(e) => setRform((f) => ({ ...f, includeExisting: e.target.checked }))} data-testid="promo-existing" />
+              <span>Also send to people who signed up before this was switched on</span>
+            </label>
+            <p className="text-[11px]" style={{ color: T.textMuted }}>{rform.includeExisting ? 'Their first email goes at the next run, then the same repeats.' : 'Only people who sign up after it is switched on.'}</p>
+            <DayField value={rform.perRun} onChange={(v) => setRform((f) => ({ ...f, perRun: v }))} min={1} max={1000} error={e9.perRun} suffix="emails at most per hourly run" />
+            <p className="text-[11px]" style={{ color: T.textMuted }}>Switching it on never sends to everyone at once: repeats and new sign-ups go first, then older accounts, newest first.</p>
           </StepCard>
         </AutomationCard>
       ) : null}

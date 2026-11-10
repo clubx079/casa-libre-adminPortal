@@ -6,6 +6,8 @@
 //                        targets those two; no id = the first-listing automation.
 //                        id 'no_listing_nudge' (signed up, never listed): the first save
 //                        creates its row + two default emails (lib/noListingAdmin.js).
+//                        id 'referral_promo' (promote the referral program): the first save
+//                        creates its row + the default email (lib/referralPromoAdmin.js).
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
@@ -16,6 +18,9 @@ import { NO_LISTING_AUTOMATION_ID, noListingConfig, noListingStepCounts, saveNoL
 import { LISTING_HELD_ID, HELD_REASONS, listingHeldConfig, listingHeldCounts, saveListingHeld } from '@/lib/listingHeldAdmin';
 import { SAVES_AUTOMATION_ID, savesConfig, saveSavesAutomation } from '@/lib/savesAdmin';
 import { PAYMENT_FOLLOWUP_ID, paymentFollowupConfig, paymentFollowupCounts, savePaymentFollowup } from '@/lib/paymentFollowupAdmin';
+import { PROMO_ID, PROMO_TEMPLATE, promoConfig, promoCounts, promoScheduleText, saveReferralPromo } from '@/lib/referralPromoAdmin';
+import { REFERRALS_ID, referralConfig } from '@/lib/referrals/core';
+import { selectAll } from '@/lib/selectAll';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,6 +116,22 @@ async function payload(db) {
     const sent = sa ? await db.selectWithCount('email_log', `select=id&automation_id=eq.${SAVES_AUTOMATION_ID}&status=in.(sent,delivered,read)&limit=1`).catch(() => ({ count: 0 })) : { count: 0 };
     saves = { setUp: !!sa, settings: savesConfig(sa || null), sent: sent.count || 0 };
   } catch { saves = null; }
+  // "Promote the referral program" — no row until the first save (or the seed script).
+  let referralPromo = null;
+  try {
+    const [[ra], [rr]] = await Promise.all([
+      db.select('automations', `select=*&id=eq.${PROMO_ID}&limit=1`),
+      db.select('automations', `select=*&id=eq.${REFERRALS_ID}&limit=1`).catch(() => [null]),
+    ]);
+    const logs = ra ? await selectAll(db, 'email_log', `select=id,dedupe_key,status,subject&automation_id=eq.${PROMO_ID}&order=id.asc`).catch(() => []) : [];
+    const settings = promoConfig(ra || null);
+    const ref = referralConfig(rr || null);
+    referralPromo = {
+      setUp: !!ra, settings, schedule: promoScheduleText(settings), ...promoCounts(logs),
+      program: { setUp: !!rr, enabled: ref.enabled, referrerReward: ref.referrer.enabled, milestone: ref.milestone.enabled, requireListing: ref.requireReferrerListing },
+      defaultTemplate: templates.find((t) => t.key === PROMO_TEMPLATE.key) || null,
+    };
+  } catch { referralPromo = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -134,6 +155,7 @@ async function payload(db) {
     listingHeld,
     paymentFollowup,
     saves,
+    referralPromo,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -215,6 +237,12 @@ export async function PUT(req) {
     if (body.id === SAVES_AUTOMATION_ID) {
       const { id, ...patch } = body;
       const v = await saveSavesAutomation(db, patch);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === PROMO_ID) {
+      const { id, ...patch } = body;
+      const v = await saveReferralPromo(db, patch);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }

@@ -644,7 +644,7 @@ export default function AutomationsPage() {
           enabled={rps.enabled} enabledAt={rps.enabledAt} busy={busy.promo}
           onToggle={togglePromo} dirty={rDirty || !rpd.setUp}
           onSave={() => run('promo', 'save', () => put('promo', rPatch(), rpd.setUp ? 'Changes saved.' : 'Saved — the default email was created (Templates).'))}
-          footnote={`Verified accounts only${rpd.program?.requireListing ? ', with a live listing (Referrals setting)' : ''}. Stops early when the person referred someone who signed up, unsubscribed (the link in the email, or BAJA on WhatsApp), closed or deleted their account, or their last email bounced or was marked as spam. Sends only while the referral program is on; the reward days and people count in the email are the Referrals page settings. Daytime only (9:00–19:00 local). Email only — no WhatsApp template carries the referral link yet.${rpd.setUp ? '' : ' Not set up for this country yet: saving creates it with the default email.'}${rStats ? ` ${rStats}.` : ''}`}
+          footnote={`Verified accounts only${rpd.program?.requireListing ? ', with a live listing (Referrals setting)' : ''}. Stops early when the person referred someone who signed up, replied BAJA on WhatsApp, closed or deleted their account, or their last email bounced or was marked as spam. Sends only while the referral program is on; the reward days and people count in the email are the Referrals page settings. Daytime only (9:00–19:00 local). Email only — no WhatsApp template carries the referral link yet.${rpd.setUp ? '' : ' Not set up for this country yet: saving creates it with the default email.'}${rStats ? ` ${rStats}.` : ''}`}
         >
           <StepCard n={1} kind="Trigger" title="A verified user signs up" />
           <Connector />
@@ -662,7 +662,7 @@ export default function AutomationsPage() {
           <StepCard n={4} kind="Email" title="Email with their referral link">
             <TemplatePicker label="Email sent every time" value={rform.templateId} templates={data.templates} onChange={(v) => setRform((f) => ({ ...f, templateId: v }))} error={e9.enabled} />
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
-              <span className="font-mono">{'{{referral_url}}'}</span> = their link, <span className="font-mono">{'{{referrals_url}}'}</span> = their Referrals page, <span className="font-mono">{'{{reward_plan}}'}</span> / <span className="font-mono">{'{{reward_days}}'}</span> / <span className="font-mono">{'{{milestone_count}}'}</span> = the program settings, <span className="font-mono">{'{{unsubscribe_url}}'}</span> = the opt-out link.
+              <span className="font-mono">{'{{referral_url}}'}</span> = their link, <span className="font-mono">{'{{referrals_url}}'}</span> = their Referrals page, <span className="font-mono">{'{{reward_plan}}'}</span> / <span className="font-mono">{'{{reward_days}}'}</span> / <span className="font-mono">{'{{milestone_count}}'}</span> = the program settings.
             </p>
           </StepCard>
           <Connector />

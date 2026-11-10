@@ -102,10 +102,11 @@ describe('the default email', () => {
     expect(englishName({ key: 'referral-promo', name: PROMO_TEMPLATE.name })).toBe('Referrals — promo after sign-up');
     expect(en.subject).toBe('Invite someone to list on Casa-Libre and earn {{reward_plan}} for free');
   });
-  it('renders in the admin preview with the opt-out link and the button', () => {
+  it('renders in the admin preview with the button and no opt-out link', () => {
     const m = renderTemplate(PROMO_TEMPLATE, sampleVars, { tld: '.py' });
     expect(m.subject).toBe('Invitá a alguien a publicar en Casa-Libre y ganá la insignia Verificada gratis');
-    expect(m.html).toContain('api/referral-promo/stop?token=ejemplo');
+    expect(m.html).not.toContain('referral-promo/stop');
+    expect(m.text).not.toContain('Para no recibir');
     expect(m.html).toContain('Compartir mi link');
     expect(m.text).not.toContain('propiedades activas');
   });

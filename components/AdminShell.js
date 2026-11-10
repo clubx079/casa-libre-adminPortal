@@ -26,6 +26,7 @@ const NAV = [
   ['/campaigns', 'WhatsApp Marketing', 'chat'],
   ['/automations', 'Automations', 'bolt'],
   ['/paid-listings', 'Paid listings', 'card'],
+  ['/referrals', 'Referrals', 'gift'],
   ['/earnings', 'Earnings', 'card'],
   ['/marketing', 'Marketing', 'chart'],
   ['/app-updates', 'App updates', 'phone'],
@@ -126,6 +127,16 @@ function Icon({ name }) {
       <svg {...p}>
         <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
         <path d="M11 18h2" />
+      </svg>
+    );
+  if (name === 'gift')
+    return (
+      <svg {...p}>
+        <rect x="3" y="8" width="18" height="4" rx="1" />
+        <path d="M5 12v8h14v-8" />
+        <path d="M12 8v12" />
+        <path d="M12 8c-1.5-3-5-3.5-5-1.2C7 8 9.5 8 12 8z" />
+        <path d="M12 8c1.5-3 5-3.5 5-1.2C17 8 14.5 8 12 8z" />
       </svg>
     );
   if (name === 'card')

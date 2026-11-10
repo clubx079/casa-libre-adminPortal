@@ -107,7 +107,7 @@ describe('the default email', () => {
     expect(m.subject).toBe('Invitá a alguien a publicar en Casa-Libre y ganá la insignia Verificada gratis');
     expect(m.html).toContain('api/referral-promo/stop?token=ejemplo');
     expect(m.html).toContain('Compartir mi link');
-    expect(m.text).toContain('Ya hay más de 3.600 propiedades activas en Casa-Libre.');
+    expect(m.text).not.toContain('propiedades activas');
   });
   it('shows as used by the automation, as its own email type, and its opt-out records are not counted as sent', () => {
     expect(templateUsage('t9', [{ id: PROMO_ID, template_id: 't9' }])).toEqual(['Promote the referral program → email']);

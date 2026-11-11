@@ -6,6 +6,7 @@ import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, 
 import UserTimeline from '@/components/users/UserTimeline';
 import GrowthChart from '@/components/analytics/GrowthChart';
 import { isAppPlatform } from '@/lib/analyticsPlatform';
+import { territoryList } from '@/lib/appInstalls';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -910,6 +911,7 @@ const AppTechCard = ({ master, platform = 'app' }) => {
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── App downloads: installs from the App Store and Google Play (store reports) ──
 // Data: /api/app-installs (lib/storeReports.js). Both stores report with a 1–2 day delay.
+// "Opened the app" + "Signed in" come from /api/app-installs/accounts (the app's own pings, live).
 // On a phone-system tab only that store's box shows: the store reports are per store, not
 // PostHog, so they filter by store rather than by $os.
 const AppDownloadsCard = ({ master, platform }) => {
@@ -942,14 +944,18 @@ const AppDownloadsCard = ({ master, platform }) => {
   const stores = data && !data.error ? [
     {
       key: 'ios', name: 'App Store downloads', s: data.apple, latest: data.latest?.apple,
-      tiles: [['Downloads', t.ios], ['Deletions', t.iosDeletions]],
+      // Apple has deletions only from users who share analytics — no tile when it has none
+      tiles: [['Downloads', t.ios], ...(t.iosDeletions != null ? [['Deletions', t.iosDeletions]] : [])],
+      countries: territoryList(t.iosByTerritory),
       accounts: acc?.accounts?.byPlatform?.ios,
+      opened: acc?.pings?.byPlatform?.ios?.opened,
       waiting: 'Connected — the first numbers arrive 1–2 days after the app is live on the App Store.',
     },
     {
       key: 'android', name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
       tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls]],
       accounts: acc?.accounts?.byPlatform?.android,
+      opened: acc?.pings?.byPlatform?.android?.opened,
       waiting: 'Connected — waiting for the first Google Play report.',
     },
   ].filter((st) => !APP_NAME[platform] || st.key === platform) : [];
@@ -981,17 +987,30 @@ const AppDownloadsCard = ({ master, platform }) => {
                 {st.s?.ok && st.latest ? <span className="text-[10px]" style={{ color: T.textMuted }}>latest day {day(st.latest)}</span> : null}
               </div>
               {st.s?.ok && st.s.daysWithData > 0 ? (
-                <div className={`grid gap-3 mt-2 ${st.tiles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                  {st.tiles.map(([label, v]) => (
-                    <div key={label}>
-                      <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{label}</p>
-                      <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(v)}</p>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className={`grid gap-3 mt-2 ${st.tiles.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    {st.tiles.map(([label, v]) => (
+                      <div key={label}>
+                        <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>{label}</p>
+                        <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(v)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {st.countries?.length ? (
+                    <p className="text-[11px] mt-2 leading-snug" style={{ color: T.textSecondary }}>
+                      By App Store country: {st.countries.map((c) => `${c.name} ${fmt(c.n)}`).join(' · ')}
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>{st.s?.ok ? st.waiting : st.s?.error}</p>
               )}
+              {st.opened ? (
+                <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
+                  <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Opened the app <span style={{ color: T.textMuted }}>· the app&apos;s own count, up to now</span></p>
+                  <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.opened)}</p>
+                </div>
+              ) : null}
               {st.accounts?.total ? (
                 <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
                   <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Signed in to the app (have an account)</p>

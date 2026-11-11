@@ -29,19 +29,27 @@ const isTeam = (u) => isInternalEmail(u.email) || INTERNAL_NAMES.includes(String
 // The app's pings in the period: totals + every signed-in account with its flag.
 async function pings(days) {
   if (!posthogConfigured()) return { error: 'PostHog not configured', people: [] };
-  const where = `event = 'app_opened' AND timestamp >= now() - INTERVAL ${days} DAY AND coalesce(properties.$geoip_country_name, '') != 'Pakistan'`;
+  const since = `timestamp >= now() - INTERVAL ${days} DAY`;
+  const where = `event = 'app_opened' AND ${since} AND coalesce(properties.$geoip_country_name, '') != 'Pakistan'`;
+  // Install counts leave team phones (Pakistan) out by install, not only by ping: pings before
+  // Nov 9 2026 carry the website server's IP (US), so a team phone's older pings looked like a user's.
+  const teamInstalls = `SELECT toString(properties.install_id) FROM events WHERE event = 'app_opened' AND ${since} AND properties.$geoip_country_name = 'Pakistan'`;
+  const iid = 'toString(properties.install_id)';
+  const onPhone = (pl) => `uniqExactIf(${iid}, toString(properties.platform) = '${pl}'), uniqExactIf(${iid}, toString(properties.platform) = '${pl}' AND toString(properties.first_open) = 'true')`;
   const [totals, people] = await Promise.all([
-    hogql(`SELECT uniqExact(toString(properties.install_id)), uniqExactIf(toString(properties.install_id), toString(properties.first_open) = 'true'),
-        uniqExactIf(toString(properties.install_id), toString(properties.signed_in) = 'true'), min(timestamp)
-      FROM events WHERE ${where}`, { fresh: 60_000, stale: 0 }),
+    hogql(`SELECT uniqExact(${iid}), uniqExactIf(${iid}, toString(properties.first_open) = 'true'),
+        uniqExactIf(${iid}, toString(properties.signed_in) = 'true'), min(timestamp), ${onPhone('ios')}, ${onPhone('android')}
+      FROM events WHERE ${where} AND ${iid} NOT IN (${teamInstalls})`, { fresh: 60_000, stale: 0 }),
     hogql(`SELECT toString(properties.site_country) AS cc, toString(properties.user_id) AS uid, any(toString(properties.platform)) AS platform,
         max(toString(properties.account_created_in_app) = 'true') AS in_app
       FROM events WHERE ${where} AND toString(properties.signed_in) = 'true' GROUP BY cc, uid`, { fresh: 60_000, stale: 0 }),
   ]);
-  const [opened, firstOpens, signedIn, since] = totals?.[0] || [];
+  const [opened, firstOpens, signedIn, first, iosOpened, iosFirst, andOpened, andFirst] = totals?.[0] || [];
   return {
     opened: Number(opened) || 0, firstOpens: Number(firstOpens) || 0, signedInInstalls: Number(signedIn) || 0,
-    since: opened ? String(since || '').replace(' ', 'T') : null,
+    since: opened ? String(first || '').replace(' ', 'T') : null,
+    // installs that opened the app, per phone system (live — the store reports run 1–2 days late)
+    byPlatform: { ios: { opened: Number(iosOpened) || 0, firstOpens: Number(iosFirst) || 0 }, android: { opened: Number(andOpened) || 0, firstOpens: Number(andFirst) || 0 } },
     people: (people || []).filter((r) => COUNTRIES.includes(r[0]) && UUID.test(r[1])).map(([cc, uid, platform, inApp]) => ({ cc, uid, platform, inApp: !!Number(inApp) })),
   };
 }
@@ -89,7 +97,7 @@ export async function GET(req) {
       fromPings: people.filter((p) => p.source !== 'notifications').length, fromNotificationsOnly: people.filter((p) => p.source === 'notifications').length,
       byPlatform: Object.fromEntries(['android', 'ios'].map((pl) => { const m = people.filter((p) => (p.platform === 'ios' ? 'ios' : 'android') === pl); return [pl, { total: m.length, createdInApp: m.filter((p) => p.createdInApp).length }]; })) },
     // the pings on their own (installs that opened the app, signed in or not)
-    pings: live.error ? { error: live.error } : { opened: live.opened, firstOpens: live.firstOpens, signedIn: live.signedInInstalls, since: live.since },
+    pings: live.error ? { error: live.error } : { opened: live.opened, firstOpens: live.firstOpens, signedIn: live.signedInInstalls, since: live.since, byPlatform: live.byPlatform },
   };
   cache.set(days, { at: Date.now(), body });
   return NextResponse.json(body);

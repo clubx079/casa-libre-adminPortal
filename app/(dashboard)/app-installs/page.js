@@ -5,6 +5,7 @@
 // From install to account: /api/app-installs/accounts (the app's own 'opened' pings + notification sign-ups).
 import { useEffect, useState } from 'react';
 import { T, CARD, Banner, Pill } from '@/components/automations/ui';
+import { territoryList } from '@/lib/appInstalls';
 
 const PERIODS = [[7, '7 days'], [30, '30 days'], [90, '90 days']];
 const int = (v) => (v == null ? '—' : Number(v).toLocaleString('en-US'));
@@ -109,7 +110,7 @@ function ToAccounts({ acc, installs }) {
         </table>
       ) : null}
       <div className="text-[11.5px] leading-relaxed" style={{ color: T.textMuted }}>
-        {pg.opened ? `Since ${dayLabel(String(pg.since).slice(0, 10))} the app reports itself: ${int(pg.opened)} installs opened it (${int(pg.firstOpens)} for the first time), ${int(pg.signedIn)} signed in. ` : 'The app starts reporting every opening with its next update. '}
+        {pg.opened ? `Since ${dayLabel(String(pg.since).slice(0, 10))} the app reports itself: ${int(pg.opened)} installs opened it${pg.byPlatform ? ` (iPhone ${int(pg.byPlatform.ios?.opened)} · Android ${int(pg.byPlatform.android?.opened)})` : ''}, ${int(pg.firstOpens)} for the first time, ${int(pg.signedIn)} signed in. ` : 'The app starts reporting every opening with its next update. '}
         Before that, the count comes from phones that signed in and allowed notifications — a minimum{a.fromNotificationsOnly ? ` (${int(a.fromNotificationsOnly)} of the ${int(a.total)})` : ''}.
       </div>
     </div>
@@ -155,12 +156,17 @@ export default function AppInstallsPage() {
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
             <Kpi label="Total installs" value={int(t.android + t.ios)} sub={`last ${res.days} days`} />
             <Kpi label="Android installs" value={res.play.ok ? int(t.android) : '—'} sub={res.play.ok ? `${int(t.androidUninstalls)} uninstalls` : 'not connected'} />
-            <Kpi label="iPhone installs" value={res.apple.ok ? int(t.ios) : '—'} sub={res.apple.ok ? `${int(t.iosDeletions)} deletions` : 'not connected'} />
+            <Kpi label="iPhone installs" value={res.apple.ok ? int(t.ios) : '—'} sub={!res.apple.ok ? 'not connected' : t.iosDeletions == null ? 'App Store downloads' : `${int(t.iosDeletions)} deletions`} />
             <Kpi label="Net new" value={int(t.android + t.ios - t.androidUninstalls - t.iosDeletions)} sub="installs − removals" />
           </div>
           <div className="rounded-[14px] p-5" style={CARD}>
             <div className="text-[14px] font-bold mb-4" style={{ color: T.textPrimary }}>Installs per day</div>
             <Chart series={res.series} />
+            {territoryList(t.iosByTerritory).length ? (
+              <div className="text-[11.5px] mt-3" style={{ color: T.textSecondary }}>
+                iPhone downloads by App Store country: {territoryList(t.iosByTerritory).map((c) => `${c.name} ${int(c.n)}`).join(' · ')}
+              </div>
+            ) : null}
           </div>
           <ToAccounts acc={acc} installs={t.android + t.ios} />
           <div className="rounded-[14px] px-5 py-3" style={CARD}>

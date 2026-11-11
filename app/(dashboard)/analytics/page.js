@@ -911,7 +911,7 @@ const AppTechCard = ({ master, platform = 'app' }) => {
 // Users Analytics — user behaviour + funnel, read from PostHog.
 // ── App downloads: installs from the App Store and Google Play (store reports) ──
 // Data: /api/app-installs (lib/storeReports.js). Both stores report with a 1–2 day delay.
-// "Opened the app" + "Signed in" come from /api/app-installs/accounts (the app's own pings, live).
+// "Signed in" comes from /api/app-installs/accounts (the app's own pings, live).
 // On a phone-system tab only that store's box shows: the store reports are per store, not
 // PostHog, so they filter by store rather than by $os.
 const AppDownloadsCard = ({ master, platform }) => {
@@ -948,14 +948,12 @@ const AppDownloadsCard = ({ master, platform }) => {
       tiles: [['Downloads', t.ios], ...(t.iosDeletions != null ? [['Deletions', t.iosDeletions]] : [])],
       countries: territoryList(t.iosByTerritory),
       accounts: acc?.accounts?.byPlatform?.ios,
-      opened: acc?.pings?.byPlatform?.ios?.opened,
       waiting: 'Connected — the first numbers arrive 1–2 days after the app is live on the App Store.',
     },
     {
       key: 'android', name: 'Play Store downloads', s: data.play, latest: data.latest?.play,
       tiles: [['Downloads', t.android], ['Uninstalls', t.androidUninstalls]],
       accounts: acc?.accounts?.byPlatform?.android,
-      opened: acc?.pings?.byPlatform?.android?.opened,
       waiting: 'Connected — waiting for the first Google Play report.',
     },
   ].filter((st) => !APP_NAME[platform] || st.key === platform) : [];
@@ -1005,12 +1003,6 @@ const AppDownloadsCard = ({ master, platform }) => {
               ) : (
                 <p className="text-[11.5px] mt-2 leading-snug" style={{ color: T.textSecondary }}>{st.s?.ok ? st.waiting : st.s?.error}</p>
               )}
-              {st.opened ? (
-                <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
-                  <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Opened the app <span style={{ color: T.textMuted }}>· the app&apos;s own count, up to now</span></p>
-                  <p className="text-2xl font-bold tracking-head mt-0.5" style={{ color: T.textPrimary }}>{fmt(st.opened)}</p>
-                </div>
-              ) : null}
               {st.accounts?.total ? (
                 <div className="mt-3 pt-3 border-t" style={{ borderColor: T.borderLight }}>
                   <p className="text-[11px] font-medium" style={{ color: T.textSecondary }}>Signed in to the app (have an account)</p>

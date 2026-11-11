@@ -110,7 +110,7 @@ function ToAccounts({ acc, installs }) {
         </table>
       ) : null}
       <div className="text-[11.5px] leading-relaxed" style={{ color: T.textMuted }}>
-        {pg.opened ? `Since ${dayLabel(String(pg.since).slice(0, 10))} the app reports itself: ${int(pg.opened)} installs opened it${pg.byPlatform ? ` (iPhone ${int(pg.byPlatform.ios?.opened)} · Android ${int(pg.byPlatform.android?.opened)})` : ''}, ${int(pg.firstOpens)} for the first time, ${int(pg.signedIn)} signed in. ` : 'The app starts reporting every opening with its next update. '}
+        {pg.opened ? `Since ${dayLabel(String(pg.since).slice(0, 10))} the app reports itself: ${int(pg.opened)} installs opened it (${int(pg.firstOpens)} for the first time), ${int(pg.signedIn)} signed in. ` : 'The app starts reporting every opening with its next update. '}
         Before that, the count comes from phones that signed in and allowed notifications — a minimum{a.fromNotificationsOnly ? ` (${int(a.fromNotificationsOnly)} of the ${int(a.total)})` : ''}.
       </div>
     </div>

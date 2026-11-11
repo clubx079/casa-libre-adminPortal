@@ -75,3 +75,14 @@ describe('investor inquiry subjects', () => {
     expect(emailType('New investor inquiry — Ana')).toBe('Investor inquiry');
   });
 });
+
+describe('emailType: referral program emails', () => {
+  it('names the invite, the rewards and the ending reminder', () => {
+    expect(emailType('Omar, ganá días de publicación Verificada gratis en Casa-Libre')).toBe('Referral invite');
+    expect(emailType('Ana P. publicó con tu link: ganaste días Verificada en Casa-Libre')).toBe('Referral reward');
+    expect(emailType('Ana, tu publicación está Verificada gratis en Casa-Libre')).toBe('Referral reward');
+    expect(emailType('3 invitados publicaron: tu propiedad está en la portada de Casa-Libre')).toBe('Referral reward');
+    expect(emailType('Tu premio en Casa-Libre termina el 13 de noviembre')).toBe('Referral reward ending');
+    expect(emailType('Invitá a alguien a publicar en Casa-Libre y ganá la insignia Verificada gratis')).toBe('Referral program promo');
+  });
+});

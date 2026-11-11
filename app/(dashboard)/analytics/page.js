@@ -7,7 +7,6 @@ import UserTimeline from '@/components/users/UserTimeline';
 import GrowthChart from '@/components/analytics/GrowthChart';
 import { isAppPlatform } from '@/lib/analyticsPlatform';
 import { territoryList } from '@/lib/appInstalls';
-import { AI_ALWAYS_SHOWN } from '@/lib/posthogSql';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -631,8 +630,6 @@ function SourcesCard({ master }) {
   }
   byChannel.sort((a, b) => b.visitors - a.visitors);
   const total = byChannel.reduce((n, r) => n + r.visitors, 0) || 1;
-  // The AI assistants always show (0 = no visits in this window, not "not tracked").
-  for (const ai of AI_ALWAYS_SHOWN) if (!byChannel.some((r) => r.source === ai)) byChannel.push({ source: ai, visitors: 0, listings: 0, anon: 0, signedIn: 0, campaigns: [], ai: true });
 
   return (
     <div className="bg-white p-5" style={CARD}>
@@ -641,20 +638,20 @@ function SourcesCard({ master }) {
         <RangeSelect range={range} ariaLabel="Sources range" />
       </div>
       <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
-        first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct · AI assistants always listed (Gemini and Claude often hide where a visit came from, so some of theirs land in direct)
+        first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct
       </p>
 
       {loading ? (
         <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
-      ) : byChannel.every((r) => !r.visitors) ? (
+      ) : byChannel.length === 0 ? (
         <p className="text-xs" style={{ color: T.textMuted }}>No visits in this window.</p>
       ) : (
         <div className="space-y-2.5">
           {byChannel.map((r) => (
             <div key={r.source}>
               <div className="flex items-center justify-between text-xs mb-1" data-testid={`source-${r.source}`}>
-                <span className="font-medium" style={{ color: r.visitors ? T.textPrimary : T.textMuted }}>{r.source}{r.ai && !r.visitors ? <span className="font-normal" style={{ color: T.textMuted }}> · AI assistant</span> : null}</span>
-                <span style={{ color: r.visitors ? T.textBody : T.textMuted }}>
+                <span className="font-medium" style={{ color: T.textPrimary }}>{r.source}</span>
+                <span style={{ color: T.textBody }}>
                   {r.visitors} {r.visitors === 1 ? 'visitor' : 'visitors'}
                   {r.anon ? ` · ${r.anon} anon` : ''}
                   {r.signedIn ? ` · ${r.signedIn} signed in` : ''}
@@ -662,7 +659,7 @@ function SourcesCard({ master }) {
                 </span>
               </div>
               <div style={{ height: 6, background: T.bgSurface, borderRadius: 999 }}>
-                <div style={{ width: r.visitors ? `${Math.max(2, Math.round((r.visitors / total) * 100))}%` : 0, height: 6, background: T.primary, borderRadius: 999 }} />
+                <div style={{ width: `${Math.max(2, Math.round((r.visitors / total) * 100))}%`, height: 6, background: T.primary, borderRadius: 999 }} />
               </div>
               {r.campaigns.filter((c) => c.campaign).length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">

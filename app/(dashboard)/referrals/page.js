@@ -108,7 +108,30 @@ function ProgramTab({ data, reload }) {
     setMsg({ tone: 'ok', text: r.created ? `Saved. The program and ${r.templatesCreated} emails were created for this country.` : 'Saved.' });
     reload();
   }
-  const preview = f.shareText.replace(/\{\{\s*link\s*\}\}/g, `${data.site}/ref/abcd2345`).replace(/\{\{\s*country\s*\}\}/g, data.countryName || 'Paraguay').replace(/\{\{\s*new_user_days\s*\}\}/g, String(f.newUser.days)).replace(/\{\{\s*reward_days\s*\}\}/g, String(f.referrer.days));
+  // The share message in English, for the team: the TEXT is translated (its {{tags}} stay as they
+  // are, lib/translate.js), a moment after typing stops — never per keystroke — and a text that
+  // was translated before comes from the saved translations (lib/translationCache.js), not Groq.
+  const [shareEn, setShareEn] = useState({ of: '', text: '', state: '' });   // state: '' | loading | error
+  useEffect(() => {
+    const text = String(f.shareText || '').trim();
+    if (!text) { setShareEn({ of: '', text: '', state: '' }); return undefined; }
+    if (shareEn.of === text && shareEn.state !== 'error') return undefined;
+    let alive = true;
+    setShareEn((x) => ({ ...x, state: 'loading' }));
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/email-templates/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: text }) });
+        const j = await res.json();
+        if (!alive) return;
+        if (!res.ok || !j.body) throw new Error('failed');
+        setShareEn({ of: text, text: j.body, state: '' });
+      } catch { if (alive) setShareEn((x) => ({ ...x, state: 'error' })); }
+    }, 700);
+    return () => { alive = false; clearTimeout(id); };
+  }, [f.shareText]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fillShare = (text) => String(text || '').replace(/\{\{\s*link\s*\}\}/g, `${data.site}/ref/abcd2345`).replace(/\{\{\s*country\s*\}\}/g, data.countryName || 'Paraguay').replace(/\{\{\s*new_user_days\s*\}\}/g, String(f.newUser.days)).replace(/\{\{\s*reward_days\s*\}\}/g, String(f.referrer.days));
+  const preview = fillShare(f.shareText);
+  const previewEn = shareEn.of === String(f.shareText || '').trim() ? fillShare(shareEn.text) : '';
 
   return (
     <div className="space-y-5">
@@ -157,6 +180,12 @@ function ProgramTab({ data, reload }) {
           <textarea className={`${inputCls} min-h-[96px]`} value={f.shareText} onChange={(e) => set('shareText')(e.target.value)} />
         </Field>
         <div className="mt-3 text-[12.5px] rounded-[12px] p-3 whitespace-pre-wrap" style={{ background: T.bgSurface, color: T.textBody }}><span className="font-mono text-[10px] uppercase tracking-label mr-2" style={{ color: T.textMuted }}>Preview</span>{preview}</div>
+        {String(f.shareText || '').trim() && (
+          <div className="mt-2 text-[12.5px] rounded-[12px] p-3 whitespace-pre-wrap" style={{ background: T.bgSurface, color: previewEn ? T.textBody : T.textMuted }} data-testid="share-english">
+            <span className="font-mono text-[10px] uppercase tracking-label mr-2" style={{ color: T.textMuted }}>In English · read-only</span>
+            {previewEn || (shareEn.state === 'error' ? 'Couldn’t translate right now. It is tried again when the text changes.' : 'Translating…')}
+          </div>
+        )}
       </Card>
 
       <Card title="Invite channel" sub="How the invite to existing users goes out (Invite tab). WhatsApp needs a Meta-approved Relay template; its button should open https://<site>/ref/{{1}}.">

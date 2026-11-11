@@ -11,7 +11,7 @@ import { englishTemplateName } from '@/lib/userEmails';
 import { userWhatsApp } from '@/lib/userWhatsApp';
 import { hogql, posthogConfigured } from '@/lib/posthogHogql';
 import { relay } from '@/lib/relayInbox';
-import { translateToEnglish } from '@/lib/translate';
+import { translateManyToEnglish } from '@/lib/translate';
 import { waLabel, waBodyText } from '@/lib/whatsappLabels';
 
 export const runtime = 'nodejs';
@@ -58,10 +58,11 @@ export async function GET(req) {
     // Like the email rows: an English name, the text they read (Spanish) and its English.
     const bodies = await templateBodies();
     const english = new Map();
-    await Promise.all([...new Set(out.messages.map((m) => m.template))].map(async (t) => {
-      const es = waBodyText(bodies.get(t));
-      english.set(t, { es, en: es ? await translateToEnglish(es).catch(() => '') : '' });
-    }));
+    // every template's text in ONE saved-translation lookup (lib/translationCache.js)
+    const names2 = [...new Set(out.messages.map((m) => m.template))];
+    const esTexts = names2.map((t) => waBodyText(bodies.get(t)) || '');
+    const enTexts = await translateManyToEnglish(esTexts).catch(() => esTexts.map(() => null));
+    names2.forEach((t, i) => english.set(t, { es: esTexts[i], en: enTexts[i] || '' }));
     for (const m of out.messages) {
       const tx = english.get(m.template) || {};
       Object.assign(m, { type: waLabel(m.template), text: tx.es || '', text_en: tx.en && tx.en !== tx.es ? tx.en : '' });

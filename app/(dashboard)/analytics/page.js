@@ -7,6 +7,7 @@ import UserTimeline from '@/components/users/UserTimeline';
 import GrowthChart from '@/components/analytics/GrowthChart';
 import { isAppPlatform } from '@/lib/analyticsPlatform';
 import { territoryList } from '@/lib/appInstalls';
+import { AI_ALWAYS_SHOWN } from '@/lib/posthogSql';
 import {
   Eye, TrendingUp, Users, BarChart3,
   ChevronLeft, ChevronRight, MapPin,
@@ -630,6 +631,8 @@ function SourcesCard({ master }) {
   }
   byChannel.sort((a, b) => b.visitors - a.visitors);
   const total = byChannel.reduce((n, r) => n + r.visitors, 0) || 1;
+  // The AI assistants always show (0 = no visits in this window, not "not tracked").
+  for (const ai of AI_ALWAYS_SHOWN) if (!byChannel.some((r) => r.source === ai)) byChannel.push({ source: ai, visitors: 0, listings: 0, anon: 0, signedIn: 0, campaigns: [], ai: true });
 
   return (
     <div className="bg-white p-5" style={CARD}>
@@ -638,20 +641,20 @@ function SourcesCard({ master }) {
         <RangeSelect range={range} ariaLabel="Sources range" />
       </div>
       <p className="text-[10px] mb-4" style={{ color: T.textMuted }}>
-        first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct
+        first touch · our links carry a tag (/r/&lt;slug&gt;) · no tag and no referrer = direct · AI assistants always listed (Gemini and Claude often hide where a visit came from, so some of theirs land in direct)
       </p>
 
       {loading ? (
         <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
-      ) : byChannel.length === 0 ? (
+      ) : byChannel.every((r) => !r.visitors) ? (
         <p className="text-xs" style={{ color: T.textMuted }}>No visits in this window.</p>
       ) : (
         <div className="space-y-2.5">
           {byChannel.map((r) => (
             <div key={r.source}>
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="font-medium" style={{ color: T.textPrimary }}>{r.source}</span>
-                <span style={{ color: T.textBody }}>
+              <div className="flex items-center justify-between text-xs mb-1" data-testid={`source-${r.source}`}>
+                <span className="font-medium" style={{ color: r.visitors ? T.textPrimary : T.textMuted }}>{r.source}{r.ai && !r.visitors ? <span className="font-normal" style={{ color: T.textMuted }}> · AI assistant</span> : null}</span>
+                <span style={{ color: r.visitors ? T.textBody : T.textMuted }}>
                   {r.visitors} {r.visitors === 1 ? 'visitor' : 'visitors'}
                   {r.anon ? ` · ${r.anon} anon` : ''}
                   {r.signedIn ? ` · ${r.signedIn} signed in` : ''}
@@ -659,7 +662,7 @@ function SourcesCard({ master }) {
                 </span>
               </div>
               <div style={{ height: 6, background: T.bgSurface, borderRadius: 999 }}>
-                <div style={{ width: `${Math.max(2, Math.round((r.visitors / total) * 100))}%`, height: 6, background: T.primary, borderRadius: 999 }} />
+                <div style={{ width: r.visitors ? `${Math.max(2, Math.round((r.visitors / total) * 100))}%` : 0, height: 6, background: T.primary, borderRadius: 999 }} />
               </div>
               {r.campaigns.filter((c) => c.campaign).length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -1119,7 +1122,27 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
   const [resolved, setResolved] = useState(false);   // the ?user= deep link has been looked up
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
-  useEffect(() => { setPage(0); }, [users.length]);
+  // The users list arrives 300 at a time (newest activity first): the next 300 load when the admin
+  // reaches the last page that is already here, so every visitor of the 90 days can be reached.
+  const [usersTotal, setUsersTotal] = useState(null);
+  const [usersMore, setUsersMore] = useState({ next: null, hasMore: false, loading: false, failed: false });
+  const userKey = (u) => (u.is_anon && u.ip && u.by !== 'person' ? `ip:${u.ip}` : u.person_id);
+  const loadMoreUsers = async () => {
+    if (!usersMore.hasMore || usersMore.loading || !usersMore.next) return;
+    setUsersMore((m) => ({ ...m, loading: true, failed: false }));
+    try {
+      const qs = `&after=${encodeURIComponent(usersMore.next.after)}&after_key=${encodeURIComponent(usersMore.next.after_key)}`;
+      const json = await loadAnalytics(`/api/analytics/posthog?type=users${qs}${pf(platform)}`, { isCancelled: () => false });
+      const more = Array.isArray(json.users) ? json.users : [];
+      setUsers((prev) => { const seen = new Set(prev.map(userKey)); return [...prev, ...more.filter((u) => !seen.has(userKey(u)))]; });
+      setUsersMore({ next: json.next || null, hasMore: !!json.hasMore && !!json.next, loading: false, failed: false });
+    } catch { setUsersMore((m) => ({ ...m, loading: false, failed: true })); }
+  };
+  const loadedPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const totalUsers = usersMore.hasMore ? Math.max(usersTotal || 0, users.length) : users.length;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / PAGE_SIZE));
+  // reaching the last loaded page fetches the next chunk
+  useEffect(() => { if (page >= loadedPages - 1 && usersMore.hasMore && !usersMore.loading && !usersMore.failed) loadMoreUsers(); }, [page, loadedPages, usersMore.hasMore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1146,7 +1169,11 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
     (async () => {
       try {
         const json = await loadAnalytics(`/api/analytics/posthog?type=users${pf(platform)}`, { isCancelled: () => cancelled });
-        if (!cancelled && Array.isArray(json.users)) setUsers(json.users);
+        if (!cancelled && Array.isArray(json.users)) {
+          setUsers(json.users); setPage(0);
+          setUsersTotal(json.total ?? null);
+          setUsersMore({ next: json.next || null, hasMore: !!json.hasMore && !!json.next, loading: false, failed: false });
+        }
       } catch { /* leave empty */ } finally {
         if (!cancelled) setUsersLoading(false);
       }
@@ -1367,19 +1394,23 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
             </tbody>
           </table>
         </div>
-        {users.length > PAGE_SIZE && (
-          <div className="px-4 py-2.5 border-t flex items-center justify-between gap-2" style={{ borderColor: T.borderLight, background: T.bgSurface }}>
+        {(users.length > PAGE_SIZE || usersMore.hasMore) && (
+          <div className="px-4 py-2.5 border-t flex flex-wrap items-center justify-between gap-2" style={{ borderColor: T.borderLight, background: T.bgSurface }} data-testid="users-pager">
             <span className="text-[11px]" style={{ color: T.textSecondary }}>
-              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, users.length)} of {users.length}
+              {page < loadedPages
+                ? <>Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, users.length).toLocaleString()} of {totalUsers.toLocaleString()}{usersMore.hasMore ? ' (last 90 days)' : ''}</>
+                : 'Loading the next visitors…'}
+              {usersMore.loading && page < loadedPages ? <span style={{ color: T.textMuted }}> · loading more…</span> : null}
+              {usersMore.failed ? <button className="ml-2 underline" onClick={() => { setUsersMore((m) => ({ ...m, failed: false })); }}>Couldn&apos;t load more · retry</button> : null}
             </span>
             <div className="flex items-center gap-2">
               <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
                 className="flex items-center gap-1 px-3 py-1 text-xs font-medium border disabled:opacity-30" style={{ borderColor: T.borderLight, color: T.textBody, borderRadius: '999px', background: T.bgWhite }}>
                 <ChevronLeft className="w-3.5 h-3.5" /> Prev
               </button>
-              <span className="text-[11px]" style={{ color: T.textMuted }}>Page {page + 1} of {Math.ceil(users.length / PAGE_SIZE)}</span>
-              <button onClick={() => setPage((p) => Math.min(Math.ceil(users.length / PAGE_SIZE) - 1, p + 1))} disabled={page >= Math.ceil(users.length / PAGE_SIZE) - 1}
-                className="flex items-center gap-1 px-3 py-1 text-xs font-medium border disabled:opacity-30" style={{ borderColor: T.borderLight, color: T.textBody, borderRadius: '999px', background: T.bgWhite }}>
+              <span className="text-[11px]" style={{ color: T.textMuted }}>Page {(page + 1).toLocaleString()} of {totalPages.toLocaleString()}</span>
+              <button onClick={() => setPage((p) => Math.min(loadedPages - (usersMore.hasMore ? 0 : 1), p + 1))} disabled={page >= loadedPages - 1 && !usersMore.hasMore}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium border disabled:opacity-30" style={{ borderColor: T.borderLight, color: T.textBody, borderRadius: '999px', background: T.bgWhite }} data-testid="users-next">
                 Next <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>

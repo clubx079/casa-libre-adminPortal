@@ -85,8 +85,23 @@ const flat = (rows) => rows.map((r) => (Array.isArray(r) ? r : Object.values(r))
 // ── users list: identified users by person_id, anonymous visitors by IP ──
 // Grouped on UKEY, so all same-IP anonymous sessions become one row. Each row
 // carries its IP + geo location; identified rows also show their most recent IP.
-async function usersList(platform = 'web') {
+// Paged: USERS_CHUNK rows, newest activity first. PostHog refuses OFFSET with a personal API key,
+// so the next chunk continues AFTER the last row sent (keyset: its last-seen time, then its key):
+// &after=<last_seen>&after_key=<idkey> (the response's `next`). The first chunk also returns the
+// total. The page loads the next chunk when the admin reaches the end of what is loaded.
+const USERS_CHUNK = 300;
+async function usersList(platform = 'web', afterParam = '', afterKeyParam = '') {
   const app = isAppPlatform(platform);
+  const sq = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const after = /^\d{4}-\d{2}-\d{2}[ T][\d:.]+$/.test(afterParam) ? afterParam.replace('T', ' ') : '';
+  const afterKey = String(afterKeyParam || '').slice(0, 200);
+  const lastSeenS = 'toString(max(timestamp))';
+  const page = after
+    ? `HAVING ${lastSeenS} < '${sq(after)}' OR (${lastSeenS} = '${sq(after)}' AND idkey > '${sq(afterKey)}')`
+    : '';
+  const totalQuery = !after
+    ? hogql(`SELECT count(DISTINCT ${ukeyFor(platform)}) FROM events WHERE timestamp >= now() - INTERVAL 90 DAY AND ${geoFilter(platform)}`).then((r) => Number(flat(r)[0]?.[0] || 0)).catch(() => null)
+    : Promise.resolve(null);
   // older app_opened pings carry the website server's IP / location, not the phone's
   const lastSeenAt = (expr) => (app ? `argMaxIf(${expr}, timestamp, ${HAS_PHONE_IP})` : `argMax(${expr}, timestamp)`);
   const rows = await hogql(`
@@ -110,12 +125,14 @@ async function usersList(platform = 'web') {
       min(timestamp) AS first_seen,
       max(timestamp) AS last_seen${app ? `,
       argMax(coalesce(nullIf(properties.app_platform, ''), nullIf(properties.platform, ''), ''), timestamp) AS app_platform,
-      argMax(coalesce(properties.app_version, ''), timestamp) AS app_version` : ''}
+      argMax(coalesce(properties.app_version, ''), timestamp) AS app_version` : ''},
+      ${lastSeenS} AS last_seen_key
     FROM events
     WHERE timestamp >= now() - INTERVAL 90 DAY AND ${geoFilter(platform)}
     GROUP BY idkey
-    ORDER BY last_seen DESC
-    LIMIT 300
+    ${page}
+    ORDER BY last_seen_key DESC, idkey ASC
+    LIMIT ${USERS_CHUNK}
   `);
   const [names, byRef] = await Promise.all([campaignNames(), batchNamesByRef().catch(() => new Map())]);   // batch slug / referral link → name · person code → batch name
   const users = flat(rows).map((r) => {
@@ -150,7 +167,15 @@ async function usersList(platform = 'web') {
   // Pakistan events are already filtered out (geoFilter); this also drops team / test
   // accounts that browsed from elsewhere (e.g. the store-review login used from the US).
   const extra = await internalEmails(currentSite() || 'py').catch(() => null);
-  return NextResponse.json({ configured: true, users: users.filter((u) => !u.email || !isInternalEmail(u.email, extra)) });
+  const all = flat(rows);
+  const last = all[all.length - 1];
+  return NextResponse.json({
+    configured: true,
+    users: users.filter((u) => !u.email || !isInternalEmail(u.email, extra)),
+    hasMore: all.length === USERS_CHUNK,
+    next: all.length === USERS_CHUNK && last ? { after: String(last[last.length - 1]), after_key: String(last[0] ?? '') } : null,
+    total: await totalQuery,   // distinct visitors in the 90 days (first chunk only; team accounts included)
+  });
 }
 
 // Resolve a DB user → their PostHog person + counts. The buyer portal calls
@@ -613,7 +638,7 @@ export async function GET(request) {
   const platform = normPlatform(searchParams.get('platform'));   // the website unless asked
 
   try {
-    if (type === 'users') return await usersList(platform);
+    if (type === 'users') return await usersList(platform, searchParams.get('after') || '', searchParams.get('after_key') || '');
     if (type === 'activity') return await userActivity({ personId: searchParams.get('personId') || '', ip: searchParams.get('ip') || '' });
     if (type === 'resolve') return await resolveUser({ distinctId: searchParams.get('distinctId') || '', email: searchParams.get('email') || '' });
     if (type === 'geo') return await geoBreakdown(searchParams.get('country') || '', searchParams.get('days') || '', platform);

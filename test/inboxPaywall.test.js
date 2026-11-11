@@ -47,7 +47,7 @@ describe('inbox rules', () => {
     const two = [conv({ sites: ['py', 'bo'], unread_count: 1 })];
     expect(filterConversations(two, { country: 'bo' }).data).toHaveLength(1);
     expect(filterConversations(two, { country: 'py' }).data).toHaveLength(1);
-    expect(countryCounts(two)).toEqual({ py: { total: 1, unread: 1, unresponded: 0 }, bo: { total: 1, unread: 1, unresponded: 0 } });
+    expect(countryCounts(two)).toEqual({ py: { total: 1, unread: 1, unresponded: 0, automated: 0 }, bo: { total: 1, unread: 1, unresponded: 0, automated: 0 } });
   });
   it('filters by country / status / view and counts', () => {
     const list = [
@@ -58,11 +58,11 @@ describe('inbox rules', () => {
     ];
     const py = filterConversations(list, { country: 'py' });
     expect(py.data.map((c) => c.phone)).toEqual(['+595981000001', '+595981000002']);
-    expect(py.counts).toEqual({ open: 2, done: 1, unread: 2, unresponded: 1, window: 0 });
+    expect(py.counts).toEqual({ open: 2, done: 1, unread: 2, unresponded: 1, automated: 0, window: 0 });
     expect(filterConversations(list, { country: 'py', view: 'unresponded', status: 'all' }).data).toHaveLength(2);
     expect(filterConversations(list, { country: 'all', view: 'unresponded' }).data).toHaveLength(2);
     expect(filterConversations(list, { country: 'all', q: '1234567' }).data.map((c) => c.country)).toEqual(['bo']);
-    expect(countryCounts(list)).toEqual({ py: { total: 3, unread: 2, unresponded: 1 }, bo: { total: 1, unread: 0, unresponded: 1 } });
+    expect(countryCounts(list)).toEqual({ py: { total: 3, unread: 2, unresponded: 1, automated: 0 }, bo: { total: 1, unread: 0, unresponded: 1, automated: 0 } });
   });
   it('the thread for the AI reply, oldest first', () => {
     const t = threadForAi([{ direction: 'outbound', template: { name: 'cl_borrador' }, text: 'Hola', created_at: '2026-10-28T10:00:00Z' }, { direction: 'inbound', text: 'Nadie me llama', created_at: '2026-10-28T11:00:00Z' }]);

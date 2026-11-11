@@ -12,18 +12,19 @@ import { activeCountry } from '@/lib/adminCountry';
 import { isMissingTable } from '@/lib/automationDb';
 import { adminKey, unreadCounts, markSeen, UNREAD_PAGES } from '@/lib/unread';
 import { conversationsWithCountry } from '@/lib/inboxData';
-import { isUnread, inSite } from '@/lib/inboxRules';
+import { isRealUnread, inSite } from '@/lib/inboxRules';
+import { withPending } from '@/lib/inboxPending';
 import { openAlertCount } from '@/lib/alertsData';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Unread WhatsApp conversations of this site — new messages or "marked unread" (lib/inboxRules.js);
-// 0 without a Relay key.
+// Unread WhatsApp conversations of this site where a PERSON wrote (lib/inboxRules.js isRealUnread):
+// button taps, typed SÍ/BAJA, reactions and robot replies don't count. 0 without a Relay key.
 async function inboxUnread(cc) {
   try {
-    const list = await conversationsWithCountry('live');
-    return list.filter((c) => inSite(c, cc) && isUnread(c)).length;
+    const list = (await conversationsWithCountry('live')).filter((c) => inSite(c, cc));
+    return (await withPending(list, 'live')).filter(isRealUnread).length;
   } catch { return 0; }
 }
 

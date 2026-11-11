@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import {
   listCountries, getAdminById, updateAdminAccess, deleteAdmin, countActiveSuperadmins,
 } from '@/lib/control';
+import { normalizeAccess } from '@/lib/adminPages';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ function requireSuper() {
   return { session: s };
 }
 
-// PATCH /api/team/:id -> update a member's role + country access (superadmin only).
+// PATCH /api/team/:id -> update a member's role + country access + page access (superadmin only).
 export async function PATCH(req, { params }) {
   const gate = requireSuper();
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
@@ -41,10 +42,13 @@ export async function PATCH(req, { params }) {
     if (allowed_countries.length === 0) return NextResponse.json({ error: 'no_countries' }, { status: 400 });
   }
 
+  const page_access = role === 'admin' ? normalizeAccess(body.page_access) : null;
+
   try {
-    const updated = await updateAdminAccess(params.id, { role, allowed_countries });
+    const updated = await updateAdminAccess(params.id, { role, allowed_countries, page_access });
     return NextResponse.json({ ok: true, admin: updated });
   } catch (e) {
+    if (e.code === 'migration_needed') return NextResponse.json({ error: 'migration_needed' }, { status: 409 });
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }

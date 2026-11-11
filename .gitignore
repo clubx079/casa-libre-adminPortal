@@ -28,3 +28,6 @@ yarn-error.log*
 .vercel
 .superpowers/
 .superpowers/
+
+.dev-control-db.json
+_*.log

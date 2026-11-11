@@ -32,6 +32,7 @@ export async function POST(req) {
     name: admin.name,
     role: admin.role,
     allowed_countries: admin.allowed_countries ?? null,
+    page_access: admin.page_access ?? null,
   });
   return NextResponse.json({ ok: true });
 }

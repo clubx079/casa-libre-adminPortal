@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import LangSwitcher from '@/components/LangSwitcher';
 import CountrySwitcher from '@/components/CountrySwitcher';
 import { useUnreadCounts } from '@/components/unread';
+import { pageKeyForPath } from '@/lib/adminPages';
 
 const NAV = [
   ['/', 'Overview', 'dash'],
@@ -164,7 +165,8 @@ function Icon({ name }) {
   );
 }
 
-export default function AdminShell({ admin, lang = 'es', countries = [], activeCountry, children }) {
+// pages: the page keys this member's role includes (Team → Page access), or null for every page.
+export default function AdminShell({ admin, pages = null, lang = 'es', countries = [], activeCountry, children }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const router = useRouter();
@@ -177,7 +179,9 @@ export default function AdminShell({ admin, lang = 'es', countries = [], activeC
 
   // Super admins get a full "Team" screen; everyone else gets "Account" (same
   // route, but the page only renders member management to superadmins).
-  const nav = [...NAV, isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user']];
+  // A ready-made role or custom page list shows only its pages (the middleware also blocks the rest).
+  const mine = pages ? NAV.filter(([href]) => pages.includes(pageKeyForPath(href))) : NAV;
+  const nav = [...mine, isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user']];
 
   // Per-admin unread badges (each team member has their own — lib/unread.js).
   const unread = useUnreadCounts(path);

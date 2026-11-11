@@ -319,7 +319,7 @@ function AiPanel({ conv, mode, text, onUse, onClose, request, onRequestDone }) {
 export default function InboxPage() {
   const [mode, setMode] = useState('live');
   const status = 'all';   // no Done state: Roland — "mark as unread, not mark as done"
-  const [view, setView] = useState('all');          // all | unread | unresponded | window
+  const [view, setView] = useState('all');          // all | unread | unresponded | automated | window
   const country = '';   // the admin's country switcher decides (server side); "General" chats show in every country
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
@@ -465,13 +465,20 @@ export default function InboxPage() {
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or number" className="w-full pl-9 pr-3 py-2.5 rounded-[10px] text-[14px] outline-none" style={{ border: `1px solid ${T.borderLight}`, background: T.bgSurface }} />
             </div>
             <div className="flex rounded-[10px] p-0.5 w-full" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
-              {seg(view, setView, 'all', 'All', null, 'view-all')}{seg(view, setView, 'unread', 'Unread', counts.unread, 'view-unread')}{seg(view, setView, 'unresponded', 'Unresponded', counts.unresponded, 'view-unresponded')}
+              {seg(view, setView, 'all', 'All', null, 'view-all')}{seg(view, setView, 'unread', 'Unread', counts.unread, 'view-unread', 'A person wrote something new. Button taps, SÍ/BAJA, reactions and robot replies are under Automated.')}{seg(view, setView, 'unresponded', 'Unresponded', counts.unresponded, 'view-unresponded', 'A person wrote since our last message. Automated messages are under Automated.')}
               {seg(view, setView, 'window', '24h open', counts.window, 'view-window', 'They wrote in the last 24 hours, so we can still send a normal message (no template). After that only templates.')}
             </div>
+            <button type="button" onClick={() => setView(view === 'automated' ? 'all' : 'automated')} data-testid="view-automated"
+              title="Chats where only automated messages are waiting: campaign button taps (SÍ, BAJA…) the website already answered, typed SÍ/BAJA, reactions, stickers and other businesses' robot replies. They don't count as unread."
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-[10px] text-[12.5px]"
+              style={view === 'automated' ? { background: T.textPrimary, color: '#fff', fontWeight: 600 } : { background: T.bgSurface, color: T.textSecondary, border: `1px solid ${T.borderLight}` }}>
+              <span>Automated · buttons, reactions, robot replies</span>
+              <span className="tabular-nums font-semibold">{counts.automated ?? 0}</span>
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto">
             {list === null ? <p className="p-4 text-[13px]" style={{ color: T.textMuted }}>Loading…</p>
-              : list.length === 0 ? <p className="p-6 text-center text-[13px]" style={{ color: T.textMuted }}>{view === 'unread' ? 'Nothing unread.' : view === 'unresponded' ? 'Every conversation has an answer.' : view === 'window' ? 'No chat has its 24h window open — only templates can go out.' : 'No conversations here.'}</p>
+              : list.length === 0 ? <p className="p-6 text-center text-[13px]" style={{ color: T.textMuted }}>{view === 'unread' ? 'Nothing unread.' : view === 'unresponded' ? 'Every conversation has an answer.' : view === 'automated' ? 'No automated messages waiting.' : view === 'window' ? 'No chat has its 24h window open — only templates can go out.' : 'No conversations here.'}</p>
                 : list.map((c) => {
                   const lm = c.last_message || {};
                   const active = sel === c.phone;
@@ -487,10 +494,11 @@ export default function InboxPage() {
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <span className="text-[13.5px] truncate flex items-center gap-1" style={{ color: T.textSecondary }}>{lm.direction === 'outbound' && <Ticks status={lm.status} />}{preview}</span>
-                          {c.unread_count > 0 ? <span className="text-[11px] font-bold text-white rounded-full px-1.5 min-w-[20px] text-center" style={{ background: GREEN }}>{c.unread_count}</span>
+                          {c.unread_count > 0 ? <span className="text-[11px] font-bold text-white rounded-full px-1.5 min-w-[20px] text-center" style={{ background: c.unread ? GREEN : '#A9B0AC' }} title={c.unread ? undefined : 'Only automated messages: not counted as unread'}>{c.unread_count}</span>
                             : c.marked_unread ? <span className="w-3 h-3 rounded-full shrink-0" style={{ background: GREEN }} title="Marked unread" data-testid="marked-dot" /> : null}
                         </div>
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
+                          {c.automated && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: '#EEF0EF', color: '#5F6B66' }} title="Only automated messages are waiting here, so it doesn't count as unread or unresponded" data-testid="automated-tag">Automated{c.automated_kinds?.length ? ` · ${c.automated_kinds.join(', ')}` : ''}</span>}
                           {c.campaign && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.warningSurface, color: T.warning }} title="We reached this number with a WhatsApp campaign" data-testid="campaign-tag">Campaign</span>}
                           {(c.sites || [])[0] === 'none' && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: T.infoSurface, color: T.info }} title="This number never asked a site for a code and is not a user on any site, so it shows in every country's inbox" data-testid="general-tag">General</span>}
                           {c.window_hours_left != null && <span className="text-[10.5px] px-1.5 py-0.5 rounded-full" style={{ background: '#E7F5EC', color: GREEN }} title="They wrote in the last 24 hours: a normal message can still go out" data-testid="window-tag">24h open · {c.window_hours_left < 1 ? `${Math.max(1, Math.round(c.window_hours_left * 60))} min left` : `${Math.floor(c.window_hours_left)}h left`}</span>}

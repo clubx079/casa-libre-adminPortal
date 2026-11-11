@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { listAdmins, listCountries } from '@/lib/control';
+import { listAdmins, listCountries, pageAccessReady } from '@/lib/control';
 import TeamClient from '@/components/TeamClient';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,7 @@ export default async function TeamPage() {
       initialAdmins={admins}
       countries={countries}
       canChangePassword={!!session.id}
+      pageAccessReady={pageAccessReady()}
     />
   );
 }

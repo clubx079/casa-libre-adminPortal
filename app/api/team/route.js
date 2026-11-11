@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { listCountries, listAdmins, getAdminByEmail, createInvitedAdmin, newToken } from '@/lib/control';
+import { listCountries, listAdmins, getAdminByEmail, createInvitedAdmin, newToken, pageAccessReady } from '@/lib/control';
 import { sendAdminInviteEmail } from '@/lib/email';
 import { appBaseUrl } from '@/lib/appUrl';
+import { normalizeAccess } from '@/lib/adminPages';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,14 +22,15 @@ export async function GET() {
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
   try {
     const admins = await listAdmins();
-    return NextResponse.json({ admins });
+    return NextResponse.json({ admins, pageAccessReady: pageAccessReady() });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }
 }
 
 // POST /api/team -> invite a new member (superadmin only).
-// Body: { email, name, role: 'superadmin'|'admin', allowed_countries: [codes] }
+// Body: { email, name, role: 'superadmin'|'admin', allowed_countries: [codes],
+//         page_access: null | { preset } | { preset: 'custom', pages: [keys] } }  (lib/adminPages.js)
 export async function POST(req) {
   const gate = requireSuper();
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
@@ -64,10 +66,13 @@ export async function POST(req) {
   const invite_token = newToken();
   const invite_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
+  const page_access = role === 'admin' ? normalizeAccess(body.page_access) : null;
+
   let created;
   try {
-    created = await createInvitedAdmin({ email, name, role, allowed_countries, invite_token, invite_expires_at });
+    created = await createInvitedAdmin({ email, name, role, allowed_countries, page_access, invite_token, invite_expires_at });
   } catch (e) {
+    if (e.code === 'migration_needed') return NextResponse.json({ error: 'migration_needed' }, { status: 409 });
     // A pending invite for the same email violates the unique index → treat as duplicate.
     if (e.code === '23505') return NextResponse.json({ error: 'email_exists' }, { status: 409 });
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });

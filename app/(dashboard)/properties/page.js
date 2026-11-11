@@ -4,6 +4,7 @@ import { getLang } from '@/lib/lang';
 import { makeT } from '@/lib/i18n';
 import { getUsdRate } from '@/lib/fx';
 import { buildingsParts, landOrGroup, isLandType } from '@/lib/land';
+import { classOf } from '@/lib/propertyClass';
 import { heldListings } from '@/lib/heldListings';
 import { selectAll } from '@/lib/selectAll';
 import { validateListing } from '@/lib/ingest';
@@ -32,10 +33,11 @@ export default async function PropertiesPage({ searchParams }) {
   const reason = String(searchParams?.reason || ''); // Originals → Inactive: one reason (lib/hiddenReason.js)
   const view = searchParams?.view === 'cards' ? 'cards' : 'table'; // default table
   const source = (searchParams?.source || '').trim(); // scrape_sources.key filter
-  const cls = ['buildings', 'land', 'all'].includes(searchParams?.class) ? searchParams.class : 'buildings';
   // Properties split into two sub-tabs: 'scraped' (competitor scrapers, default) and
   // 'originals' (buyer-portal user submissions).
   const kind = searchParams?.kind === 'originals' ? 'originals' : 'scraped';
+  // Buildings / Land / All — no ?class= → Buildings on Scraped, All on Originals (lib/propertyClass.js)
+  const cls = classOf(searchParams?.class, kind);
   const offset = (page - 1) * PAGE_SIZE;
 
   const cc = activeCountry();
@@ -59,7 +61,7 @@ export default async function PropertiesPage({ searchParams }) {
     filters.push('source_id=not.is.null');
     if (sourceId) filters.push(`source_id=eq.${sourceId}`);
   }
-  // class + text search. 'buildings' (default) hides land; 'land' shows only land;
+  // class + text search. 'buildings' (the Scraped default) hides land; 'land' shows only land;
   // 'all' shows both. land + search needs a nested and() to avoid two top-level or=.
   const qEnc = q ? encodeURIComponent(`%${q}%`) : null;
   if (cls === 'buildings') filters.push(...buildingsParts());

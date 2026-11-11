@@ -5,6 +5,7 @@ import { listingUrl } from '@/lib/buyerSite';
 import { useRouter } from 'next/navigation';
 import { makeT, locale } from '@/lib/i18n';
 import { listedDate } from '@/lib/listedDate';
+import { classParam } from '@/lib/propertyClass';
 import { dualPrice, fmtUsd, fmtLocal } from '@/lib/money';
 import { currencyFor } from '@/lib/currency';
 import { typeLabel } from '@/lib/propertyType';
@@ -80,7 +81,7 @@ export default function PropertiesView({ rows, count, tabCounts = null, page, to
     if (ns && ns !== 'all') sp.set('status', ns);
     if (nv && nv !== 'table') sp.set('view', nv);
     if (nsrc) sp.set('source', nsrc);
-    if (ncls && ncls !== 'buildings') sp.set('class', ncls);
+    if (classParam(ncls, kind)) sp.set('class', classParam(ncls, kind));   // only when it isn't this page's default
     if (np && np > 1) sp.set('page', String(np));
     if (nr && ns === 'inactive') sp.set('reason', nr);
     // Keep the active sub-tab (Scraped/Originals) across filter changes.

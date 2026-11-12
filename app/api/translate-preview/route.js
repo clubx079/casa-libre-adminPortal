@@ -10,6 +10,7 @@ import { translateText, cleanDescription } from '@/lib/groqTranslate';
 import { translateToEnglish } from '@/lib/translate';
 import { sharedTranslationCache } from '@/lib/translationCache';
 import { controlStore } from '@/lib/translationStore';
+import { groqFetch } from '@/lib/aiUsage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export async function POST(req) {
   const [out] = await sharedTranslationCache(controlStore).translateMany([text], {
     from: 'es', to: 'en', purpose: 'user-text-en', version: version(),
     translate: async (t) => {
-      const groq = await translateText(t, 'en', { system: SYSTEM }).catch(() => null);
+      const groq = await translateText(t, 'en', { system: SYSTEM, fetchImpl: groqFetch({ feature: 'translate_preview' }) }).catch(() => null);
       if (groq) { via = 'groq'; return { text: groq, engine: 'groq' }; }
       const backup = await translateToEnglish(t).catch(() => null);
       via = 'fallback';

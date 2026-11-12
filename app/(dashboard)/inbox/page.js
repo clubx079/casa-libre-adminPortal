@@ -118,6 +118,7 @@ function Bubble({ m, mode, english, onTranslate, onAiReply, tplMeta }) {
             </div>
           )}
           {!tplName && out && m.sent_by && m.sent_by !== 'api' && <div className="text-[11px] mb-0.5" style={{ color: T.textMuted }}>{m.sent_by}</div>}
+          {!tplName && out && m.ai_label && <div className="text-[11px] font-semibold mb-0.5" style={{ color: GREEN }} data-testid="ai-label">{m.ai_label}</div>}
           {m.media && <Media m={m} mode={mode} />}
           {!m.media && look?.header && <div className="mb-1.5 -mx-1.5 -mt-0.5" data-testid="template-media"><TemplateHeader h={look.header} maxW={300} /></div>}
           {m.location && <a className="text-[13px] underline" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}`}>📍 {m.location.name || 'Location'}</a>}

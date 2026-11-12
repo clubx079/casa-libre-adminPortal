@@ -6,7 +6,6 @@
 // English version for the team. `instruction` = what the admin wants to say, in any language;
 // `draft` = a text to improve. The admin always reviews and sends it — nothing is sent here.
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { relay, modeOf, phoneParam } from '@/lib/relayInbox';
 import { threadForAi } from '@/lib/inboxRules';
@@ -14,6 +13,7 @@ import { loadFactSheet, siteFor } from '@/lib/aiContext';
 import { activeCountry, canAccessCountry } from '@/lib/adminCountry';
 import { MODEL, SCHEMA, systemPrompt, buildAsk, AI_SETTINGS } from '@/lib/aiPrompt';
 import { answerRef } from '@/lib/aiLinks';
+import { anthropicClient } from '@/lib/aiUsage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,7 +48,7 @@ export async function POST(req) {
   const thread = threadForAi([...(msgs.data.data || [])].reverse());
   const ask = buildAsk({ thread, facts, whatsappName: conv.ok ? conv.data.name || null : null, windowOpen: conv.ok ? !!conv.data.window?.open : null, instruction: b.instruction, draft: b.draft });
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 90000, maxRetries: 2 });
+    const client = anthropicClient({ feature: 'inbox_ai_draft', country: cc, ref: `phone:+${phone}`, timeout: 90000, maxRetries: 2 });
     const msg = await client.messages.create({
       model: MODEL,
       max_tokens: AI_SETTINGS.max_tokens,

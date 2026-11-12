@@ -49,7 +49,7 @@ describe('buildLinksReport', () => {
   });
 
   it('one row per channel, in the list order, with its link', () => {
-    expect(r.map((x) => x.label)).toEqual(['Reddit', 'Facebook', 'Instagram', 'X', 'TikTok', 'Meta ads', 'Google ads', 'WhatsApp', 'Email']);
+    expect(r.map((x) => x.label)).toEqual(['Reddit', 'Facebook', 'Instagram', 'X', 'TikTok', 'Meta ads', 'Google ads', 'WhatsApp', 'Email', 'Google Business Profile']);
     expect(r[0]).toEqual({ slug: 'rd', label: 'Reddit', link: 'https://casa-libre.com.py/r/rd', opened: 4, landed: 1, lastOpened: '2026-10-02T04:27:12Z' });
   });
   it('channels with no activity show zeros; unknown slugs are ignored', () => {

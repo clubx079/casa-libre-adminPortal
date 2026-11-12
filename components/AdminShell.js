@@ -13,6 +13,7 @@ const NAV = [
   ['/users', 'Users', 'users'],
   ['/properties', 'Properties', 'home'],
   ['/analytics', 'Analytics', 'chart'],
+  ['/search-console', 'Search Console', 'chart'],
   ['/manager', 'Admin Manager', 'bolt'],
   ['/ai-usage', 'AI usage', 'chart'],
   ['/utm-links', 'UTM Links', 'link'],

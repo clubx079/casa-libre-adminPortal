@@ -2,7 +2,7 @@
 // AI usage — what every AI feature costs, for the country picked in the switcher: tokens in / out
 // and US$ for Anthropic Claude and Groq, from the admin and the website (ai_usage_log, every call
 // logged by lib/aiUsage.js / the website's lib/aiUsage.js). Today / 7 days / 30 days, a daily
-// chart, by feature, by provider and model, and the 20 most expensive calls. Read-only.
+// chart, by feature, by provider and model. Read-only.
 import { useEffect, useState } from 'react';
 import { T, CARD, PageHeader, Banner, Pill } from '@/components/automations/ui';
 
@@ -22,6 +22,19 @@ const num = (n) => Number(n || 0).toLocaleString('en-US');
 const tok = (n) => { const v = Number(n || 0); return v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${Math.round(v / 1e3)}k` : num(v); };
 const dayLabel = (key) => { try { return new Date(`${key}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch { return key; } };
 const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+
+// Friendly model names (the raw ids, e.g. Groq's open model "openai/gpt-oss-20b", confused people).
+const MODEL_NAMES = {
+  'openai/gpt-oss-20b': 'Groq fast text model',
+  'qwen/qwen3.8-27b': 'Groq photo check model',
+};
+function modelName(id = '') {
+  if (MODEL_NAMES[id]) return MODEL_NAMES[id];
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id);
+  if (m) return `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}`;
+  if (/^(qwen|llama|meta-llama)/.test(id)) return 'Groq photo check model';
+  return 'Groq model';
+}
 
 function Kpi({ label, t, testid }) {
   return (
@@ -134,7 +147,7 @@ export default function AiUsagePage() {
                     {data.byModel.map((m) => (
                       <tr key={`${m.provider}${m.model}`} className="border-t" style={{ borderColor: T.borderLight }}>
                         <td className="py-2 pr-3"><span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: SHADE[m.provider] || T.textMuted }} />{PROVIDER[m.provider] || m.provider}</span></td>
-                        <td className="py-2 pr-3 font-mono text-[12px]">{m.model}{!m.priced && <span className="ml-1.5" style={{ color: T.warning }} title="No price in lib/aiPricing.js: cost counted as 0">· no price</span>}</td>
+                        <td className="py-2 pr-3" title={m.model}>{modelName(m.model)}{!m.priced && <span className="ml-1.5" style={{ color: T.warning }} title="No price in lib/aiPricing.js: cost counted as 0">· no price</span>}</td>
                         <td className={td}>{num(m.calls)}</td><td className={td}>{num(m.input)}</td><td className={td}>{num(m.cacheRead)}</td><td className={td}>{num(m.cacheWrite)}</td><td className={td}>{num(m.output)}</td>
                         <td className="py-2 text-right font-semibold tabular-nums">{usd(m.cost)}</td>
                       </tr>
@@ -145,27 +158,6 @@ export default function AiUsagePage() {
             )}
           </div>
 
-          <div className="rounded-[14px] p-5" style={CARD} data-testid="ai-top">
-            <div className="text-[15px] font-bold mb-3" style={{ color: T.textPrimary }}>The 20 most expensive calls · last 30 days</div>
-            {data.top.length === 0 ? <p className="text-[13px]" style={{ color: T.textMuted }}>No calls yet.</p> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead><tr className="text-left" style={{ color: T.textMuted }}><th className={th}>When</th><th className={th}>Feature</th><th className={th}>Model</th><th className={thr}>Input</th><th className={thr}>Output</th><th className="py-2 font-medium text-right">Cost</th></tr></thead>
-                  <tbody>
-                    {data.top.map((c, i) => (
-                      <tr key={c.id ?? i} className="border-t" style={{ borderColor: T.borderLight }}>
-                        <td className="py-2 pr-3 whitespace-nowrap" style={{ color: T.textSecondary }}>{when(c.created_at)}</td>
-                        <td className="py-2 pr-3" title={c.ref || ''}>{label(c.feature)} <span style={{ color: T.textMuted }}>· {APP[c.app] || c.app}</span>{!c.ok && <span style={{ color: T.danger }}> · failed</span>}</td>
-                        <td className="py-2 pr-3 font-mono text-[12px]">{c.model}</td>
-                        <td className={td}>{num(c.input + c.cacheRead + c.cacheWrite)}</td><td className={td}>{num(c.output)}</td>
-                        <td className="py-2 text-right font-semibold tabular-nums">{usd(c.cost)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </>
       )}
 
@@ -177,7 +169,7 @@ export default function AiUsagePage() {
             <thead><tr className="text-left" style={{ color: T.textMuted }}><th className={th}>Model</th><th className={thr}>Input</th><th className={thr}>Output</th><th className={thr}>Cache read</th><th className={thr}>Cache write</th><th className="py-2 font-medium">Source</th></tr></thead>
             <tbody>{(data.prices || []).map((p) => (
               <tr key={p.model} className="border-t" style={{ borderColor: T.borderLight }}>
-                <td className="py-2 pr-3 font-mono text-[12px]">{p.model}</td><td className={td}>{p.input}</td><td className={td}>{p.output}</td><td className={td}>{p.cacheRead}</td><td className={td}>{p.cacheWrite}</td>
+                <td className="py-2 pr-3" title={p.model}>{modelName(p.model)}</td><td className={td}>{p.input}</td><td className={td}>{p.output}</td><td className={td}>{p.cacheRead}</td><td className={td}>{p.cacheWrite}</td>
                 <td className="py-2 text-[12px]" style={{ color: T.textSecondary }}>{p.source}</td>
               </tr>
             ))}</tbody>

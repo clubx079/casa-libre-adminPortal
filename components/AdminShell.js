@@ -23,6 +23,7 @@ const NAV = [
   ['/feedbacks', 'Feedback', 'shield'],
   ['/partners', 'Partners', 'users'],
   ['/leads', 'Leads', 'users'],
+  ['/funnels', 'Funnels', 'chart'],
   ['/inbox', 'Inbox', 'chat'],
   ['/alerts', 'Alerts', 'bell'],
   ['/campaigns', 'WhatsApp Marketing', 'chat'],

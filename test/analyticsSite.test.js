@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SITE_EXPR, siteClause, siteOf } from '../lib/analyticsSite.js';
+import { SITE_EXPR, siteClause, siteOf, NOT_FUNNEL } from '../lib/analyticsSite.js';
 
 describe('analytics country site', () => {
   it('El Salvador: its airosofts host and .com.sv both count as sv, whatever site_country says', () => {
@@ -25,13 +25,20 @@ describe('analytics country site', () => {
     expect(siteClause('SV')).toBe(` AND ${SITE_EXPR} = 'sv'`);
     expect(siteClause('ar')).toBe(` AND ${SITE_EXPR} = 'ar'`);   // a country without a site yet → its own (empty) data
     expect(siteClause('py')).toBe(` AND ${SITE_EXPR} = 'py'`);
-    expect(siteClause('')).toBe('');
-    expect(siteClause("py' OR 1=1")).toBe('');
+    expect(siteClause('')).toBe(` AND ${NOT_FUNNEL}`);
+    expect(siteClause("py' OR 1=1")).toBe(` AND ${NOT_FUNNEL}`);
   });
 
   it('HogQL: the sv host regex is in the expression, escaped as a HogQL string', () => {
     expect(SITE_EXPR).toContain(String.raw`casa-libre-el-salvador\\.apps\\.airosofts\\.com`);
     expect(SITE_EXPR).toContain(String.raw`'(?i)(casa-libre\\.com\\.bo)'), 'bo'`);
     expect(SITE_EXPR.indexOf("'sv'")).toBeLessThan(SITE_EXPR.indexOf('site_country'));
+  });
+
+  it('funnel-site events (funnel_site set, no site_country) never count as a country site', () => {
+    expect(siteOf({ funnel_site: 'owners', funnel_country: 'py', $host: 'vender-mi-casa.com' })).toBe('funnel');
+    expect(siteOf({ funnel_site: 'agents', $host: 'casa-libre.com.bo' })).toBe('funnel');
+    expect(SITE_EXPR.indexOf("'funnel'")).toBeLessThan(SITE_EXPR.indexOf("'bo'"));
+    expect(NOT_FUNNEL).toContain('funnel_site');
   });
 });

@@ -42,7 +42,7 @@ export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const cc = activeCountry();
   const d = Number(new URL(req.url).searchParams.get('days'));
-  const days = [7, 28, 90].includes(d) ? d : 28;
+  const days = [7, 28, 90].includes(d) ? d : 7;
   const key = `${cc}:${days}`;
   const fresh = new URL(req.url).searchParams.get('fresh') === '1';
   const hit = cache.get(key);

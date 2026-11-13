@@ -204,7 +204,7 @@ function ResubmitCard() {
 }
 
 export default function SearchConsolePage() {
-  const [days, setDays] = useState(28);
+  const [days, setDays] = useState(7);   // default: last 7 days
   const [reload, setReload] = useState(0);   // bumps → reload ignoring the server cache
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');

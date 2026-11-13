@@ -145,6 +145,64 @@ function IndexCard({ sitemaps }) {
   );
 }
 
+
+// "Ask Google to re-read the sitemaps": resubmits each country's sitemap one after the other,
+// showing progress. Google has no API to request indexing of single pages, so this is the way.
+const ALL = ['py', 'bo', 'uy', 've', 'sv'];
+function ResubmitCard() {
+  const [rows, setRows] = useState({});   // cc -> { state: 'wait'|'run'|'ok'|'err', urls, error, needsReconnect }
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    setRows(Object.fromEntries(ALL.map((c) => [c, { state: 'wait' }])));
+    for (const c of ALL) {
+      setRows((r) => ({ ...r, [c]: { state: 'run' } }));
+      try {
+        const j = await fetch(`/api/search-console/resubmit?cc=${c}`, { method: 'POST' }).then((x) => x.json());
+        setRows((r) => ({ ...r, [c]: { state: j.ok ? 'ok' : 'err', ...j } }));
+      } catch (e) {
+        setRows((r) => ({ ...r, [c]: { state: 'err', error: String(e) } }));
+      }
+    }
+    setBusy(false);
+  };
+  const done = ALL.filter((c) => rows[c] && ['ok', 'err'].includes(rows[c].state)).length;
+  const reconnect = ALL.some((c) => rows[c]?.needsReconnect);
+  const icon = { wait: '○', run: '…', ok: '✓', err: '✗' };
+  return (
+    <div className="rounded-[14px] p-5" style={CARD} data-testid="gsc-resubmit">
+      <div className="text-[15px] font-bold mb-1" style={{ color: T.textPrimary }}>Ask Google to re-read the sitemaps</div>
+      <p className="text-[12px] mb-3" style={{ color: T.textMuted }}>
+        Resubmits the sitemap of all 5 country sites so Google fetches the new and updated pages sooner. Google decides when and what to index; it has no way to request indexing of single pages through its API.
+      </p>
+      <button type="button" onClick={run} disabled={busy} className="px-4 py-2 rounded-full text-[13px] font-semibold disabled:opacity-60" style={{ background: T.textPrimary, color: '#fff' }}>
+        {busy ? `Resubmitting… ${done} of ${ALL.length}` : 'Resubmit sitemaps (all 5 countries)'}
+      </button>
+      {busy && <div className="h-1.5 rounded-full mt-3 overflow-hidden" style={{ background: T.borderLight }}><div className="h-full transition-all" style={{ width: `${(done / ALL.length) * 100}%`, background: T.success }} /></div>}
+      {Object.keys(rows).length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {ALL.map((c) => rows[c] && (
+            <li key={c} className="text-[13px] flex gap-2" style={{ color: rows[c].state === 'err' ? T.danger : rows[c].state === 'ok' ? T.success : T.textSecondary }}>
+              <span className="w-4 text-center">{icon[rows[c].state]}</span>
+              <span className="font-semibold w-[90px]">{COUNTRY_NAME[c]}</span>
+              <span style={{ color: T.textSecondary }}>
+                {rows[c].state === 'ok' && `submitted · ${num(rows[c].urls)} pages in the sitemap`}
+                {rows[c].state === 'err' && (rows[c].needsReconnect ? 'needs Search Console write access (see below)' : rows[c].error)}
+                {rows[c].state === 'run' && 'submitting…'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {reconnect && (
+        <p className="text-[12.5px] mt-3" style={{ color: T.textBody }}>
+          The Google connection is read-only. Reconnect it once with write access: <a href="/api/google/oauth/start" className="underline font-semibold">Connect Google again</a>, then save the new refresh token as <code>GOOGLE_ADS_REFRESH_TOKEN</code> and restart the admin.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function SearchConsolePage() {
   const [days, setDays] = useState(28);
   const [data, setData] = useState(null);
@@ -179,12 +237,12 @@ export default function SearchConsolePage() {
       )}
       {data?.access && (
         <>
-          <div className="text-[12.5px]" style={{ color: T.textMuted }}>{dayLabel(data.period.start)} – {dayLabel(data.period.end)} · property {data.property}</div>
+          <div className="text-[12.5px]" style={{ color: T.textMuted }}>{dayLabel(data.period.start)} – {dayLabel(data.period.end)} · property {data.property} · Changes are against the previous {data.days} days. Green = better, red = worse (for average position, a higher number is worse).</div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="gsc-kpis">
-            <Kpi label="Clicks" value={num(data.totals.clicks)} delta={change(data.totals.clicks, data.previous.clicks)} />
-            <Kpi label="Impressions" value={num(data.totals.impressions)} delta={change(data.totals.impressions, data.previous.impressions)} />
-            <Kpi label="CTR" value={pct(data.totals.ctr)} delta={change(data.totals.ctr, data.previous.ctr, { ratio: true })} />
-            <Kpi label="Average position" value={pos(data.totals.position)} delta={change(data.totals.position, data.previous.position, { lowerIsBetter: true })} hint="Lower is better (1 = top of Google)" />
+            <Kpi label="Clicks" value={num(data.totals.clicks)} delta={change(data.totals.clicks, data.previous.clicks)} hint="People who clicked our site in Google's search results and came to it." />
+            <Kpi label="Impressions" value={num(data.totals.impressions)} delta={change(data.totals.impressions, data.previous.impressions)} hint="Times our site appeared in Google's search results, clicked or not." />
+            <Kpi label="CTR (click-through rate)" value={pct(data.totals.ctr)} delta={change(data.totals.ctr, data.previous.ctr, { ratio: true })} hint="Clicks ÷ impressions: of the people who saw us in Google, how many clicked." />
+            <Kpi label="Average position" value={pos(data.totals.position)} delta={change(data.totals.position, data.previous.position, { lowerIsBetter: true })} hint="Our average rank in Google's results: 1 = first result, 10 = end of page 1, 11+ = page 2 or later. Lower is better." />
           </div>
           <div className="grid lg:grid-cols-2 gap-4">
             <Bars title="Clicks per day" daily={data.daily} field="clicks" color={CLICK} />
@@ -197,6 +255,7 @@ export default function SearchConsolePage() {
             <Table title="Where searchers are" rows={data.countries} first={(r) => CC3[r.key] || String(r.key || '').toUpperCase()} firstLabel="Country" />
           </div>
           <IndexCard sitemaps={data.sitemaps || []} />
+          <ResubmitCard />
         </>
       )}
     </div>

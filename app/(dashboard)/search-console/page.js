@@ -104,6 +104,8 @@ function IndexCard({ sitemaps }) {
     fetch('/api/search-console/index', { method, cache: 'no-store' }).then((r) => r.json())
       .then((j) => (j.error ? setErr(j.error) : setRes(j))).catch((e) => setErr(String(e))).finally(() => setBusy(false));
   };
+  // Runs on its own when the page opens (the result is cached 12 h on the server, so a reload is instant).
+  useEffect(() => { run('GET'); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   const submitted = sitemaps.reduce((n, s) => n + s.submitted, 0);
   return (
     <div className="rounded-[14px] p-5" style={CARD} data-testid="gsc-index">
@@ -119,7 +121,7 @@ function IndexCard({ sitemaps }) {
       </div>
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => run('POST')} disabled={busy} className="px-4 py-2 rounded-full text-[13px] font-semibold disabled:opacity-60" style={{ background: T.textPrimary, color: '#fff' }}>
-          {busy ? 'Checking 40 pages… (about a minute)' : res ? 'Check again' : 'Check index now'}
+          {busy ? 'Checking 40 pages with Google… (about a minute)' : 'Check again'}
         </button>
         {res && <span className="text-[12px]" style={{ color: T.textMuted }}>Checked {new Date(res.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {num(res.inSitemap)} pages read from the live sitemap</span>}
       </div>
@@ -188,7 +190,7 @@ export default function SearchConsolePage() {
             <Bars title="Clicks per day" daily={data.daily} field="clicks" color={CLICK} />
             <Bars title="Impressions per day" daily={data.daily} field="impressions" color={IMPR} />
           </div>
-          <Table title="Keywords we rank for" note="The searches that showed the site in Google, top 50 by clicks." rows={data.queries} first={(r) => r.key} firstLabel="Search" />
+          <Table title="Keywords we rank for" note="The searches that showed the site in Google, top 50 by clicks, with an English translation." rows={data.queries} first={(r) => (<><span>{r.key}</span>{r.en && r.en.toLowerCase() !== String(r.key).toLowerCase() && <span className="block text-[12px] italic" style={{ color: T.textMuted }}>{r.en}</span>}</>)} firstLabel="Search (English below)" />
           <Table title="Top pages" rows={data.pages} first={(r) => pathOf(r.key)} firstLabel="Page" />
           <div className="grid lg:grid-cols-2 gap-4">
             <Table title="Devices" rows={data.devices} first={(r) => DEVICE[r.key] || r.key} firstLabel="Device" />

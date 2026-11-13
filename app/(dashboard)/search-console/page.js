@@ -137,7 +137,7 @@ function IndexCard({ sitemaps }) {
       {sitemaps.length > 0 && (
         <div className="mt-4 text-[12px]" style={{ color: T.textSecondary }}>
           {sitemaps.map((s) => (
-            <div key={s.path}>Sitemap {pathOf(s.path)} · {num(s.submitted)} pages · last read by Google {s.lastDownloaded ? dayLabel(s.lastDownloaded.slice(0, 10)) : '—'}{s.errors ? ` · ${s.errors} errors` : ''}{s.warnings ? ` · ${s.warnings} warnings` : ''}</div>
+            <div key={s.path}>Sitemap {pathOf(s.path)} · {num(s.submitted)} pages · last submitted {s.lastSubmitted ? new Date(s.lastSubmitted).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} · last read by Google {s.lastDownloaded ? new Date(s.lastDownloaded).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}{s.errors ? ` · ${s.errors} errors` : ''}{s.warnings ? ` · ${s.warnings} warnings` : ''}</div>
           ))}
         </div>
       )}
@@ -205,16 +205,17 @@ function ResubmitCard() {
 
 export default function SearchConsolePage() {
   const [days, setDays] = useState(28);
+  const [reload, setReload] = useState(0);   // bumps → reload ignoring the server cache
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   useEffect(() => {
     let cancelled = false;
     setData(null); setErr('');
-    fetch(`/api/search-console?days=${days}`, { cache: 'no-store' }).then((r) => r.json())
+    fetch(`/api/search-console?days=${days}${reload ? '&fresh=1' : ''}`, { cache: 'no-store' }).then((r) => r.json())
       .then((j) => { if (!cancelled) (j.error ? setErr(j.error) : setData(j)); })
       .catch((e) => { if (!cancelled) setErr(String(e)); });
     return () => { cancelled = true; };
-  }, [days]);
+  }, [days, reload]);
 
   const country = data ? (COUNTRY_NAME[data.country] || String(data.country || '').toUpperCase()) : '';
   return (
@@ -225,6 +226,7 @@ export default function SearchConsolePage() {
         action={country ? <Pill tone="ink">{country}</Pill> : null}
       />
       <div className="flex gap-2">
+        <button type="button" onClick={() => setReload((n) => n + 1)} className="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border ml-auto" style={{ color: T.textSecondary, borderColor: T.borderLight }}>Refresh from Google</button>
         {RANGES.map(([d, l]) => (
           <button key={d} type="button" onClick={() => setDays(d)} className="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border" style={days === d ? { background: T.textPrimary, color: '#fff', borderColor: T.textPrimary } : { color: T.textSecondary, borderColor: T.borderLight }}>{l}</button>
         ))}

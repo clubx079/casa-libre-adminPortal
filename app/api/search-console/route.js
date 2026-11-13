@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { activeCountry } from '@/lib/adminCountry';
-import { overview } from '@/lib/searchConsole';
+import { overview, sitemapsFor } from '@/lib/searchConsole';
 import { translateText } from '@/lib/groqTranslate';
 import { translateManyToEnglish } from '@/lib/translate';
 
@@ -44,8 +44,12 @@ export async function GET(req) {
   const d = Number(new URL(req.url).searchParams.get('days'));
   const days = [7, 28, 90].includes(d) ? d : 28;
   const key = `${cc}:${days}`;
+  const fresh = new URL(req.url).searchParams.get('fresh') === '1';
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < 30 * 60_000) return NextResponse.json(hit.data);
+  // search numbers: cached 30 min (Google updates them daily); sitemaps: always read live
+  if (!fresh && hit && Date.now() - hit.at < 30 * 60_000) {
+    return NextResponse.json({ ...hit.data, sitemaps: await sitemapsFor(cc).catch(() => hit.data.sitemaps) });
+  }
   try {
     const data = await overview(cc, days);
     if (data.access && data.queries?.length) {

@@ -1796,56 +1796,6 @@ const TABS = [
   { key: 'hub', label: 'Hub tracker', sub: 'The casa-libre.com hub and blog (all countries, ES/EN/PT): visitors, articles, and what it sends to each country site' },
 ];
 
-// "Funnel sites" card (User analytics tab): the two Spanish funnel sites' totals for the page
-// range, this country. Their events are left out of every number above (lib/analyticsSite.js);
-// the full view is Admin → Funnels. /api/funnels/analytics?summary=1
-const FunnelSitesCard = ({ master = DEFAULT_DAYS }) => {
-  const [d, setD] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    setD(null);
-    fetch(`/api/funnels/analytics?summary=1&days=${master}`).then((r) => r.json()).then((j) => { if (alive) setD(j); }).catch(() => { if (alive) setD({ error: true }); });
-    return () => { alive = false; };
-  }, [master]);
-  if (d?.configured === false) return null;
-  const t = d?.totals;
-  const fmt = (x) => (t ? Number(x || 0).toLocaleString('en-US') : '…');
-  const items = [
-    ['Visitors', t?.visitors, 'unique people'],
-    ['Page views', t?.pageviews, 'pages opened'],
-    ['Form starts', t?.formStarts, 'began the form'],
-    ['Leads', t?.leads, 'forms sent'],
-    ['Conversion', null, 'visitors → leads'],
-    ['Casa-Libre clicks', t?.clClicks, 'links to Casa-Libre'],
-  ];
-  return (
-    <div className="bg-white p-4" style={CARD} data-testid="funnel-sites-card">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <p className="text-[14px] font-semibold" style={{ color: T.textPrimary }}>Funnel sites</p>
-          <p className="text-[11.5px]" style={{ color: T.textMuted }}>
-            vender-mi-casa (owners) and como-vender-mas-propiedades (agents), {rangeLabel(master)}, this country. Not included in the numbers above.
-          </p>
-        </div>
-        <a href="/funnels" className="text-[12px] font-semibold inline-flex items-center gap-1 whitespace-nowrap hover:underline" style={{ color: T.info }}>
-          Open Funnels <ExternalLink className="w-3 h-3" />
-        </a>
-      </div>
-      {d?.error ? <p className="text-[12px]" style={{ color: T.textMuted }}>Couldn&apos;t load funnel numbers.</p> : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {items.map(([label, val, hint]) => (
-            <div key={label}>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{label}</p>
-              <p className="text-[20px] font-bold" style={{ color: T.textPrimary }}>{label === 'Conversion' ? (t ? `${t.conversion}%` : '…') : fmt(val)}</p>
-              <p className="text-[10.5px]" style={{ color: T.textMuted }}>{hint}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export default function AnalyticsPage() {
   const sp = useSearchParams();
   // Users → Activity opens /analytics?user=…: show just that user's activity (loader first).
@@ -1910,7 +1860,6 @@ export default function AnalyticsPage() {
       <div hidden={tab !== 'users'}>
         <div className="space-y-5">
           <UsersAnalytics master={master} />
-          <FunnelSitesCard master={master} />
         </div>
       </div>
       <div hidden={tab !== 'iphone'}>{iphoneSeen ? (

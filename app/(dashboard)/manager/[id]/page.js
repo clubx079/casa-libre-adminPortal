@@ -675,6 +675,25 @@ export default function ManagerReportPage({ params }) {
           {/* ── for Tahir ── */}
           {tahirBlock}
 
+          {/* ── AI Analyst: why the numbers moved (lib/analyst/run.js) ── */}
+          {r.analyst && !r.analyst.error ? (
+            <Panel title="AI Analyst — why the numbers moved" sub={r.analyst.headline}>
+              <div className="py-3 space-y-3 text-[12.5px]" style={{ color: T.textBody }}>
+                {r.analyst.summary ? <p className="leading-relaxed max-w-[80ch]">{r.analyst.summary}</p> : null}
+                {(r.analyst.anomalies || []).map((a, i) => (
+                  <div key={i}>
+                    <p className="font-semibold" style={{ color: T.textPrimary }}>{a.date} · {a.kind}: {a.what}</p>
+                    <p className="leading-relaxed">{a.cause} <span style={{ color: T.textMuted }}>({a.confidence} confidence)</span></p>
+                  </div>
+                ))}
+                {(r.analyst.nextSteps || []).length ? (
+                  <ol className="list-decimal pl-5 space-y-1">{r.analyst.nextSteps.map((n, i) => <li key={i}><b>{n.title}</b> — {n.owner}. {n.why}</li>)}</ol>
+                ) : null}
+                <p className="text-[11.5px]" style={{ color: T.textMuted }}>More detail: Admin Manager → AI Analyst. US${Number(r.analyst.costUsd || 0).toFixed(2)}</p>
+              </div>
+            </Panel>
+          ) : null}
+
           </div>
 
           {/* ── emails ── */}

@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, X, ExternalLink, Filter } from 'lucide-react';
 import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automations/ui';
 import {
-  SITE_LABEL, SITE_DOMAIN, SITE_FIELDS, FUNNEL_STATUSES, STATUS_LABEL, LEAD_RANGES, DEFAULT_LEAD_DAYS, waLink, utmOf,
+  SITE_FIELDS, FUNNEL_STATUSES, STATUS_LABEL, LEAD_RANGES, DEFAULT_LEAD_DAYS, waLink, utmOf,
 } from '@/lib/funnelLeads';
+import { sitesForCountry, funnelSite, funnelSiteLabel, leadSiteKey, OWNER_SITE_KEYS } from '@/lib/funnelSites';
 
-// Admin → Funnels: the two Spanish funnel sites (owners: vender-mi-casa, agents:
-// como-vender-mas-propiedades). Leads come from the active country's DB (funnel_leads);
-// Analytics from PostHog (events with funnel_site set). /api/funnels/*
+// Admin → Funnels: the six Casa-Libre SEO sites (lib/funnelSites.js). Leads come from the active country's DB
+// (funnel_leads; only the two owner sites have a form); Analytics from PostHog (events with funnel_site /
+// funnel_domain set). The site picker selects one or several sites; only the sites of the header's country
+// are offered. /api/funnels/*
 
 const STATUS_TONE = { new: 'info', contacted: 'warning', converted: 'success', discarded: 'neutral' };
 const n = (v) => Number(v || 0).toLocaleString('en-US');
@@ -22,6 +24,26 @@ function Segmented({ value, onChange, options, label }) {
         <button key={k} type="button" onClick={() => onChange(k)} className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
           style={value === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>{l}</button>
       ))}
+    </div>
+  );
+}
+
+// Several sites at once: "All sites" clears the selection; each site toggles on and off.
+function SitePicker({ country, value, onChange, only }) {
+  const list = sitesForCountry(country).filter((s) => !only || only.includes(s.kind));
+  const toggle = (k) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
+  return (
+    <div className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }} role="group" aria-label="Sites">
+      <button type="button" onClick={() => onChange([])} className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
+        style={!value.length ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }} aria-pressed={!value.length}>All sites</button>
+      {list.map((s) => {
+        const on = value.includes(s.key);
+        return (
+          <button key={s.key} type="button" onClick={() => toggle(s.key)} title={s.domain} aria-pressed={on}
+            className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
+            style={on ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>{s.short}</button>
+        );
+      })}
     </div>
   );
 }
@@ -41,7 +63,7 @@ function Stat({ label, value, hint, tone }) {
 
 // ── Leads tab ────────────────────────────────────────────────────────────────────────────
 function LeadsTab() {
-  const [site, setSite] = useState('all');
+  const [sites, setSites] = useState([]);
   const [status, setStatus] = useState('all');
   const [days, setDays] = useState(DEFAULT_LEAD_DAYS);
   const [q, setQ] = useState('');
@@ -55,14 +77,14 @@ function LeadsTab() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    const qs = new URLSearchParams({ site, status, days: String(days), q });
+    const qs = new URLSearchParams({ sites: sites.join(','), status, days: String(days), q });
     fetch(`/api/funnels/leads?${qs}`, { cache: 'no-store' })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => { if (alive) setData(ok ? j : { ...j, error: j?.error || 'Could not load leads' }); })
       .catch(() => { if (alive) setData({ error: 'Could not load leads' }); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [site, status, days, q, reload]);
+  }, [sites, status, days, q, reload]);
 
   const rows = data?.rows || [];
   const c = data?.counts;
@@ -88,8 +110,9 @@ function LeadsTab() {
         <Stat label="New" value={c ? n(c.status.new) : '—'} hint="Not contacted yet" tone={T.info} />
         <Stat label="Contacted" value={c ? n(c.status.contacted) : '—'} hint="We reached out" tone={T.warning} />
         <Stat label="Converted" value={c ? n(c.status.converted) : '—'} hint="Listed or became a client" tone={T.success} />
-        <Stat label="Owners site" value={c ? n(c.site.owners) : '—'} hint={`Leads from ${SITE_DOMAIN.owners}`} />
-        <Stat label="Agents site" value={c ? n(c.site.agents) : '—'} hint={`Leads from ${SITE_DOMAIN.agents}`} />
+        {OWNER_SITE_KEYS.filter((k) => funnelSite(k).countries.includes(data?.country || 'py')).map((k) => (
+          <Stat key={k} label={funnelSite(k).short} value={c ? n(c.site[k]) : '—'} hint={`Leads from ${funnelSite(k).domain}`} />
+        ))}
       </div>
       <p className="text-[11.5px] -mt-1" style={{ color: T.textMuted }}>
         Counts cover the date range below for {country || 'this country'} (every site and status).
@@ -100,7 +123,7 @@ function LeadsTab() {
           <Search className="w-4 h-4" style={{ color: T.textMuted }} />
           <input value={qLive} onChange={(e) => setQLive(e.target.value)} placeholder="Search name, WhatsApp or email…" className="flex-1 bg-transparent outline-none text-[13px]" />
         </label>
-        <Segmented label="Site" value={site} onChange={setSite} options={[['all', 'All sites'], ['owners', 'Owners'], ['agents', 'Agents']]} />
+        <SitePicker country={data?.country} value={sites} onChange={setSites} only={['owners', 'agents']} />
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls} style={selectSt} aria-label="Status">
           <option value="all">All statuses</option>
           {FUNNEL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
@@ -134,10 +157,11 @@ function LeadsTab() {
               ) : rows.map((r) => {
                 const u = utmOf(r);
                 const fields = (SITE_FIELDS[r.site] || []).map(([k]) => r[k]).filter(Boolean);
+                const key = leadSiteKey(r);
                 return (
                   <tr key={r.id} onClick={() => setOpen(r)} className="border-b cursor-pointer transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }} data-testid="funnel-lead-row">
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: T.textBody }}>{fmtDate(r.created_at, true)}</td>
-                    <td className="px-3 py-2.5"><Pill tone={r.site === 'owners' ? 'ink' : 'neutral'}>{SITE_LABEL[r.site] || r.site}</Pill></td>
+                    <td className="px-3 py-2.5"><span title={funnelSite(key)?.domain}><Pill tone={funnelSite(key)?.kind === 'owners' ? 'ink' : 'neutral'}>{funnelSite(key)?.short || key}</Pill></span></td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: T.textBody }}>
                       <span className="font-mono">{(r.country || '').toUpperCase()}</span>{r.page ? <span style={{ color: T.textMuted }}> · {r.page}</span> : null}
                     </td>
@@ -221,7 +245,7 @@ function LeadDrawer({ lead, onClose, onSaved }) {
           <div>
             <p className="text-[18px] font-bold" style={{ color: T.textPrimary }}>{lead.name}</p>
             <p className="text-[12px]" style={{ color: T.textSecondary }}>
-              {SITE_LABEL[lead.site] || lead.site} site · {(lead.country || '').toUpperCase()} · {fmtDate(lead.created_at, true)}
+              {funnelSiteLabel(leadSiteKey(lead))} · {funnelSite(leadSiteKey(lead))?.domain} · {(lead.country || '').toUpperCase()} · {fmtDate(lead.created_at, true)}
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="p-1 rounded-full hover:bg-black/5"><X className="w-5 h-5" /></button>
@@ -326,7 +350,7 @@ function Panel({ title, sub, children }) {
 
 function AnalyticsTab() {
   const [days, setDays] = useState(7);
-  const [site, setSite] = useState('all');
+  const [sites, setSites] = useState([]);
   const [scope, setScope] = useState('active');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -334,13 +358,13 @@ function AnalyticsTab() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(`/api/funnels/analytics?days=${days}&site=${site}&country=${scope}`, { cache: 'no-store' })
+    fetch(`/api/funnels/analytics?days=${days}&sites=${sites.join(',')}&country=${scope}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => { if (alive) setData(j); })
       .catch(() => { if (alive) setData({ error: 'Could not load analytics' }); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [days, site, scope]);
+  }, [days, sites, scope]);
 
   const t = data?.totals;
   const v = (x) => (loading && !t ? '…' : n(x));
@@ -349,7 +373,7 @@ function AnalyticsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Segmented label="Site" value={site} onChange={setSite} options={[['all', 'Both sites'], ['owners', 'Owners'], ['agents', 'Agents']]} />
+        <SitePicker country={data?.country === 'all' ? null : data?.country} value={sites} onChange={setSites} />
         <Segmented label="Country" value={scope} onChange={setScope} options={[['active', 'This country'], ['all', 'All countries']]} />
         <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={`${selectCls} ml-auto`} style={selectSt} aria-label="Period">
           {[7, 28, 90].map((d) => <option key={d} value={d}>Last {d} days</option>)}
@@ -361,7 +385,7 @@ function AnalyticsTab() {
       {data?.error ? <Banner>{data.error}</Banner> : null}
 
       <p className="text-[11.5px]" style={{ color: T.textMuted }}>
-        Funnel-site events only (PostHog events carrying <span className="font-mono">funnel_site</span>), {countryLabel || 'this country'}, last {days} days.
+        Events from the selected sites only (PostHog events carrying <span className="font-mono">funnel_site</span> / <span className="font-mono">funnel_domain</span>), {countryLabel || 'this country'}, last {days} days.
         These visits are not counted in the main Analytics page&apos;s site numbers.
       </p>
 
@@ -381,9 +405,9 @@ function AnalyticsTab() {
       </Panel>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Panel title="By site" sub="Owners = vender-mi-casa · Agents = como-vender-mas-propiedades.">
+        <Panel title="By site" sub="One row per site (its domain). Leads come only from the two owner sites; the others send visitors straight to Casa-Libre.">
           <Table head={['Site', 'Visitors', 'Views', 'Leads', 'CL clicks']}
-            rows={(data?.bySite || []).map((r) => [SITE_LABEL[r.site] || r.site, n(r.visitors), n(r.pageviews), n(r.leads), n(r.clClicks)])} />
+            rows={(data?.bySite || []).map((r) => [<span key="s" title={funnelSite(r.site)?.domain}>{funnelSiteLabel(r.site)}<span className="block text-[11px]" style={{ color: T.textMuted }}>{funnelSite(r.site)?.domain}</span></span>, n(r.visitors), n(r.pageviews), n(r.leads), n(r.clClicks)])} />
         </Panel>
         {data?.country === 'all' ? (
           <Panel title="By country" sub="The country section of the funnel site the visitor was on (funnel_country).">
@@ -402,7 +426,7 @@ function AnalyticsTab() {
         <div className="overflow-x-auto">
           <Table head={['Page', 'Views', 'Visitors', 'Form starts', 'Leads', 'Lead rate', 'CL clicks']}
             rows={(data?.pages || []).map((r) => [
-              <span key="p"><span className="text-[11px] mr-1.5" style={{ color: T.textMuted }}>{SITE_LABEL[r.site] || r.site}</span>{r.page}</span>,
+              <span key="p"><span className="text-[11px] mr-1.5" style={{ color: T.textMuted }}>{funnelSite(r.site)?.short || r.site}</span>{r.page}</span>,
               n(r.views), n(r.visitors), n(r.formStarts), n(r.leads), pct(r.leads, r.visitors), n(r.clClicks),
             ])} />
         </div>
@@ -433,7 +457,7 @@ export default function FunnelsPage() {
   return (
     <div className="space-y-5">
       <PageHeader title="Funnels"
-        sub="The two Spanish funnel sites: owners (vender-mi-casa) and agents (como-vender-mas-propiedades). Leads are read from the selected country's database; analytics from PostHog." />
+        sub="The six Casa-Libre SEO sites: owners (.org, .online), agents (Paraguay, Bolivia) and the two guide libraries. Pick one or several sites. Leads come from the owner sites' forms and are read from the selected country's database; analytics from PostHog." />
       <div className="flex items-center gap-6 border-b" style={{ borderColor: T.borderLight }}>
         {tabs.map(([k, l]) => (
           <button key={k} type="button" onClick={() => setTab(k)} className="pb-2.5 -mb-px text-[14px] font-semibold border-b-2 transition-colors inline-flex items-center gap-1.5"

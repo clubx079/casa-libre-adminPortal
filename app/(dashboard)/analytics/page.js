@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
 import UserTimeline from '@/components/users/UserTimeline';
 import GrowthChart from '@/components/analytics/GrowthChart';
+import HubTracker from '@/components/analytics/HubTracker';
 import { isAppPlatform } from '@/lib/analyticsPlatform';
 import { territoryList } from '@/lib/appInstalls';
 import {
@@ -1792,6 +1793,7 @@ const TABS = [
   { key: 'properties', label: 'Property analytics', sub: 'Which listings get viewed, and how often' },
   { key: 'emails', label: 'Email analytics', sub: 'Emails sent via Resend: sent, delivered, opened, clicked' },
   { key: 'whatsapp', label: 'WhatsApp analytics', sub: 'WhatsApp messages from the automations: sent, delivered, read, clicked' },
+  { key: 'hub', label: 'Hub tracker', sub: 'The casa-libre.com hub and blog (all countries, ES/EN/PT): visitors, articles, and what it sends to each country site' },
 ];
 
 // "Funnel sites" card (User analytics tab): the two Spanish funnel sites' totals for the page
@@ -1862,6 +1864,8 @@ export default function AnalyticsPage() {
   useEffect(() => { if (tab === 'iphone') setIphoneSeen(true); }, [tab]);
   const [androidSeen, setAndroidSeen] = useState(false);
   useEffect(() => { if (tab === 'android') setAndroidSeen(true); }, [tab]);
+  const [hubSeen, setHubSeen] = useState(false);
+  useEffect(() => { if (tab === 'hub') setHubSeen(true); }, [tab]);
   const active = TABS.find((t) => t.key === tab) || TABS[0];
 
   if (deep) {
@@ -1924,6 +1928,7 @@ export default function AnalyticsPage() {
       <div hidden={tab !== 'properties'}><PropertyAnalytics master={master} /></div>
       <div hidden={tab !== 'emails'}>{emailsSeen ? <EmailAnalytics master={master} /> : null}</div>
       <div hidden={tab !== 'whatsapp'}>{waSeen ? <WhatsAppAnalytics master={master} /> : null}</div>
+      <div hidden={tab !== 'hub'}>{hubSeen ? <HubTracker master={master} /> : null}</div>
     </div>
   );
 }

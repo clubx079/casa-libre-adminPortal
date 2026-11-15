@@ -31,3 +31,6 @@ yarn-error.log*
 
 .dev-control-db.json
 _*.log
+
+# AI Analyst runs (lib/analyst/run.js)
+.analyst-runs/

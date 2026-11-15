@@ -28,22 +28,18 @@ function Segmented({ value, onChange, options, label }) {
   );
 }
 
-// Several sites at once: "All sites" clears the selection; each site toggles on and off.
+// One site at a time (each site is its own website): "All sites", or one domain. Only the sites of the header's
+// country are offered; `only` limits the list to some kinds (the Leads tab: the sites that have a form).
 function SitePicker({ country, value, onChange, only }) {
   const list = sitesForCountry(country).filter((s) => !only || only.includes(s.kind));
-  const toggle = (k) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
+  const opts = [['all', 'All sites'], ...list.map((s) => [s.key, s.domain])];
   return (
-    <div className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }} role="group" aria-label="Sites">
-      <button type="button" onClick={() => onChange([])} className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
-        style={!value.length ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }} aria-pressed={!value.length}>All sites</button>
-      {list.map((s) => {
-        const on = value.includes(s.key);
-        return (
-          <button key={s.key} type="button" onClick={() => toggle(s.key)} title={s.domain} aria-pressed={on}
-            className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
-            style={on ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>{s.short}</button>
-        );
-      })}
+    <div className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }} role="radiogroup" aria-label="Site">
+      {opts.map(([k, l]) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} onClick={() => onChange(k)}
+          className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
+          style={value === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>{l}</button>
+      ))}
     </div>
   );
 }
@@ -63,7 +59,7 @@ function Stat({ label, value, hint, tone }) {
 
 // ── Leads tab ────────────────────────────────────────────────────────────────────────────
 function LeadsTab() {
-  const [sites, setSites] = useState([]);
+  const [site, setSite] = useState('all');
   const [status, setStatus] = useState('all');
   const [days, setDays] = useState(DEFAULT_LEAD_DAYS);
   const [q, setQ] = useState('');
@@ -77,14 +73,14 @@ function LeadsTab() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    const qs = new URLSearchParams({ sites: sites.join(','), status, days: String(days), q });
+    const qs = new URLSearchParams({ sites: site === 'all' ? '' : site, status, days: String(days), q });
     fetch(`/api/funnels/leads?${qs}`, { cache: 'no-store' })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => { if (alive) setData(ok ? j : { ...j, error: j?.error || 'Could not load leads' }); })
       .catch(() => { if (alive) setData({ error: 'Could not load leads' }); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [sites, status, days, q, reload]);
+  }, [site, status, days, q, reload]);
 
   const rows = data?.rows || [];
   const c = data?.counts;
@@ -111,7 +107,7 @@ function LeadsTab() {
         <Stat label="Contacted" value={c ? n(c.status.contacted) : '—'} hint="We reached out" tone={T.warning} />
         <Stat label="Converted" value={c ? n(c.status.converted) : '—'} hint="Listed or became a client" tone={T.success} />
         {OWNER_SITE_KEYS.filter((k) => funnelSite(k).countries.includes(data?.country || 'py')).map((k) => (
-          <Stat key={k} label={funnelSite(k).short} value={c ? n(c.site[k]) : '—'} hint={`Leads from ${funnelSite(k).domain}`} />
+          <Stat key={k} label={funnelSite(k).domain} value={c ? n(c.site[k]) : '—'} hint={funnelSite(k).label} />
         ))}
       </div>
       <p className="text-[11.5px] -mt-1" style={{ color: T.textMuted }}>
@@ -123,7 +119,7 @@ function LeadsTab() {
           <Search className="w-4 h-4" style={{ color: T.textMuted }} />
           <input value={qLive} onChange={(e) => setQLive(e.target.value)} placeholder="Search name, WhatsApp or email…" className="flex-1 bg-transparent outline-none text-[13px]" />
         </label>
-        <SitePicker country={data?.country} value={sites} onChange={setSites} only={['owners', 'agents']} />
+        <SitePicker country={data?.country} value={site} onChange={setSite} only={['owners']} />
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls} style={selectSt} aria-label="Status">
           <option value="all">All statuses</option>
           {FUNNEL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
@@ -161,7 +157,7 @@ function LeadsTab() {
                 return (
                   <tr key={r.id} onClick={() => setOpen(r)} className="border-b cursor-pointer transition-colors hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }} data-testid="funnel-lead-row">
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: T.textBody }}>{fmtDate(r.created_at, true)}</td>
-                    <td className="px-3 py-2.5"><span title={funnelSite(key)?.domain}><Pill tone={funnelSite(key)?.kind === 'owners' ? 'ink' : 'neutral'}>{funnelSite(key)?.short || key}</Pill></span></td>
+                    <td className="px-3 py-2.5"><span title={funnelSite(key)?.label}><Pill tone={funnelSite(key)?.kind === 'owners' ? 'ink' : 'neutral'}>{funnelSite(key)?.domain || key}</Pill></span></td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: T.textBody }}>
                       <span className="font-mono">{(r.country || '').toUpperCase()}</span>{r.page ? <span style={{ color: T.textMuted }}> · {r.page}</span> : null}
                     </td>
@@ -350,7 +346,7 @@ function Panel({ title, sub, children }) {
 
 function AnalyticsTab() {
   const [days, setDays] = useState(7);
-  const [sites, setSites] = useState([]);
+  const [site, setSite] = useState('all');
   const [scope, setScope] = useState('active');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -358,13 +354,13 @@ function AnalyticsTab() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(`/api/funnels/analytics?days=${days}&sites=${sites.join(',')}&country=${scope}`, { cache: 'no-store' })
+    fetch(`/api/funnels/analytics?days=${days}&sites=${site === 'all' ? '' : site}&country=${scope}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => { if (alive) setData(j); })
       .catch(() => { if (alive) setData({ error: 'Could not load analytics' }); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [days, sites, scope]);
+  }, [days, site, scope]);
 
   const t = data?.totals;
   const v = (x) => (loading && !t ? '…' : n(x));
@@ -373,7 +369,7 @@ function AnalyticsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <SitePicker country={data?.country === 'all' ? null : data?.country} value={sites} onChange={setSites} />
+        <SitePicker country={data?.country === 'all' ? null : data?.country} value={site} onChange={setSite} />
         <Segmented label="Country" value={scope} onChange={setScope} options={[['active', 'This country'], ['all', 'All countries']]} />
         <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={`${selectCls} ml-auto`} style={selectSt} aria-label="Period">
           {[7, 28, 90].map((d) => <option key={d} value={d}>Last {d} days</option>)}
@@ -407,7 +403,7 @@ function AnalyticsTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title="By site" sub="One row per site (its domain). Leads come only from the two owner sites; the others send visitors straight to Casa-Libre.">
           <Table head={['Site', 'Visitors', 'Views', 'Leads', 'CL clicks']}
-            rows={(data?.bySite || []).map((r) => [<span key="s" title={funnelSite(r.site)?.domain}>{funnelSiteLabel(r.site)}<span className="block text-[11px]" style={{ color: T.textMuted }}>{funnelSite(r.site)?.domain}</span></span>, n(r.visitors), n(r.pageviews), n(r.leads), n(r.clClicks)])} />
+            rows={(data?.bySite || []).map((r) => [<span key="s">{funnelSite(r.site)?.domain || r.site}<span className="block text-[11px]" style={{ color: T.textMuted }}>{funnelSiteLabel(r.site)}</span></span>, n(r.visitors), n(r.pageviews), n(r.leads), n(r.clClicks)])} />
         </Panel>
         {data?.country === 'all' ? (
           <Panel title="By country" sub="The country section of the funnel site the visitor was on (funnel_country).">
@@ -426,7 +422,7 @@ function AnalyticsTab() {
         <div className="overflow-x-auto">
           <Table head={['Page', 'Views', 'Visitors', 'Form starts', 'Leads', 'Lead rate', 'CL clicks']}
             rows={(data?.pages || []).map((r) => [
-              <span key="p"><span className="text-[11px] mr-1.5" style={{ color: T.textMuted }}>{funnelSite(r.site)?.short || r.site}</span>{r.page}</span>,
+              <span key="p"><span className="text-[11px] mr-1.5" style={{ color: T.textMuted }}>{funnelSite(r.site)?.domain || r.site}</span>{r.page}</span>,
               n(r.views), n(r.visitors), n(r.formStarts), n(r.leads), pct(r.leads, r.visitors), n(r.clClicks),
             ])} />
         </div>

@@ -136,6 +136,21 @@ function Result({ run }) {
         </div>
       </Card>
 
+
+      <Card title="What to do next to improve">
+        <ol className="space-y-2.5">
+          {(r.nextSteps || []).map((n, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="text-xs font-bold w-5 shrink-0 pt-0.5" style={{ color: T.textMuted }}>{i + 1}</span>
+              <div>
+                <p className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{n.title} <Pill tone={TONE[n.priority] || 'neutral'}>{n.priority}</Pill> <Pill tone="ink">{n.owner}</Pill></p>
+                <p className="text-[13px]" style={{ color: T.textBody }}>{n.why}{n.impact ? <span style={{ color: T.success }}> → {n.impact}</span> : null}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </Card>
+
       {(r.anomalies || []).length ? (
         <Card title="Anomalies — what happened and why">
           <div className="overflow-x-auto">
@@ -201,19 +216,6 @@ function Result({ run }) {
         </Card>
       </div>
 
-      <Card title="Next steps">
-        <ol className="space-y-2.5">
-          {(r.nextSteps || []).map((n, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="text-xs font-bold w-5 shrink-0 pt-0.5" style={{ color: T.textMuted }}>{i + 1}</span>
-              <div>
-                <p className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{n.title} <Pill tone={TONE[n.priority] || 'neutral'}>{n.priority}</Pill> <Pill tone="ink">{n.owner}</Pill></p>
-                <p className="text-[13px]" style={{ color: T.textBody }}>{n.why}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Card>
 
       {(r.dataGaps || []).length ? <Banner tone="warning"><b>Data gaps:</b> {r.dataGaps.join(' · ')}</Banner> : null}
       <DataUsed run={run} />

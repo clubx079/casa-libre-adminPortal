@@ -226,6 +226,7 @@ const SOURCE_LABELS = {
   email: 'Email', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', reddit: 'Reddit',
   'whatsapp campaign': 'WhatsApp campaign',   // a batch from WhatsApp campaigns (/r/wa?b=…)
   'referral link': 'Referral link · a user shared their link (/ref/…)',
+  gbp: 'Google Business Profile · the website link on Google Maps (/r/gbp)',
 };
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
 const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());

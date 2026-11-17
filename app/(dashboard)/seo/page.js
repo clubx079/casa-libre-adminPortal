@@ -185,11 +185,14 @@ function Signals({ data }) {
   );
   const c = data.counts || {};
   return (
+    <div className="space-y-4">
+    <Banner tone="warning"><b>Keyword Planner: waiting for Basic access.</b> Real search volumes for all of the country (including searches we don&apos;t rank for yet) need Google Ads API Basic access; until then demand comes from our own Ads terms, Search Console and the site search box.</Banner>
     <div className="grid gap-4 lg:grid-cols-2">
       {card('Google Ads search terms', `${num(c.ads)} terms · last 30 days · collected ${data.date || '—'}`, ['Search', 'Clicks', 'Conv.', 'Cost'], data.ads || [], (r) => [r.term, num(r.metrics.clicks), Number(r.metrics.conversions || 0).toFixed(1), `$${Number(r.metrics.cost || 0).toFixed(2)}`])}
       {card('Search Console queries', `${num(c.gsc)} query × page rows · last 28 days`, ['Search · page', 'Impr.', 'CTR', 'Pos.'], data.gsc || [], (r) => [<span key="q">{r.term}<div className="text-[11px] font-mono" style={{ color: T.textMuted }}>{r.page}</div></span>, num(r.metrics.impressions), pct(r.metrics.ctr), Number(r.metrics.position).toFixed(1)])}
       {card('Site search box', `${num(c.site_search)} searches typed on Casa-Libre · last 30 days (PostHog search_applied)`, ['Typed', 'Times', 'People'], data.site || [], (r) => [r.term, num(r.metrics.searches), num(r.metrics.people)])}
       {card('Google Trends — trending now', 'Hourly readings of the trending-searches RSS; property / economy topics become trend posts', ['Topic', 'Traffic', 'Seen'], data.trends || [], (r) => [<span key="t">{r.title} <Pill tone={r.topic === 'property' ? 'success' : r.topic === 'economy' ? 'info' : 'neutral'}>{r.topic}</Pill></span>, r.traffic_label || '—', fmtDate(r.seen_at, true)])}
+    </div>
     </div>
   );
 }

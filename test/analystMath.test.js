@@ -3,7 +3,7 @@ import {
   analystPeriod, fillDays, dimensionTable, compareDimension, findAnomalies, drillDown, hourProfile, groupAnomalies, periodSum, dayList, addDays,
   normPath, normLang, utcOfLocalMidnight,
 } from '../lib/analyst/math.js';
-import { searchBrief, ANALYST_SCHEMA, CHANNELS } from '../lib/analyst/prompt.js';
+import { ANALYST_SCHEMA, CHANNELS, modelPack } from '../lib/analyst/prompt.js';
 
 const now = new Date('2026-11-15T15:00:00Z');
 
@@ -81,9 +81,11 @@ describe('helpers', () => {
   it('local midnight in Asunción → UTC', () => {
     expect(utcOfLocalMidnight('2026-10-26', 'America/Asuncion')).toBe('2026-10-26 03:00:00');
   });
-  it('search brief carries the anomaly facts; schema covers every channel', () => {
-    const pack = { site: 'https://casa-libre.com.py', country: 'py', sections: { anomalies: { days: [{ date: '2026-10-26', metrics: [{ metric: 'visitors', value: 569, baselineAvg7: 178, kind: 'spike' }], whatChanged: { countries: [{ key: 'Brazil', diff: 315 }] } }] } } };
-    expect(searchBrief(pack)).toContain('Brazil +315');
+  it('schema covers every channel; the model pack drops the fx series but keeps its summary', () => {
     expect(ANALYST_SCHEMA.properties.channels.items.properties.channel.enum).toEqual(CHANNELS);
+    expect(ANALYST_SCHEMA.properties.changes.items.properties.confidence.enum).toEqual(['strong', 'possible', 'guess']);
+    const p = modelPack({ dates: ['x'], outsideWorld: { fx: { base: 'USD', dates: ['a'], series: { PYG: [1] }, changes: { PYG: { changePct: 1 } } } } });
+    expect(p.dates).toBeUndefined();
+    expect(p.outsideWorld.fx).toEqual({ base: 'USD', changes: { PYG: { changePct: 1 } } });
   });
 });

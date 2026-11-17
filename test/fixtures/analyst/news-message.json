@@ -1,0 +1,38 @@
+{
+ "stop_reason": "end_turn",
+ "usage": {
+  "server_tool_use": {
+   "web_search_requests": 3
+  }
+ },
+ "content": [
+  {
+   "type": "server_tool_use",
+   "id": "s1",
+   "name": "web_search",
+   "input": {
+    "query": "Ueno Bank resolución"
+   }
+  },
+  {
+   "type": "web_search_tool_result",
+   "tool_use_id": "s1",
+   "content": [
+    {
+     "type": "web_search_result",
+     "url": "https://www.emol.com/noticias/Internacional/2026/11/07/1216410/banco-ueno-paraguay-clientes.html",
+     "title": "Ueno"
+    },
+    {
+     "type": "web_search_result",
+     "url": "https://www.lanacion.com.py/negocios/2026/11/16/che-roga-pora-cambia-el-sistema/",
+     "title": "Che Róga Porã"
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "text": "{\"events\":[{\"date\":\"2026-11-03\",\"country\":\"PY\",\"category\":\"economy\",\"title\":\"Central bank puts Ueno Bank into resolution\",\"description\":\"The BCP announced the resolution of Ueno Bank; about 2.94 million clients.\",\"url\":\"https://www.emol.com/noticias/Internacional/2026/11/07/1216410/banco-ueno-paraguay-clientes.html\",\"sourceName\":\"Emol\"},{\"date\":\"2026-11-16\",\"country\":\"PY\",\"category\":\"economy\",\"title\":\"Che Róga Porã applications move to banks\",\"description\":\"AFD changed how people apply.\",\"url\":\"https://www.lanacion.com.py/negocios/2026/11/16/che-roga-pora-cambia-el-sistema/?utm_source=x\",\"sourceName\":\"La Nación\"},{\"date\":\"2026-11-12\",\"country\":\"PY\",\"category\":\"politics\",\"title\":\"Invented event\",\"description\":\"Not in the results.\",\"url\":\"https://example.com/made-up\",\"sourceName\":\"x\"},{\"date\":\"2026-09-01\",\"country\":\"PY\",\"category\":\"economy\",\"title\":\"Too early\",\"description\":\"\",\"url\":\"https://www.emol.com/noticias/Internacional/2026/11/07/1216410/banco-ueno-paraguay-clientes.html\",\"sourceName\":\"x\"},{\"date\":\"2026-11-05\",\"country\":\"PY\",\"category\":\"weather\",\"title\":\"Bad category\",\"description\":\"\",\"url\":\"https://www.emol.com/noticias/Internacional/2026/11/07/1216410/banco-ueno-paraguay-clientes.html\",\"sourceName\":\"x\"}],\"note\":\"ok\"}"
+  }
+ ]
+}

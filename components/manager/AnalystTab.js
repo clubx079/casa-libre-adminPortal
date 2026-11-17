@@ -1,28 +1,48 @@
 'use client';
 // Admin Manager → "AI Analyst": pick a country (or all) and a period, run the analysis, read why
-// the numbers moved. Data: /api/manager/analyst (lib/analyst/*). Runs are kept by the server
-// (memory + local file), not in the database.
+// the numbers moved. Layout: summary + what to do next → charts (components/manager/analystCharts.js)
+// → what changed (each finding with its evidence and confidence) → outside world (timeline with
+// the model's verdict) → details. Data: /api/manager/analyst (lib/analyst/*). Runs are kept by
+// the server (memory + local file), not in the database.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { T, CARD, Pill, Banner, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
+import AnalystCharts, { CatChip } from '@/components/manager/analystCharts';
 
 const COUNTRIES = [['py', 'Paraguay'], ['bo', 'Bolivia'], ['uy', 'Uruguay'], ['ve', 'Venezuela'], ['sv', 'El Salvador']];
 const CHANNEL_LABEL = {
   organic_google: 'Organic Google', google_ads: 'Google Ads', ai_search: 'ChatGPT / AI search', whatsapp: 'WhatsApp',
-  email: 'Email', funnels: 'Funnel sites', hub: 'casa-libre.com hub', direct_other: 'Direct & other',
+  email: 'Email', social: 'Facebook / social', funnels: 'Funnel sites', hub: 'casa-libre.com hub', direct_other: 'Direct & other',
 };
-const STAGE = { collect: 'Collecting the numbers (PostHog, Search Console, Google Ads, sends)…', search: 'Looking up outside events on the anomaly days…', analyze: 'Claude is reading everything…' };
+const STAGE = {
+  collect: 'Collecting the numbers (PostHog, Search Console, Google Ads, sends, bot signals)…',
+  outside: 'Building the outside-world timeline (exchange rates, holidays, disasters, weather, news search)…',
+  search: 'Looking up outside events…',
+  analyze: 'Claude is reading everything…',
+};
 const TONE = { high: 'danger', medium: 'warning', low: 'neutral' };
 const TREND = { up: ['success', 'Up'], down: ['danger', 'Down'], flat: ['neutral', 'Flat'], new: ['info', 'New'], no_data: ['neutral', 'No data'] };
+const CONF = { strong: ['success', 'Strong'], possible: ['warning', 'Possible'], guess: ['neutral', 'Guess'] };
+const VERDICT = { working: ['success', 'Working'], not_working: ['danger', 'Not working'], watch: ['info', 'Watch'], noise: ['neutral', 'Noise'] };
+const EFFECT = { plausible: ['warning', 'Plausibly affected us'], unlikely: ['neutral', 'Unlikely'], no_visible_effect: ['neutral', 'No visible effect'] };
+const SRC_LABEL = {
+  site_analytics: 'Site analytics', funnel_sites: 'Funnel sites', hub: 'Hub', search_console: 'Search Console', google_ads: 'Google Ads', our_sends: 'Our sends',
+  funnel_leads: 'Funnel leads', bot_signals: 'Bot signals', anomalies: 'Unusual days', outside_world: 'Outside world', exchange_rates: 'Exchange rates',
+};
+const EV_SOURCE = { fx: 'exchange rates', holidays: 'public holidays', gdacs: 'GDACS', weather: 'Open-Meteo', web_search: 'web search' };
 const countryName = (cc) => (cc === 'all' ? 'All countries' : (COUNTRIES.find(([c]) => c === cc) || [cc, cc.toUpperCase()])[1]);
 const fmtN = (v, unit = '') => (v == null ? '—' : `${unit === 'US$' ? 'US$' : ''}${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
 const pctTxt = (p) => (p == null ? 'new' : `${p > 0 ? '+' : ''}${p}%`);
+const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'source'; } };
 
-function Card({ title, children, right }) {
+function Card({ title, children, right, sub }) {
   return (
     <div className="bg-white p-5" style={CARD}>
       {title ? (
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: T.textPrimary }}>{title}</h3>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: T.textPrimary }}>{title}</h3>
+            {sub ? <p className="text-[11.5px]" style={{ color: T.textMuted }}>{sub}</p> : null}
+          </div>
           {right}
         </div>
       ) : null}
@@ -35,7 +55,7 @@ function SmallTable({ head, rows }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead><tr style={{ color: T.textMuted }}>{head.map((h, i) => <th key={h} className={`py-1.5 pr-3 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+        <thead><tr style={{ color: T.textMuted }}>{head.map((h, i) => <th key={`${h}${i}`} className={`py-1.5 pr-3 font-semibold ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-t" style={{ borderColor: T.borderLight }}>
@@ -48,75 +68,182 @@ function SmallTable({ head, rows }) {
   );
 }
 
-function DataUsed({ run }) {
+const Label = ({ children }) => <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: T.textMuted }}>{children}</p>;
+
+function Collapsible({ title, sub, children }) {
   const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white" style={CARD}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-3.5 text-left">
+        <span className="text-sm font-semibold" style={{ color: T.textPrimary }}>{title}</span>
+        <span className="text-xs" style={{ color: T.textMuted }}>{open ? 'Hide' : 'Show'}{sub ? ` · ${sub}` : ''}</span>
+      </button>
+      {open ? <div className="px-5 pb-5 space-y-5 border-t pt-4" style={{ borderColor: T.borderLight }}>{children}</div> : null}
+    </div>
+  );
+}
+
+function Changes({ items }) {
+  return (
+    <Card title="What changed" sub="What the data shows, then the possible explanation. Every number is checked against the data in code.">
+      <div className="divide-y" style={{ borderColor: T.borderLight }}>
+        {items.map((c, i) => {
+          const [ct, cl] = CONF[c.confidence] || CONF.guess;
+          const [vt, vl] = VERDICT[c.verdict] || VERDICT.watch;
+          return (
+            <div key={i} className="py-3 first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[13.5px] font-semibold" style={{ color: T.textPrimary }}>{c.title}</p>
+                <Pill tone={ct}>{cl}</Pill><Pill tone={vt}>{vl}</Pill>
+              </div>
+              <p className="text-[12px] mt-0.5" style={{ color: T.textMuted }}>{c.metric} · {c.when} · <span className="tabular-nums font-semibold" style={{ color: c.direction === 'up' ? T.success : c.direction === 'down' ? T.danger : T.textSecondary }}>{c.change}</span></p>
+              <p className="text-[13px] mt-1.5" style={{ color: T.textBody }}><b>Data shows:</b> {c.dataShows}</p>
+              <ul className="mt-1 space-y-0.5">
+                {(c.evidence || []).map((e, j) => (
+                  <li key={j} className="text-[12px] flex gap-2" style={{ color: T.textSecondary }}>
+                    <span title={e.inData === false ? `Not found in the data: ${(e.notInData || []).join(', ')}` : e.inData ? 'Numbers found in the data' : 'No numbers to check'}
+                      style={{ color: e.inData === false ? T.danger : e.inData ? T.success : T.textMuted }}>{e.inData === false ? '✕' : e.inData ? '✓' : '·'}</span>
+                    <span><span style={{ color: T.textMuted }}>{SRC_LABEL[e.source] || e.source} · {e.metric} · {e.period}:</span> {e.value}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[13px] mt-1.5" style={{ color: T.textBody }}><b>Possible explanation:</b> {c.explanation}</p>
+              {c.guardNote ? <p className="text-[11.5px] mt-1" style={{ color: T.warning }}>{c.guardNote}</p> : null}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function OutsideWorld({ pack, verdicts }) {
+  const ow = pack.outsideWorld || {};
+  const events = ow.events || [];
+  const byId = new Map((verdicts || []).map((v) => [v.eventId, v]));
+  const [showAll, setShowAll] = useState(false);
+  const assessed = events.filter((e) => byId.has(e.id));
+  const rest = events.filter((e) => !byId.has(e.id));
+  const shown = showAll ? [...assessed, ...rest] : assessed.length ? assessed : rest.slice(0, 8);
+  return (
+    <Card title="Outside world" sub={ow.window ? `${ow.window.start} → ${ow.window.end} · ${(ow.countries || []).map((c) => c.name).join(', ')}` : ''}
+      right={events.length > shown.length || showAll ? <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }} onClick={() => setShowAll((s) => !s)}>{showAll ? 'Only the assessed ones' : `All ${events.length} events`}</button> : null}>
+      {ow.error ? <p className="text-xs" style={{ color: T.danger }}>Could not build the timeline: {ow.error}</p> : null}
+      {!events.length && !ow.error ? <p className="text-xs" style={{ color: T.textMuted }}>No outside events found for this period.</p> : null}
+      <ul className="divide-y" style={{ borderColor: T.borderLight }}>
+        {shown.map((e) => {
+          const v = byId.get(e.id);
+          const [et, el] = v ? EFFECT[v.effect] || EFFECT.unlikely : ['neutral', 'Not assessed'];
+          return (
+            <li key={e.id} className="py-2.5 first:pt-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[12px] font-semibold tabular-nums" style={{ color: T.textPrimary }}>{e.date}</span>
+                <CatChip category={e.category} />
+                <span className="text-[11px]" style={{ color: T.textMuted }}>{e.country} · {EV_SOURCE[e.source] || e.source}</span>
+                <Pill tone={et}>{el}</Pill>
+              </div>
+              <p className="text-[13px] mt-1" style={{ color: T.textBody }}>
+                {e.title}{e.url ? <> · <a href={e.url} target="_blank" rel="noreferrer" className="underline" style={{ color: T.info }}>{host(e.url)}</a></> : null}
+              </p>
+              {e.detail && e.source === 'web_search' ? <p className="text-[12px]" style={{ color: T.textSecondary }}>{e.detail}</p> : null}
+              {v ? <p className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}><b>Effect on us{v.lag && v.lag !== 'none' ? ` (${v.lag})` : ''}:</b> {v.reasoning}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+      {(ow.errors || []).length ? <p className="text-[11px] mt-2" style={{ color: T.textMuted }}>Not available: {ow.errors.join('; ')}</p> : null}
+    </Card>
+  );
+}
+
+const BOT_V = { automated_likely: ['danger', 'Automated likely'], mixed: ['warning', 'Mixed'], human_like: ['success', 'Real people'], too_small: ['neutral', 'Too small'] };
+function BotTable({ b }) {
+  if (!b) return null;
+  if (b.error) return <p className="text-xs" style={{ color: T.danger }}>Bot signals unavailable: {b.error}</p>;
+  const row = (r) => {
+    const [tone, label] = BOT_V[r.verdict] || BOT_V.too_small;
+    return [r.key, fmtN(r.visitorDays), `${r.oneEventOnlyPct ?? '—'}%`, `${r.under5sPct ?? '—'}%`, fmtN(r.pageviewsPerVisit), `${r.medianSeconds ?? '—'}s`, `${r.topDeviceSharePct ?? '—'}%`, `${r.topNetworkSharePct ?? '—'}%`, <Pill key="v" tone={tone}>{label}</Pill>];
+  };
+  const head = ['', 'Visits', '1 event', '< 5 s', 'Pages/visit', 'Median', 'Top device', 'Top network', 'Verdict'];
+  return (
+    <div className="space-y-3">
+      <p className="text-[12px]" style={{ color: T.textSecondary }}>
+        {b.automatedLikely?.length ? `Flagged as automated: ${b.automatedLikely.join(' · ')}.` : 'No source, country or unusual day looks automated.'} Site average: {b.site?.pageviewsPerVisit} pages per visit, median {b.site?.medianSeconds}s.
+      </p>
+      <div><Label>By source</Label><SmallTable head={head} rows={(b.bySource || []).map(row)} /></div>
+      <div><Label>By visitor country</Label><SmallTable head={head} rows={(b.byCountry || []).map(row)} /></div>
+      {(b.anomalyDays || []).length ? <div><Label>Unusual days</Label><SmallTable head={head} rows={b.anomalyDays.map((d) => row({ ...d, key: d.date }))} /></div> : null}
+    </div>
+  );
+}
+
+function Details({ run }) {
+  const r = run.result || {};
   const pack = run.pack || {};
   const s = pack.sections || {};
   const b = s.mainSite?.breakdowns || {};
   const dim = (k, label) => (b[k] ? (
     <div key={k}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: T.textMuted }}>{label}</p>
-      <SmallTable head={['', 'This period', 'Previous', 'Change']} rows={[...b[k].top.slice(0, 8), ...b[k].otherRisers.slice(0, 3)].map((r) => [r.key, fmtN(r.cur), fmtN(r.prev), pctTxt(r.changePct)])} />
+      <Label>{label}</Label>
+      <SmallTable head={['', 'This period', 'Previous', 'Change']} rows={[...b[k].top.slice(0, 8), ...b[k].otherRisers.slice(0, 3)].map((x) => [x.key, fmtN(x.cur), fmtN(x.prev), pctTxt(x.changePct)])} />
     </div>
   ) : null);
   return (
-    <div className="bg-white" style={CARD}>
-      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-3.5 text-left">
-        <span className="text-sm font-semibold" style={{ color: T.textPrimary }}>Data used</span>
-        <span className="text-xs" style={{ color: T.textMuted }}>{open ? 'Hide' : 'Show'} the numbers the analysis read</span>
-      </button>
-      {open ? (
-        <div className="px-5 pb-5 space-y-5 border-t pt-4" style={{ borderColor: T.borderLight }}>
-          <SmallTable head={['Number', 'This period', 'Previous', 'Change']} rows={(pack.keyNumbers || []).map((k) => [k.label, fmtN(k.cur, k.unit), fmtN(k.prev, k.unit), pctTxt(k.changePct)])} />
-          {(s.anomalies?.days || []).map((g) => (
-            <div key={g.date}>
-              <p className="text-xs font-semibold mb-1" style={{ color: T.textPrimary }}>
-                {g.date} — {g.metrics.map((m) => `${m.metric} ${m.value} vs ${m.baselineAvg7} usual (${m.ratio ?? '—'}×)`).join(' · ')}
-              </p>
-              <div className="grid md:grid-cols-2 gap-4">
-                {Object.entries(g.whatChanged || {}).map(([k, rows]) => (
-                  <div key={k}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: T.textMuted }}>{k}</p>
-                    <SmallTable head={['', 'That day', '7-day avg', 'Extra']} rows={rows.map((r) => [r.key, fmtN(r.value), fmtN(r.avg7), `${r.diff > 0 ? '+' : ''}${r.diff}`])} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          <div className="grid md:grid-cols-2 gap-4">
-            {dim('sources', 'Sources (visitor-days)')}
-            {dim('countries', 'Visitor countries')}
-            {dim('landingPages', 'Landing pages')}
-            {dim('languages', 'Browser languages')}
-            {dim('devices', 'Devices')}
-            {dim('sites', 'Country sites')}
+    <Collapsible title="Details" sub="channels, bot signals, unusual days, the numbers read">
+      {(r.channels || []).length ? (
+        <div>
+          <Label>Channel by channel</Label>
+          <div className="divide-y" style={{ borderColor: T.borderLight }}>
+            {r.channels.map((c) => {
+              const [tone, label] = TREND[c.trend] || TREND.no_data;
+              return (
+                <div key={c.channel} className="py-2 flex gap-3">
+                  <div className="w-40 shrink-0"><p className="text-[12.5px] font-semibold" style={{ color: T.textPrimary }}>{CHANNEL_LABEL[c.channel] || c.channel}</p><Pill tone={tone}>{label}</Pill></div>
+                  <p className="text-[12.5px]" style={{ color: T.textBody }}>{c.summary}</p>
+                </div>
+              );
+            })}
           </div>
-          {s.googleAds?.changeHistory?.length ? (
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: T.textMuted }}>Google Ads change history</p>
-              <SmallTable head={['Date', 'Campaign', 'What', 'Edits']} rows={s.googleAds.changeHistory.slice(0, 15).map((c) => [c.date, c.campaign, `${c.operation} ${c.resource}`, c.count])} />
-            </div>
-          ) : null}
-          {pack.externalEvents?.events?.length ? (
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: T.textMuted }}>Web search: outside events</p>
-              <ul className="text-xs space-y-1" style={{ color: T.textBody }}>
-                {pack.externalEvents.events.map((e, i) => <li key={i}><b>{e.date}</b> {e.event}{e.url ? <> — <a href={e.url} target="_blank" rel="noreferrer" className="underline">source</a></> : null}</li>)}
-              </ul>
-            </div>
-          ) : null}
-          {Object.entries(s).filter(([, v]) => v?.error).length ? (
-            <p className="text-xs" style={{ color: T.danger }}>Unavailable: {Object.entries(s).filter(([, v]) => v?.error).map(([k, v]) => `${k} (${v.error})`).join('; ')}</p>
-          ) : null}
         </div>
       ) : null}
-    </div>
+      {s.botSignals ? <div><Label>Bot signals (computed in code)</Label><BotTable b={s.botSignals} /></div> : null}
+      <div>
+        <Label>Key numbers</Label>
+        <SmallTable head={['Number', 'This period', 'Previous', 'Change']} rows={(pack.keyNumbers || []).map((k) => [k.label, fmtN(k.cur, k.unit), fmtN(k.prev, k.unit), pctTxt(k.changePct)])} />
+      </div>
+      {(s.anomalies?.days || []).map((g) => (
+        <div key={g.date}>
+          <p className="text-xs font-semibold mb-1" style={{ color: T.textPrimary }}>
+            {g.date} — {g.metrics.map((m) => `${m.metric} ${m.value} vs ${m.baselineAvg7} usual (${m.ratio ?? '—'}×)`).join(' · ')}
+          </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            {Object.entries(g.whatChanged || {}).map(([k, rows]) => (
+              <div key={k}><Label>{k}</Label><SmallTable head={['', 'That day', '7-day avg', 'Extra']} rows={rows.map((x) => [x.key, fmtN(x.value), fmtN(x.avg7), `${x.diff > 0 ? '+' : ''}${x.diff}`])} /></div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="grid md:grid-cols-2 gap-4">
+        {dim('landingPages', 'Landing pages')}
+        {dim('languages', 'Browser languages')}
+        {dim('devices', 'Devices')}
+        {dim('sites', 'Country sites')}
+      </div>
+      {s.googleAds?.changeHistory?.length ? (
+        <div><Label>Google Ads change history</Label><SmallTable head={['Date', 'Campaign', 'What', 'Edits']} rows={s.googleAds.changeHistory.slice(0, 15).map((c) => [c.date, c.campaign, `${c.operation} ${c.resource}`, c.count])} /></div>
+      ) : null}
+      {pack.outsideWorld?.newsNote ? <p className="text-[12px]" style={{ color: T.textSecondary }}><b>News search note:</b> {pack.outsideWorld.newsNote}{pack.outsideWorld.newsDropped ? ` (${pack.outsideWorld.newsDropped} item(s) dropped: no matching search result)` : ''}</p> : null}
+      {(r.dataGaps || []).length ? <p className="text-xs" style={{ color: T.warning }}><b>Data gaps:</b> {r.dataGaps.join(' · ')}</p> : null}
+      {Object.entries(s).filter(([, v]) => v?.error).length ? (
+        <p className="text-xs" style={{ color: T.danger }}>Unavailable: {Object.entries(s).filter(([, v]) => v?.error).map(([k, v]) => `${k} (${v.error})`).join('; ')}</p>
+      ) : null}
+    </Collapsible>
   );
 }
 
-function Result({ run }) {
+export function Result({ run }) {
   const r = run.result || {};
-  const text = (v) => <p className="text-[13px] leading-relaxed" style={{ color: T.textBody }}>{v}</p>;
+  const legacy = !r.changes;
   return (
     <div className="space-y-4">
       <Card>
@@ -124,7 +251,7 @@ function Result({ run }) {
           {countryName(run.country)} · {run.period ? `${run.period.start} → ${run.period.end} (${run.period.days} days) vs ${run.previousPeriod?.start} → ${run.previousPeriod?.end}` : ''}
         </p>
         <h2 className="text-lg font-bold mt-1" style={{ color: T.textPrimary }}>{r.headline}</h2>
-        <div className="mt-2">{text(r.summary)}</div>
+        <p className="text-[13px] leading-relaxed mt-2" style={{ color: T.textBody }}>{r.summary}</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
           {(run.pack?.keyNumbers || []).slice(0, 8).map((k) => (
             <div key={k.label} className="rounded-xl px-3 py-2" style={{ background: T.bgSurface }}>
@@ -136,8 +263,10 @@ function Result({ run }) {
         </div>
       </Card>
 
+      {(r.guardWarnings || []).length ? <Banner tone="warning"><b>Checked in code:</b> {r.guardWarnings.join(' ')}</Banner> : null}
+      {legacy ? <Banner tone="warning">This analysis was made by the older version (no evidence checks, no outside-world timeline). Run it again for the new report.</Banner> : null}
 
-      <Card title="What to do next to improve">
+      <Card title="What to do next">
         <ol className="space-y-2.5">
           {(r.nextSteps || []).map((n, i) => (
             <li key={i} className="flex gap-3">
@@ -151,74 +280,12 @@ function Result({ run }) {
         </ol>
       </Card>
 
-      {(r.anomalies || []).length ? (
-        <Card title="Anomalies — what happened and why">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[680px]">
-              <thead><tr style={{ color: T.textMuted }}>{['Day', 'What', 'Likely cause', 'Evidence', 'Confidence'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-semibold">{h}</th>)}</tr></thead>
-              <tbody>
-                {r.anomalies.map((a, i) => (
-                  <tr key={i} className="border-t align-top" style={{ borderColor: T.borderLight }}>
-                    <td className="py-2 pr-3 whitespace-nowrap font-semibold" style={{ color: T.textPrimary }}>{a.date}<br /><Pill tone={a.kind === 'spike' ? 'info' : 'warning'}>{a.kind}</Pill></td>
-                    <td className="py-2 pr-3" style={{ color: T.textBody }}>{a.what}</td>
-                    <td className="py-2 pr-3" style={{ color: T.textBody }}>{a.cause}{a.ruledOut ? <p className="mt-1" style={{ color: T.textMuted }}>Ruled out: {a.ruledOut}</p> : null}</td>
-                    <td className="py-2 pr-3" style={{ color: T.textBody }}><ul className="list-disc pl-4 space-y-0.5">{(a.evidence || []).map((e, j) => <li key={j}>{e}</li>)}</ul></td>
-                    <td className="py-2 pr-3"><Pill tone={a.confidence === 'high' ? 'success' : a.confidence === 'medium' ? 'warning' : 'neutral'}>{a.confidence}</Pill></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ) : null}
+      <AnalystCharts pack={run.pack} />
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card title="What's working">
-          <ul className="space-y-2">{(r.working || []).map((w, i) => <li key={i} className="text-[13px]" style={{ color: T.textBody }}><b style={{ color: T.success }}>{w.title}.</b> {w.detail}</li>)}</ul>
-        </Card>
-        <Card title="What's not">
-          <ul className="space-y-2">{(r.notWorking || []).map((w, i) => <li key={i} className="text-[13px]" style={{ color: T.textBody }}><b style={{ color: T.danger }}>{w.title}.</b> {w.detail}</li>)}</ul>
-        </Card>
-      </div>
+      {(r.changes || []).length ? <Changes items={r.changes} /> : null}
+      {run.pack?.outsideWorld ? <OutsideWorld pack={run.pack} verdicts={r.outsideWorld} /> : null}
 
-      <Card title="Channel by channel">
-        <div className="divide-y" style={{ borderColor: T.borderLight }}>
-          {(r.channels || []).map((c) => {
-            const [tone, label] = TREND[c.trend] || TREND.no_data;
-            return (
-              <div key={c.channel} className="py-2.5 flex gap-3">
-                <div className="w-40 shrink-0">
-                  <p className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{CHANNEL_LABEL[c.channel] || c.channel}</p>
-                  <Pill tone={tone}>{label}</Pill>
-                </div>
-                <p className="text-[13px]" style={{ color: T.textBody }}>{c.summary}</p>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card title="Countries & audience">
-          <ul className="space-y-2">{(r.audience || []).map((w, i) => <li key={i} className="text-[13px]" style={{ color: T.textBody }}><b>{w.title}.</b> {w.detail}</li>)}</ul>
-        </Card>
-        <Card title="Outside events">
-          {(r.externalContext || []).length ? (
-            <ul className="space-y-2">
-              {r.externalContext.map((e, i) => (
-                <li key={i} className="text-[13px]" style={{ color: T.textBody }}>
-                  <b>{e.date}</b> — {e.event} <span style={{ color: T.textMuted }}>({e.relevance})</span>{' '}
-                  {e.source === 'model_knowledge' ? <Pill tone="warning">model knowledge, not verified</Pill> : <Pill tone="info">web search</Pill>}
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-xs" style={{ color: T.textMuted }}>None found for this period.</p>}
-        </Card>
-      </div>
-
-
-      {(r.dataGaps || []).length ? <Banner tone="warning"><b>Data gaps:</b> {r.dataGaps.join(' · ')}</Banner> : null}
-      <DataUsed run={run} />
+      <Details run={run} />
       <p className="text-[11px]" style={{ color: T.textMuted }}>
         {run.model} · US${Number(run.costUsd || 0).toFixed(2)}{run.usage?.webSearches ? ` · ${run.usage.webSearches} web search(es)` : ''} · {fmtDate(run.finishedAt, true)}{run.by ? ` · ${run.by}` : ''}
       </p>
@@ -279,7 +346,7 @@ export default function AnalystTab() {
     <div className="space-y-4">
       <Card>
         <p className="text-[13px] mb-3" style={{ color: T.textSecondary }}>
-          Reads every source together — website (PostHog), funnel sites and hub, Search Console, Google Ads with its change history, our WhatsApp/email sends, funnel leads — finds the unusual days in code, and asks Claude <b>why</b> the numbers moved.
+          Reads every source together — website (PostHog), funnel sites and hub, Search Console, Google Ads with its change history, our WhatsApp/email sends, funnel leads — finds the unusual days and bot signals in code, lines them up with outside events (exchange rates, holidays, disasters, weather, news) and asks Claude <b>why</b> the numbers moved — every claim with its numbers and a confidence level.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs" style={{ color: T.textMuted }}>

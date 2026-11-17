@@ -1,0 +1,89 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "eventtype": "FL",
+    "name": "Flood in Brazil",
+    "htmldescription": "Orange Flood in Brazil from: 02 Nov 2026 to: 09 Nov 2026.",
+    "alertlevel": "Orange",
+    "fromdate": "2026-11-02T01:00:00",
+    "todate": "2026-11-09T01:00:00",
+    "url": {
+     "report": "https://www.gdacs.org/report.aspx?eventid=1&eventtype=FL"
+    },
+    "affectedcountries": [
+     {
+      "iso2": "BR",
+      "iso3": "BRA",
+      "countryname": "Brazil"
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "eventtype": "FL",
+    "name": "Flood in Brazil",
+    "htmldescription": "Green Flood in Brazil",
+    "alertlevel": "Green",
+    "fromdate": "2026-11-05T01:00:00",
+    "todate": "2026-11-06T01:00:00",
+    "url": {
+     "report": "https://www.gdacs.org/report.aspx?eventid=2&eventtype=FL"
+    },
+    "affectedcountries": [
+     {
+      "iso2": "BR",
+      "iso3": "BRA",
+      "countryname": "Brazil"
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "eventtype": "FL",
+    "name": "Flood in Paraguay",
+    "htmldescription": "Green Flood in Paraguay",
+    "alertlevel": "Green",
+    "fromdate": "2026-10-20T01:00:00",
+    "todate": "2026-11-03T01:00:00",
+    "url": {
+     "report": "https://www.gdacs.org/report.aspx?eventid=3&eventtype=FL"
+    },
+    "affectedcountries": [
+     {
+      "iso2": "PY",
+      "iso3": "PRY",
+      "countryname": "Paraguay"
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "eventtype": "TC",
+    "name": "Tropical Cyclone X",
+    "htmldescription": "Red cyclone",
+    "alertlevel": "Red",
+    "fromdate": "2026-11-03T00:00:00",
+    "todate": "2026-11-05T00:00:00",
+    "url": {
+     "report": "https://www.gdacs.org/report.aspx?eventid=4"
+    },
+    "affectedcountries": [
+     {
+      "iso2": "PH",
+      "iso3": "PHL",
+      "countryname": "Philippines"
+     }
+    ]
+   }
+  }
+ ]
+}

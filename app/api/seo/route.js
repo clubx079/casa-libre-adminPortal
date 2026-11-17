@@ -1,0 +1,64 @@
+// GET /api/seo?tab=opportunities|drafts|changes|signals|watch|settings — Admin → SEO data for the
+// active country (lib/seo/*). POST /api/seo/action does the changes.
+import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
+import { activeCountry } from '@/lib/adminCountry';
+import { seoDb, loadSettings, getOverrides, isMissingTable, ccOf } from '@/lib/seo/store';
+import { watch } from '@/lib/seo/run';
+import { loadInventory } from '@/lib/seo/data';
+import { pageState } from '@/lib/seo/inventory';
+import { websiteUrl } from '@/lib/seo/website';
+import { TREND_GEOS } from '@/lib/seo/trends';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const enc = encodeURIComponent;
+
+async function tabData(cc, tab, sp) {
+  const db = seoDb(cc);
+  if (tab === 'opportunities') {
+    const status = ['open', 'applied', 'dismissed'].includes(sp.get('status')) ? sp.get('status') : 'open';
+    const rows = await db.select('seo_opportunities', `select=*&country=eq.${cc}&status=eq.${status}&order=score.desc&limit=300`);
+    const inv = await loadInventory(cc).catch(() => new Map());
+    const ov = await getOverrides(cc).catch(() => new Map());
+    return { rows: rows.map((r) => ({ ...r, page: r.url && r.url.split('/').length >= 4 ? pageState(r.url, inv, ov) : null })) };
+  }
+  if (tab === 'drafts') {
+    return { rows: await db.select('seo_drafts', `select=*&country=eq.${cc}&order=updated_at.desc&limit=200`) };
+  }
+  if (tab === 'changes') {
+    return { rows: await db.select('seo_changes', `select=*&country=eq.${cc}&order=created_at.desc&limit=200`), overrides: [...(await getOverrides(cc)).values()] };
+  }
+  if (tab === 'signals') {
+    const [latest] = await db.select('seo_signals', `select=date&country=eq.${cc}&order=date.desc&limit=1`);
+    const date = latest?.date;
+    const pick = (source, order) => (date ? db.select('seo_signals', `select=term,page,date,metrics&country=eq.${cc}&source=eq.${source}&date=eq.${date}&order=${order}&limit=60`) : []);
+    const [ads, gsc, site, trends, counts] = await Promise.all([
+      pick('ads', 'id.asc'), pick('gsc', 'id.asc'), pick('site_search', 'id.asc'),
+      db.select('seo_trends', `select=title,traffic,traffic_label,topic,news,seen_at,pub_date&geo=eq.${TREND_GEOS[cc]}&order=seen_at.desc&limit=80`),
+      Promise.all(['ads', 'gsc', 'site_search'].map((s) => (date ? db.selectWithCount('seo_signals', `select=id&country=eq.${cc}&source=eq.${s}&date=eq.${date}&limit=1`).then((r) => [s, r.count]) : [s, 0]))),
+    ]);
+    const by = (k) => (a, b) => (b.metrics?.[k] || 0) - (a.metrics?.[k] || 0);
+    // latest reading per trend title
+    const seen = new Set();
+    const trendLatest = trends.filter((t) => (seen.has(t.title) ? false : seen.add(t.title)));
+    return { date, counts: Object.fromEntries(counts), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), site: site.sort(by('searches')).slice(0, 40), trends: trendLatest.slice(0, 40) };
+  }
+  if (tab === 'watch') return watch(cc);
+  if (tab === 'settings') return { settings: await loadSettings(cc), website: websiteUrl(cc), devDb: !!process.env.SEO_DB_URL };
+  return { error: 'unknown tab' };
+}
+
+export async function GET(req) {
+  if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  const sp = new URL(req.url).searchParams;
+  const cc = ccOf(activeCountry());
+  const tab = sp.get('tab') || 'opportunities';
+  try {
+    return NextResponse.json({ country: cc, tab, ...(await tabData(cc, tab, sp)) });
+  } catch (e) {
+    if (isMissingTable(e)) return NextResponse.json({ country: cc, tab, missing: true, error: 'Run migrations/011_seo_pipeline.sql on this country DB first.' });
+    return NextResponse.json({ country: cc, tab, error: String(e?.message || e).slice(0, 300) }, { status: 500 });
+  }
+}

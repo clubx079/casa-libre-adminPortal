@@ -34,3 +34,4 @@ _*.log
 
 # AI Analyst runs (lib/analyst/run.js)
 .analyst-runs/
+.dev-seo-db.json

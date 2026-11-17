@@ -1,12 +1,13 @@
 // The SEO pipeline on a timer (AiroBase Cron, `Authorization: Bearer {{secrets.CRON_SECRET}}`).
 // ONE cron does everything:   ?job=all   once a day "0 9 * * *" (06:00 Paraguay)
-//   → Google Trends, then Ads + Search Console + site search, then Decide, then the Improve check.
+//   → Google Trends, then Ads + Search Console + site search, then Decide, then Autopilot (applies the
+//   best opportunities by itself, within daily caps), then the Improve check.
 //   Improve is safe daily: it compares the last 7 days with the 7 before, retires a page only after
 //   4 weeks with no impressions and changes a title at most once per 14 days (lib/seo/settings.js).
 // Single stages still work on their own (manual runs): ?job=trends | collect | decide | daily | improve
 // ?country=py|bo|uy|ve|sv|all (default all). Answers with each country's result.
 import { NextResponse } from 'next/server';
-import { runCollect, runDecide, runImprove } from '@/lib/seo/run';
+import { runCollect, runDecide, runImprove, runAutopilot } from '@/lib/seo/run';
 import { SEO_COUNTRIES } from '@/lib/seo/store';
 
 export const runtime = 'nodejs';
@@ -14,9 +15,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const STEPS = {
-  all: ['trends', 'collect', 'decide', 'improve'],
+  all: ['trends', 'collect', 'decide', 'autopilot', 'improve'],
   daily: ['collect', 'decide'],
-  trends: ['trends'], collect: ['collect'], decide: ['decide'], improve: ['improve'],
+  trends: ['trends'], collect: ['collect'], decide: ['decide'], autopilot: ['autopilot'], improve: ['improve'],
 };
 
 async function handle(req) {
@@ -38,6 +39,7 @@ async function handle(req) {
         if (s === 'trends') out[cc].trends = await runCollect(cc, ['trends']);
         else if (s === 'collect') out[cc].collect = await runCollect(cc, ['ads', 'gsc', 'site_search']);
         else if (s === 'decide') out[cc].decide = await runDecide(cc);
+        else if (s === 'autopilot') out[cc].autopilot = await runAutopilot(cc);
         else if (s === 'improve') out[cc].improve = await runImprove(cc);
       } catch (e) { out[cc][`${s}Error`] = String(e?.message || e).slice(0, 300); }
     }

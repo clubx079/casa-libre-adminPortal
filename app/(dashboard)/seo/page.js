@@ -218,7 +218,7 @@ function Watch({ data }) {
 
 const SWITCHES = [
   ['collect', 'ads', 'Collect Google Ads search terms'], ['collect', 'gsc', 'Collect Search Console'], ['collect', 'site_search', 'Collect site searches (PostHog)'], ['collect', 'trends', 'Collect Google Trends'],
-  [null, 'decide', 'Decide (build opportunities)'], ['improve', 'enabled', 'Weekly Improve loop'], ['improve', 'autoTitles', 'Improve: change low-CTR titles by itself'],
+  [null, 'decide', 'Decide (build opportunities)'], ['auto', 'variants', 'Autopilot: add new filter pages by itself'], ['auto', 'guides', 'Autopilot: publish guides by itself'], ['auto', 'trendPosts', 'Autopilot: publish trend posts by itself'], ['improve', 'enabled', 'Daily Improve check'], ['improve', 'autoTitles', 'Improve: change low-CTR titles by itself'],
   ['improve', 'autoRetire', 'Improve: hide variants with no traffic by itself'], ['improve', 'autoLinks', 'Improve: add links to slipping pages by itself'],
   ['drafts', 'claude', 'Draft guides with Claude (else the data template)'], ['publish', 'indexNow', 'Ping Bing IndexNow on publish'],
 ];
@@ -226,7 +226,7 @@ const LIMITS = [
   ['minListings', 'Listings a page needs (gate)'], ['provenAdsClicks', 'Proven search: Ads clicks'], ['provenAdsConversions', 'Proven search: Ads conversions'], ['provenSiteSearches', 'Proven search: site searches'],
   ['provenGscImpressions', 'Proven search: Google impressions'], ['strengthenMinPos', 'Strengthen from position'], ['strengthenMaxPos', 'Strengthen to position'], ['strengthenMinImpressions', 'Strengthen: min impressions'],
   ['guideMinDemand', 'Guide: min demand score'], ['trendHours', 'Trend posts: max age (hours)'], ['lowCtrImpressions', 'Low CTR: min impressions'], ['lowCtr', 'Low CTR below (0.02 = 2%)'],
-  ['titleDays', 'Title change: min days between'], ['zeroTrafficWeeks', 'Hide variant after N weeks with no impressions'], ['slipPositions', 'Slipping: positions lost week on week'],
+  ['maxNewPagesPerDay', 'Autopilot: new pages per day'], ['maxGuidesPerDay', 'Autopilot: guides per day'], ['titleDays', 'Title change: min days between'], ['zeroTrafficWeeks', 'Hide variant after N weeks with no impressions'], ['slipPositions', 'Slipping: positions lost week on week'],
 ];
 
 function Settings({ data, busy, run }) {

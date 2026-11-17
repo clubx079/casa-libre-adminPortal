@@ -121,7 +121,7 @@ export default function QuarantinePage() {
       else fetchRows(tab, reason, page, view);
     } catch (e) {
       // Surface the failure instead of silently leaving the row in place.
-      setActErr(`${action === 'approve' ? 'Approve' : 'Discard'} failed: ${e.message || 'unknown error'}`);
+      setActErr(`${action === 'approve' ? 'Approve' : action === 'release' ? 'Publish' : 'Discard'} failed: ${e.message || 'unknown error'}`);
     } finally { setBusyId(null); }
   }
 
@@ -294,6 +294,7 @@ export default function QuarantinePage() {
                         <p className="mt-1.5 text-[11px] leading-snug" style={{ color: T.success }} data-testid="q-can-go-live">
                           <b>Can go live.</b>{' '}
                           {r.twin_gone ? 'It was held as a duplicate of a listing that is no longer on the site. ' : ''}
+                          {(r.reasons || []).includes('no_images') ? 'No photo yet: the site shows the "Todavía no tengo foto" placeholder. ' : ''}
                           {(r.unverified || []).length ? `The site will show: ${r.unverified.map((f) => contactLine(f, lang)).join(' · ')}` : 'Nothing else is wrong with it.'}
                         </p>
                       )}
@@ -336,6 +337,14 @@ export default function QuarantinePage() {
                               className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full transition-colors disabled:opacity-60 whitespace-nowrap"
                               style={{ background: T.textPrimary, color: '#fff' }}>
                               {busyId === r.id ? '…' : 'Approve anyway'}
+                            </button>
+                          )}
+                          {r.state === 'ready' && (r.reasons || []).includes('no_images') && (
+                            <button onClick={() => act(r, 'release')} disabled={busyId === r.id} data-testid="q-publish-no-photo"
+                              title="Publish it now; the site shows the 'Todavía no tengo foto' placeholder until a photo arrives"
+                              className="inline-flex items-center text-xs font-semibold px-2.5 py-1.5 rounded-full transition-colors disabled:opacity-60 whitespace-nowrap"
+                              style={{ background: T.textPrimary, color: '#fff' }}>
+                              {busyId === r.id ? '…' : 'Publish (placeholder)'}
                             </button>
                           )}
                           <button onClick={() => act(r, 'discard')} disabled={busyId === r.id}

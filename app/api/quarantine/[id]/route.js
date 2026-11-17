@@ -4,7 +4,8 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { getUsdRate } from '@/lib/fx';
 import { currencyFor } from '@/lib/currency';
-import { looseFor, splitReasons, persistedPriceUsd } from '@/lib/unverified';
+import { looseFor, splitReasons, persistedPriceUsd, canGoLive } from '@/lib/unverified';
+import { isDuplicate } from '@/lib/ingest';
 import { genShortCode } from '@/lib/shortcode';
 import { forget } from '@/lib/swrCache';
 
@@ -69,7 +70,19 @@ async function handlePATCH(req, { params }) {
     // Already in properties (a later scrape published it, or it was released before)?
     // That row is current — never overwrite it with this older payload; just close
     // the quarantine record.
-    const [existing] = await select('properties', `select=id,admin_status&source_id=eq.${row.source_id}&external_id=eq.${encodeURIComponent(row.external_id)}&limit=1`);
+    const [existing] = await select('properties', `select=id,admin_status,is_delisted,dedupe_key&source_id=eq.${row.source_id}&external_id=eq.${encodeURIComponent(row.external_id)}&limit=1`);
+    // Held only because it had no photo (the scraper switched it off): with the
+    // "publish without photos" rule on (lib/unverified.publishWithoutPhotos) it goes live
+    // and the site shows the placeholder — unless a live listing is the same property.
+    if (existing && existing.admin_status !== 'active' && !existing.is_delisted
+      && reasons.includes('no_images') && canGoLive(reasons, cc)) {
+      const dupOf = await isDuplicate(existing.dedupe_key, { select }, { sourceId: row.source_id, externalId: row.external_id });
+      if (dupOf) return NextResponse.json({ error: 'Same property as a live listing — stays held', duplicate_of: dupOf }, { status: 409 });
+      await update('properties', `id=eq.${existing.id}`, { admin_status: 'active', is_complete: true }, { returning: 'minimal' });
+      const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,
+        { status: 'released', reviewed_at: ts, reviewed_by: reviewer }, { returning: 'representation' });
+      return NextResponse.json({ ok: true, row: u, published: existing.id, noPhoto: true });
+    }
     if (existing) {
       const [u] = await update('ingest_quarantine', `id=eq.${params.id}`,
         { status: 'released', reviewed_at: ts, reviewed_by: reviewer }, { returning: 'representation' });

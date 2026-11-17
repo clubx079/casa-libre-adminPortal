@@ -222,7 +222,7 @@ const BUSY_MESSAGE = 'High traffic right now — this can take a moment. Still l
 const SOURCE_LABELS = {
   direct: 'Direct · typed the address or an untagged link',
   google: 'Google search', bing: 'Bing search', duckduckgo: 'DuckDuckGo search', search: 'Search engine',
-  chatgpt: 'ChatGPT', perplexity: 'Perplexity', gemini: 'Gemini', claude: 'Claude', copilot: 'Copilot', 'other ai': 'Other AI assistant',
+  chatgpt: 'ChatGPT · normal answers (chatgpt.com)', 'chatgpt business': 'ChatGPT Business · our business profile / agent (utm_source=chatgpt_business)', perplexity: 'Perplexity', gemini: 'Gemini', claude: 'Claude', copilot: 'Copilot', 'other ai': 'Other AI assistant',
   email: 'Email', facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', reddit: 'Reddit',
   'whatsapp campaign': 'WhatsApp campaign',   // a batch from WhatsApp campaigns (/r/wa?b=…)
   'referral link': 'Referral link · a user shared their link (/ref/…)',

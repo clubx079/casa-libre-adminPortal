@@ -120,9 +120,10 @@ async function payload(db, cc) {
     stats: paidStats({ payments, props: all, monthStart }),
     listings: listed.map((p) => ({
       id: p.id, created_at: p.created_at, status: p.status, admin_status: p.admin_status,
-      state: p.status === 'payment_pending' ? 'pending' : p.raw_data?.paid_listing?.state || null,
+      // a FREE listing whose time ended (website lib/automations/paidListings.js → raw_data.free_listing)
+      state: p.status === 'payment_pending' ? 'pending' : p.raw_data?.paid_listing?.state || (p.raw_data?.free_listing?.state === 'expired' ? 'free_expired' : null),
       gift: !!p.raw_data?.paid_listing?.gift?.claimed_at,
-      until: p.raw_data?.paid_listing?.until || null,
+      until: p.raw_data?.paid_listing?.until || p.raw_data?.free_listing?.until || null,
       title: [p.property_type, p.listing_type === 'rent' ? 'rent' : 'sale', p.neighborhood || p.city].filter(Boolean).join(' · '),
       owner: who(p.created_by),
     })),

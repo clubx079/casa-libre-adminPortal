@@ -32,7 +32,7 @@ function Stat({ label, value, hint }) {
   );
 }
 
-const STATE = { pending: ['warning', 'Waiting for payment'], active: ['success', 'Paid · live'], expired: ['neutral', 'Ended · off the site'] };
+const STATE = { pending: ['warning', 'Waiting for payment'], active: ['success', 'Paid · live'], expired: ['neutral', 'Ended · off the site'], free_expired: ['neutral', 'Free · ended · off the site'] };
 
 const waLink = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length >= 8 ? `https://wa.me/${d}` : null; };
 const ago = (iso) => {
@@ -219,7 +219,8 @@ export default function PaidListingsPage() {
             <li>Each person can publish <b>{n} {n === 1 ? 'listing' : 'listings'} for free every month</b> (the month starts on the 1st, local time).</li>
             <li>{n === 0 ? <>Every listing is paid.</> : <>Listings 1 to {n} of the month are free. <b>Listing number {n + 1} and every one after it that month costs money</b>.</>}</li>
             <li>The seller sees <b>US${preview?.list ?? '—'}</b> crossed out, <b>{form.discountPct}% off</b>, and pays <b>US${preview?.pay ?? '—'}</b>. The listing then stays on the site for <b>{form.days} days</b>.</li>
-            <li>{form.remindDaysBefore} days before the end they get an email. When the time is up the listing goes off the site and they can <b>extend it {form.extendDays} days for US${String(form.extendPrice).replace(/\.00$/, '')}</b>.</li>
+            <li><b>Free listings end too</b>: a free listing also stays on the site for <b>{form.days} days</b> from the day it was published.</li>
+            <li>{form.remindDaysBefore} days before the end (free or paid) they get an email. When the time is up the listing goes off the site (it is never deleted) and they can <b>renew it {form.extendDays} days for US${String(form.extendPrice).replace(/\.00$/, '')}</b> — the extension price, for free and paid listings alike, after ticking the Listing Agreement.</li>
             <li>One person with several emails shares one free quota: accounts are treated as the same person when <b>{form.samePersonMin} of 3</b> signals match (same device · same device profile · same Wi-Fi/network).</li>
           </ul>
         ) : (
@@ -268,13 +269,13 @@ export default function PaidListingsPage() {
           <Field label="Discount %" error={errors.discountPct} help={preview ? <>Seller pays <b>US${preview.pay}</b> per extra listing (US${preview.list} − {form.discountPct}%). Always charged in US$; the local price is shown in small print.</> : 'Seller pays the list price minus this %.'}>
             <input type="number" min="0" max="95" value={form.discountPct} onChange={set('discountPct')} className={inputCls} data-testid="f-discount" />
           </Field>
-          <Field label="A paid listing stays live (days)" error={errors.days} help="Counted from the payment.">
+          <Field label="A listing stays live (days)" error={errors.days} help="Paid listings: counted from the payment. Free listings: counted from the day they were published.">
             <input type="number" min="1" max="365" value={form.days} onChange={set('days')} className={inputCls} />
           </Field>
           <Field label="'Ends soon' email (days before the end)" error={errors.remindDaysBefore} help="One email with a link to extend.">
             <input type="number" min="1" max="60" value={form.remindDaysBefore} onChange={set('remindDaysBefore')} className={inputCls} />
           </Field>
-          <Field label="Extension price (US$)" error={errors.extendPrice} help="To keep a paid listing up longer, or bring an ended one back.">
+          <Field label="Extension price (US$)" error={errors.extendPrice} help="To keep a listing (free or paid) up longer, or bring an ended one back.">
             <input value={form.extendPrice} onChange={set('extendPrice')} className={inputCls} />
           </Field>
           <Field label="An extension adds (days)" error={errors.extendDays}>
@@ -283,7 +284,7 @@ export default function PaidListingsPage() {
         </div>
 
         <div className="grid gap-5 md:grid-cols-3 pt-2 border-t" style={{ borderColor: T.borderLight }}>
-          <Field label="Email · ends soon" help="Sent before the paid time ends.">
+          <Field label="Email · ends soon" help="Sent before a listing's time ends (free or paid).">
             <select value={form.endingTemplateId} onChange={set('endingTemplateId')} className={inputCls}>{tplOptions()}</select>
           </Field>
           <Field label="Email · ended" help="Sent when it goes off the site.">
@@ -302,11 +303,11 @@ export default function PaidListingsPage() {
 
       {/* Listings */}
       <div className="rounded-[14px] p-5" style={CARD}>
-        <div className="text-[15px] font-bold mb-3" style={{ color: T.textPrimary }}>Paid, waiting and ended listings</div>
+        <div className="text-[15px] font-bold mb-3" style={{ color: T.textPrimary }}>Paid, waiting and ended listings (free ones too)</div>
         {data.listings.length === 0 ? <p className="text-[13px]" style={{ color: T.textMuted }}>None yet.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Listing</th><th className="py-2 pr-3 font-medium">Owner</th><th className="py-2 pr-3 font-medium">State</th><th className="py-2 pr-3 font-medium">Listed</th><th className="py-2 font-medium">Paid until</th></tr></thead>
+              <thead><tr className="text-left" style={{ color: T.textMuted }}><th className="py-2 pr-3 font-medium">Listing</th><th className="py-2 pr-3 font-medium">Owner</th><th className="py-2 pr-3 font-medium">State</th><th className="py-2 pr-3 font-medium">Listed</th><th className="py-2 font-medium">Until</th></tr></thead>
               <tbody>
                 {data.listings.map((l) => {
                   const [tone, label] = l.gift && l.state === 'active' ? ['success', 'Free gift · live'] : STATE[l.state] || ['neutral', l.state || '—'];

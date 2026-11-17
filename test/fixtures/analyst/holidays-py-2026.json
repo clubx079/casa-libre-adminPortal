@@ -1,0 +1,30 @@
+[
+ {
+  "date": "2026-08-15",
+  "localName": "Fundación de Asunción",
+  "name": "Founding of Asunción",
+  "countryCode": "PY",
+  "global": true
+ },
+ {
+  "date": "2026-09-29",
+  "localName": "Victoria de Boquerón",
+  "name": "Boqueron Battle Victory Day",
+  "countryCode": "PY",
+  "global": true
+ },
+ {
+  "date": "2026-12-08",
+  "localName": "Virgen de Caacupé",
+  "name": "Virgin of Caacupé",
+  "countryCode": "PY",
+  "global": true
+ },
+ {
+  "date": "2026-10-20",
+  "localName": "Fiesta local",
+  "name": "Local",
+  "countryCode": "PY",
+  "global": false
+ }
+]

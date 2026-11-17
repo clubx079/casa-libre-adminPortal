@@ -11,14 +11,15 @@ import { DELETED_EVENT } from '@/lib/listingDeletion';
 import { listingPhones } from '@/lib/listingPhones';
 import { matchesUser } from '@/lib/userSearch';
 import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
-import { userCompletion, isPersonalized } from '@/lib/profileCompletion';
+import { savedProfileCompletion } from '@/lib/savedProfileCompletion';
 
 // Profile Personalization (website Settings → Perfil profesional): the 7 items + "personalized"
 // (lib/profileCompletion.js — the same rule the "Personalize your profile" emails stop at).
 const PROFILE_COLS = 'first_name,last_name,job_title,company_name,company_website,profile_photo_url';
+// Counts only what was SAVED in Profile Personalization (never the sign-up name); WhatsApp apart.
 const profileOf = (u) => {
-  const c = userCompletion(u);
-  return { count: c.count, total: c.total, pct: c.pct, tone: c.tone, missing: c.missing, personalized: isPersonalized(c) };
+  const c = savedProfileCompletion(u);
+  return { count: c.count, total: c.total, pct: c.pct, tone: c.tone, missing: c.missing, personalized: c.personalized, whatsapp: c.whatsapp };
 };
 // The profile columns exist once website migrations 021/022 ran; without them → the old select.
 async function withProfileCols(run, base) {

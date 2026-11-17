@@ -61,8 +61,9 @@ function signInMethod(u) {
   return u.phone_verified_at ? `${base} + WhatsApp` : base;
 }
 
-// Profile Personalization (website Settings): "4/7" or "Complete" + a small bar, red < 3,
-// yellow 3–5, green 6–7 — like the website's bar. "Personalized" = the emails' stop rule.
+// Profile Personalization (website Settings): only what the user SAVED there — "2/6" or
+// "Complete" + a small bar (red < 2, yellow 2–4, green 5–6); confirmed WhatsApp shown apart.
+// "Personalized" = the emails' stop rule.
 const PROFILE_TONE = { red: '#DC2626', yellow: '#F59E0B', green: '#16A34A' };
 const PROFILE_LABEL = { photo: 'photo', first_name: 'first name', last_name: 'last name', job_title: 'title', company_name: 'company', company_website: 'website', whatsapp: 'WhatsApp' };
 function ProfileCell({ p }) {
@@ -70,7 +71,7 @@ function ProfileCell({ p }) {
   const done = p.count === p.total;
   const color = PROFILE_TONE[p.tone] || PROFILE_TONE.red;
   return (
-    <div className="w-[92px]" title={done ? 'All 7 items' : `Missing: ${p.missing.map((k) => PROFILE_LABEL[k] || k).join(', ')}`} data-testid="profile-cell">
+    <div className="w-[92px]" title={done ? 'All 6 profile items saved' : p.count === 0 ? 'Not started (nothing saved in Profile Personalization)' : `Missing: ${p.missing.map((k) => PROFILE_LABEL[k] || k).join(', ')}`} data-testid="profile-cell">
       <div className="flex items-baseline justify-between gap-1">
         <span className="text-[12px] font-semibold tabular-nums" style={{ color: done ? PROFILE_TONE.green : T.textBody }}>{done ? 'Complete' : `${p.count}/${p.total}`}</span>
         {p.personalized && !done ? <span className="text-[9.5px] font-semibold uppercase" style={{ color: PROFILE_TONE.green }}>OK</span> : null}
@@ -78,6 +79,7 @@ function ProfileCell({ p }) {
       <div className="h-1.5 mt-1 rounded-full overflow-hidden" style={{ background: T.bgSurface }}>
         <div className="h-full rounded-full" style={{ width: `${Math.max(p.pct, 4)}%`, background: color }} />
       </div>
+      <div className="text-[10.5px] mt-1" style={{ color: p.whatsapp ? PROFILE_TONE.green : T.textMuted }}>{p.whatsapp ? '✓ WhatsApp' : 'No WhatsApp'}</div>
     </div>
   );
 }

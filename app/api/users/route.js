@@ -11,6 +11,19 @@ import { DELETED_EVENT } from '@/lib/listingDeletion';
 import { listingPhones } from '@/lib/listingPhones';
 import { matchesUser } from '@/lib/userSearch';
 import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
+import { userCompletion, isPersonalized } from '@/lib/profileCompletion';
+
+// Profile Personalization (website Settings → Perfil profesional): the 7 items + "personalized"
+// (lib/profileCompletion.js — the same rule the "Personalize your profile" emails stop at).
+const PROFILE_COLS = 'first_name,last_name,job_title,company_name,company_website,profile_photo_url';
+const profileOf = (u) => {
+  const c = userCompletion(u);
+  return { count: c.count, total: c.total, pct: c.pct, tone: c.tone, missing: c.missing, personalized: isPersonalized(c) };
+};
+// The profile columns exist once website migrations 021/022 ran; without them → the old select.
+async function withProfileCols(run, base) {
+  try { return await run(`${base},${PROFILE_COLS}`); } catch { return run(base); }
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,12 +33,18 @@ export const dynamic = 'force-dynamic';
 // counted per owner the same way the Listings column does (lib/listingCount.js).
 async function summaryStats(db, extra) {
   const [all, props] = await Promise.all([
-    selectAll(db, 'users', `select=id,email,verified&${HIDE_DELETED_USERS}&order=id.asc`),
+    withProfileCols((cols) => selectAll(db, 'users', `select=${cols}&${HIDE_DELETED_USERS}&order=id.asc`), 'id,email,verified,full_name,phone_verified_at'),
     selectAll(db, 'properties', 'select=id,created_by,status&origin=eq.user&created_by=not.is.null&order=id.asc'),
   ]);
   const listings = countListings(props).published;
   const real = all.filter((u) => !isInternalEmail(u.email, extra));
-  return userListingStats(real, listings);
+  const verified = real.filter((u) => u && u.verified === true);
+  const personalized = verified.filter((u) => profileOf(u).personalized).length;
+  return {
+    ...userListingStats(real, listings),
+    verifiedPersonalized: personalized,
+    pctVerifiedPersonalized: verified.length ? Math.round((personalized / verified.length) * 100) : null,
+  };
 }
 
 // All buyer-portal users who registered / logged in, read from the shared
@@ -64,9 +83,13 @@ export async function GET(request) {
   }
 
   try {
-    const [{ rows, count }, extra] = await Promise.all([selectWithCount('users', query), internalEmails(activeCountry())]);
+    const [{ rows, count }, extra] = await Promise.all([
+      withProfileCols((c) => selectWithCount('users', query.replace(`select=${cols}`, `select=${c}`)), cols),
+      internalEmails(activeCountry()),
+    ]);
     // Team / Pakistan accounts never show (lib/internalTraffic + internalAudience).
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
+    for (const u of users) u.profile = profileOf(u);
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
     // How many listings each one published (lib/listingCount.js).
     // Only published ones; a listing waiting for payment is counted apart (listings_waiting).

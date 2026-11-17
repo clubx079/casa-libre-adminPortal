@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
+import { profileStepFromHours, profileStepLabel, PROFILE_STEPS } from '@/lib/profileNudgeAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
@@ -91,7 +92,7 @@ function DayField({ value, onChange, min, max, error, suffix }) {
 }
 
 // The draft reminders: 1–5 rows of "Reminder n · after [N] [hours|days]" — add / remove.
-function DraftSteps({ steps, errors, onChange, note, max = DRAFT_STEPS.max }) {
+function DraftSteps({ steps, errors, onChange, note, max = DRAFT_STEPS.max, min = 1, label = 'Reminder' }) {
   const set = (i, k) => (v) => onChange(steps.map((s, j) => (j === i ? { ...s, [k]: v } : s)));
   const add = () => {
     const last = steps[steps.length - 1];
@@ -105,14 +106,14 @@ function DraftSteps({ steps, errors, onChange, note, max = DRAFT_STEPS.max }) {
       {steps.map((s, i) => (
         <div key={i} className="rounded-[12px] border px-3 py-2.5" style={{ borderColor: errors[`step_${i}`] ? T.danger : 'rgba(17,17,17,.12)', background: '#fff' }}>
           <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>Reminder {i + 1}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>{label} {i + 1}</p>
             {steps.length > 1 && (
               <button type="button" onClick={() => remove(i)} aria-label={`Remove reminder ${i + 1}`} className="w-6 h-6 rounded-full text-[14px] leading-none hover:bg-black/5" style={{ color: T.textMuted }}>×</button>
             )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[13px]" style={{ color: T.textSecondary }}>after</span>
-            <input type="number" min={1} max={s.unit === 'days' ? 60 : 1440} value={s.value} aria-label={`Reminder ${i + 1}: wait`}
+            <input type="number" min={min} max={s.unit === 'days' ? 60 : 1440} value={s.value} aria-label={`${label} ${i + 1}: wait`}
               onChange={(e) => set(i, 'value')(e.target.value === '' ? '' : Number(e.target.value))}
               className="w-[64px] px-2 py-1.5 rounded-[10px] border text-[15px] font-bold text-center outline-none focus:border-ink/60 tabular-nums"
               style={{ borderColor: errors[`step_${i}`] ? T.danger : 'rgba(17,17,17,.2)', color: T.textPrimary }} />
@@ -128,7 +129,7 @@ function DraftSteps({ steps, errors, onChange, note, max = DRAFT_STEPS.max }) {
       ))}
       {errors.steps ? <p className="text-[11px]" style={{ color: T.danger }}>{errors.steps}</p> : null}
       {steps.length < max && (
-        <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add reminder</button>
+        <button type="button" onClick={add} className="w-full py-2 rounded-[10px] border border-dashed text-[13px] font-semibold hover:bg-black/[.03]" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>+ Add {label.toLowerCase()}</button>
       )}
       <p className="text-[11px]" style={{ color: T.textMuted }}>{note || <>Counted from the last time the seller opened or changed the draft. Each reminder goes once per draft (up to {DRAFT_STEPS.max}); coming back to the draft pushes the next one back.</>}</p>
     </div>
@@ -215,6 +216,7 @@ export default function AutomationsPage() {
   const [sform, setSform] = useState(null);
   const [pform, setPform] = useState(null);
   const [rform, setRform] = useState(null);   // "Promote the referral program"
+  const [prform, setPrform] = useState(null);  // "Personalize your profile"
   const { dialog, confirm } = useDialog();
   // "Switch … on?\n\nwhat happens" → the admin dialog (title + text), Switch on / Switch off.
   const ask = (text) => {
@@ -248,6 +250,8 @@ export default function AutomationsPage() {
     setPform(ps ? { steps: stepsFromHours(ps.steps), reminderTemplateId: ps.reminderTemplateId || '', giftAfterDays: ps.giftAfterDays, giftTemplateId: ps.giftTemplateId || '', giftsPerPerson: ps.giftsPerPerson, giftWindowDays: ps.giftWindowDays, giftDays: ps.giftDays } : null);
     const rp = j.referralPromo?.settings;
     setRform(rp ? { firstAfterHours: rp.firstAfterHours, everyDays: rp.everyDays, maxSends: rp.maxSends, includeExisting: rp.includeExisting, perRun: rp.perRun, templateId: rp.templateId || '' } : null);
+    const prs = j.profileNudge?.settings;
+    setPrform(prs ? { steps: prs.steps.map(profileStepFromHours), templateId: prs.templateId || '', reminderTemplateId: prs.reminderTemplateId || '' } : null);
     const ss = j.saves?.settings;
     setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
@@ -266,7 +270,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : which === 'promo' ? { id: 'referral_promo', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : which === 'promo' ? { id: 'referral_promo', ...patch } : which === 'profile' ? { id: 'profile_personalization', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -344,6 +348,22 @@ export default function AutomationsPage() {
   const e5 = errors.nolist || {};
   const nDirty = !!(ns && nform && (['days', 'secondAfter', 'templateId', 'reminderTemplateId'].some((k) => String(nform[k] ?? '') !== String(ns[k] ?? ''))));
   const nHasSecond = !!(nform && nform.secondAfter !== '' && Number(nform.secondAfter) > 0);
+  // "Personalize your profile" (lib/profileNudgeAdmin.js)
+  const pn = data.profileNudge;
+  const pns = pn?.settings;
+  const ePr = errors.profile || {};
+  const prHours = (steps) => steps.map((x) => Number(x.value) * (x.unit === 'days' ? 24 : 1));
+  const prDirty = !!(pns && prform && (JSON.stringify(prHours(prform.steps)) !== JSON.stringify(pns.steps)
+    || String(prform.templateId || '') !== String(pns.templateId || '') || String(prform.reminderTemplateId || '') !== String(pns.reminderTemplateId || '')));
+  const prPatch = () => ({ steps: prHours(prform.steps), templateId: prform.templateId, reminderTemplateId: prform.reminderTemplateId });
+  const toggleProfile = async () => {
+    const on = !pns.enabled;
+    const when = pns.steps.map(profileStepLabel).join(', ');
+    if (on && !(await ask(`Switch "Personalize your profile" on?\n\nVerified users whose profile isn’t personalized (photo or logo, first and last name, title or company) get an email ${when}. It stops as soon as their profile is personalized; each email goes once. People who signed up earlier only get an email that came due in the last 7 days.${pn.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
+    run('profile', 'toggle', () => put('profile', pn.setUp ? { enabled: on } : { ...prPatch(), enabled: on }, on ? '“Personalize your profile” is on.' : '“Personalize your profile” is off.'));
+  };
+  const prPer = pn?.perStep || {};
+  const prStats = pn?.sent ? ` ${pn.sent.toLocaleString('en-US')} sent so far${Object.keys(prPer).length > 1 ? ` (${Object.keys(prPer).sort((x, y) => x - y).map((k) => `#${k}: ${prPer[k]}`).join(' · ')})` : ''}.` : '';
   const toggleNoListing = async () => {
     const on = !ns.enabled;
     if (on && !(await ask(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
@@ -633,6 +653,34 @@ export default function AutomationsPage() {
             <DayField value={nform.secondAfter} onChange={(v) => setNform((f) => ({ ...f, secondAfter: v }))} min={0} max={59} error={e5.secondAfter} suffix="more days later" />
             <p className="text-[11px]" style={{ color: T.textMuted }}>{nHasSecond ? `Sent ${Number(nform.days) + Number(nform.secondAfter)} days after sign-up.` : 'Leave empty (or 0) for no second email.'}</p>
             {nHasSecond && <TemplatePicker label="Email sent" value={nform.reminderTemplateId} templates={data.templates} onChange={(v) => setNform((f) => ({ ...f, reminderTemplateId: v }))} error={e5.reminderTemplateId} />}
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {pns && prform ? (
+        <AutomationCard
+          title="Personalize your profile"
+          channelId="profile_personalization"
+          description="Emails verified users whose seller profile isn’t personalized yet: why it matters (buyers trust a seller they can see → more enquiries) and how, with a button to Settings."
+          enabled={pns.enabled} enabledAt={pns.enabledAt} busy={busy.profile}
+          onToggle={toggleProfile} dirty={prDirty || !pn.setUp}
+          onSave={() => run('profile', 'save', () => put('profile', prPatch(), pn.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
+          footnote={`Personalized = photo or logo + first and last name + title or company (or all 7 items) — the emails stop then. Covers people who started their profile but didn’t finish (the email says how far they got). Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped.${pn.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${prStats}`}
+        >
+          <StepCard n={1} kind="Trigger" title="A verified user whose profile isn’t personalized" />
+          <Connector />
+          <StepCard n={2} kind="Emails" title="Send after this long since sign-up">
+            <DraftSteps steps={prform.steps} errors={ePr} min={0} label="Email" max={PROFILE_STEPS.max}
+              note={<>0 hours = right after sign-up (the next hourly run). Default: 0 h, 24 h, 48 h. Stops once the profile is personalized.</>}
+              onChange={(steps) => setPrform((f) => ({ ...f, steps }))} />
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Email" title="Email with a button to Settings → profile">
+            <TemplatePicker label="First email" value={prform.templateId} templates={data.templates} onChange={(v) => setPrform((f) => ({ ...f, templateId: v }))} error={ePr.templateId} />
+            <TemplatePicker label="Later emails" value={prform.reminderTemplateId} templates={data.templates} onChange={(v) => setPrform((f) => ({ ...f, reminderTemplateId: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              The button link is <span className="font-mono">{'{{settings_url}}'}</span> — /cuenta/ajustes, tagged utm_campaign=profile_personalization (signed-out people sign in and land there). <span className="font-mono">{'{{progress_line}}'}</span> says how far they got.
+            </p>
           </StepCard>
         </AutomationCard>
       ) : null}

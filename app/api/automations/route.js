@@ -8,6 +8,8 @@
 //                        creates its row + two default emails (lib/noListingAdmin.js).
 //                        id 'referral_promo' (promote the referral program): the first save
 //                        creates its row + the default email (lib/referralPromoAdmin.js).
+//                        id 'profile_personalization' (personalize your profile): the first
+//                        save creates its row + two default emails (lib/profileNudgeAdmin.js).
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
@@ -21,6 +23,7 @@ import { PAYMENT_FOLLOWUP_ID, paymentFollowupConfig, paymentFollowupCounts, save
 import { PROMO_ID, PROMO_TEMPLATE, promoConfig, promoCounts, promoScheduleText, saveReferralPromo } from '@/lib/referralPromoAdmin';
 import { REFERRALS_ID, referralConfig } from '@/lib/referrals/core';
 import { selectAll } from '@/lib/selectAll';
+import { PROFILE_NUDGE_ID, profileNudgeConfig, profileNudgeStepCounts, saveProfileNudge } from '@/lib/profileNudgeAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -132,6 +135,13 @@ async function payload(db) {
       defaultTemplate: templates.find((t) => t.key === PROMO_TEMPLATE.key) || null,
     };
   } catch { referralPromo = null; }
+  // "Personalize your profile" — no row until the first save on the card (defaults shown).
+  let profileNudge = null;
+  try {
+    const [pa] = await db.select('automations', `select=*&id=eq.${PROFILE_NUDGE_ID}&limit=1`);
+    const logs = pa ? await db.select('email_log', `select=dedupe_key&automation_id=eq.${PROFILE_NUDGE_ID}&status=in.(sent,delivered,read)&order=created_at.desc&limit=10000&${EMAIL_ONLY}`).catch(() => []) : [];
+    profileNudge = { setUp: !!pa, settings: profileNudgeConfig(pa || null), sent: logs.length, perStep: profileNudgeStepCounts(logs) };
+  } catch { profileNudge = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length
     ? await db.select('payments', `select=property_id,amount_usd,created_at,status&status=eq.succeeded&property_id=${inList(convertedIds)}`).catch(() => [])
@@ -156,6 +166,7 @@ async function payload(db) {
     paymentFollowup,
     saves,
     referralPromo,
+    profileNudge,
     templates,
     stats: automationStats(runs, payments),
     recent: recent.map((r) => {
@@ -243,6 +254,12 @@ export async function PUT(req) {
     if (body.id === PROMO_ID) {
       const { id, ...patch } = body;
       const v = await saveReferralPromo(db, patch);
+      if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
+      return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
+    }
+    if (body.id === PROFILE_NUDGE_ID) {
+      const { id, ...patch } = body;
+      const v = await saveProfileNudge(db, patch);
       if (!v.ok) return NextResponse.json({ error: 'invalid', errors: v.errors }, { status: 400 });
       return NextResponse.json({ ...(await payload(db)), country: activeCountry() });
     }

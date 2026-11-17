@@ -61,6 +61,27 @@ function signInMethod(u) {
   return u.phone_verified_at ? `${base} + WhatsApp` : base;
 }
 
+// Profile Personalization (website Settings): "4/7" or "Complete" + a small bar, red < 3,
+// yellow 3–5, green 6–7 — like the website's bar. "Personalized" = the emails' stop rule.
+const PROFILE_TONE = { red: '#DC2626', yellow: '#F59E0B', green: '#16A34A' };
+const PROFILE_LABEL = { photo: 'photo', first_name: 'first name', last_name: 'last name', job_title: 'title', company_name: 'company', company_website: 'website', whatsapp: 'WhatsApp' };
+function ProfileCell({ p }) {
+  if (!p) return <span className="text-xs" style={{ color: T.textMuted }}>—</span>;
+  const done = p.count === p.total;
+  const color = PROFILE_TONE[p.tone] || PROFILE_TONE.red;
+  return (
+    <div className="w-[92px]" title={done ? 'All 7 items' : `Missing: ${p.missing.map((k) => PROFILE_LABEL[k] || k).join(', ')}`} data-testid="profile-cell">
+      <div className="flex items-baseline justify-between gap-1">
+        <span className="text-[12px] font-semibold tabular-nums" style={{ color: done ? PROFILE_TONE.green : T.textBody }}>{done ? 'Complete' : `${p.count}/${p.total}`}</span>
+        {p.personalized && !done ? <span className="text-[9.5px] font-semibold uppercase" style={{ color: PROFILE_TONE.green }}>OK</span> : null}
+      </div>
+      <div className="h-1.5 mt-1 rounded-full overflow-hidden" style={{ background: T.bgSurface }}>
+        <div className="h-full rounded-full" style={{ width: `${Math.max(p.pct, 4)}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [count, setCount] = useState(0);
@@ -202,7 +223,7 @@ export default function UsersPage() {
       </div>
 
       {/* Stat strip — totals for the active country */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: 'Total users', value: totalCount.toLocaleString(), Icon: UsersIcon },
           { label: 'Verified users', value: verifiedCount.toLocaleString(), Icon: CheckCircle2 },
@@ -211,6 +232,13 @@ export default function UsersPage() {
             value: stats && stats.pctVerifiedWithListing != null ? `${stats.pctVerifiedWithListing}%` : '—',
             hint: stats ? `${stats.verifiedWithListing.toLocaleString()} of ${stats.verified.toLocaleString()} verified users` : null,
             Icon: Home,
+          },
+          {
+            // Profile Personalization: photo or logo + first & last name + title or company (or 7/7)
+            label: 'Verified with a personalized profile',
+            value: stats && stats.pctVerifiedPersonalized != null ? `${stats.pctVerifiedPersonalized}%` : '—',
+            hint: stats && stats.verifiedPersonalized != null ? `${stats.verifiedPersonalized.toLocaleString()} of ${stats.verified.toLocaleString()} verified · photo + name + title or company` : null,
+            Icon: CheckCircle2,
           },
           { label: 'Showing', value: users.length.toLocaleString(), Icon: Activity },
         ].map(({ label, value, hint, Icon }) => (
@@ -256,8 +284,8 @@ export default function UsersPage() {
           <table className="w-full min-w-[1180px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Listings', 'Joined', 'Last login', 'Actions'].map((h, i) => (
-                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 9 ? 'text-right' : i === 6 ? 'text-center' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
+                {['User', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Listings', 'Profile', 'Joined', 'Last login', 'Actions'].map((h, i) => (
+                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 10 ? 'text-right' : i === 6 ? 'text-center' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -265,16 +293,16 @@ export default function UsersPage() {
               {loading ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i} className="border-b animate-pulse" style={{ borderColor: T.borderLight }}>
-                    {[...Array(10)].map((__, j) => (
+                    {[...Array(11)].map((__, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '160px' : '70px', background: T.bgSurface }} /></td>
                     ))}
                   </tr>
                 ))
               ) : error ? (
-                <tr><td colSpan="10" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
+                <tr><td colSpan="11" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-6 py-12 text-center">
+                  <td colSpan="11" className="px-6 py-12 text-center">
                     <UsersIcon className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>No users found</p>
                     <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term ? 'Try a different search.' : 'Users appear here once people sign in to the buyer portal.'}</p>
@@ -351,6 +379,7 @@ export default function UsersPage() {
                       {u.listings_waiting > 0 && <span className="block text-[10.5px] mt-0.5 whitespace-nowrap" style={{ color: '#8A5A12' }} title="Saved over the free limit, not paid — not on the site">+{u.listings_waiting} waiting for payment</span>}
                       {u.listings_deleted > 0 && <span className="block text-[10.5px] mt-0.5 whitespace-nowrap" style={{ color: T.textMuted }} title="Listings they (or the team) deleted — still counted in the free listings of their month">{u.listings_deleted} deleted</span>}
                     </td>
+                    <td className="px-4 py-3"><ProfileCell p={u.profile} /></td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>{fmtDate(u.created_at)}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textMuted }}>{fmtWhen(u.last_login_at)}</td>
                     <td className="px-4 py-3">

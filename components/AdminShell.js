@@ -30,6 +30,7 @@ const NAV = [
   ['/campaigns', 'WhatsApp Marketing', 'chat'],
   ['/automations', 'Automations', 'bolt'],
   ['/paid-listings', 'Paid listings', 'card'],
+  ['/profile-pro', 'Profile personalization', 'users'],
   ['/referrals', 'Referrals', 'gift'],
   ['/earnings', 'Earnings', 'card'],
   ['/marketing', 'Marketing', 'chart'],

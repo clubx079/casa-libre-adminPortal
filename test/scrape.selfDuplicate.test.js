@@ -184,7 +184,36 @@ describe('a listing is never quarantined as a duplicate of its own row', () => {
   });
 });
 
-describe('a listing with no photo is not published', () => {
+describe('a listing with no photo (PUBLISH_WITHOUT_PHOTOS, default on)', () => {
+  it('goes live without a photo (the site shows the placeholder) and is not quarantined', async () => {
+    const tables = seed();
+    h.page = [{ id: '52500012' }];   // the stubbed adapter returns no images
+
+    const out = await runJob({ runId: addRun(tables), country: 'py' });
+
+    const [p] = tables.properties.filter((x) => x.external_id === '52500012');
+    expect(p.admin_status).toBe('active');
+    expect(p.image_status).toBe('none');
+    expect(p.feature_image_url ?? null).toBe(null);
+    expect(tables.ingest_quarantine).toEqual([]);
+    expect(out.noImagesLive).toBe(1);
+  });
+
+  it('a duplicate without a photo is still held as a duplicate', async () => {
+    const tables = seed();
+    const row = listingRow('src-remax', 'other-1');
+    tables.properties.push({ ...row, id: 'live-twin', dedupe_key: keyOf(row), is_delisted: false, feature_image_url: 'https://cdn.example/y.webp' });
+    h.page = [{ id: '52500013' }];
+
+    await runJob({ runId: addRun(tables), country: 'py' });
+
+    expect(tables.properties.filter((x) => x.external_id === '52500013')).toEqual([]);
+    expect(tables.ingest_quarantine).toMatchObject([{ external_id: '52500013', reasons: ['duplicate'] }]);
+  });
+});
+
+describe('a listing with no photo is not published (PUBLISH_WITHOUT_PHOTOS=0)', () => {
+  beforeEach(() => { process.env.PUBLISH_WITHOUT_PHOTOS = '0'; return () => { delete process.env.PUBLISH_WITHOUT_PHOTOS; }; });
   it('is switched off and held in Quarantine as "No images"', async () => {
     const tables = seed();
     h.page = [{ id: '52500010' }];   // the stubbed adapter returns no images

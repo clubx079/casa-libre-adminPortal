@@ -30,8 +30,10 @@ async function handle(req) {
   const c = (sp.get('country') || 'all').toLowerCase();
   const countries = c === 'all' ? SEO_COUNTRIES : SEO_COUNTRIES.includes(c) ? [c] : null;
   if (!countries) return NextResponse.json({ error: 'bad country' }, { status: 400 });
+  // countries run side by side; Autopilot stops ~40 s before the 300 s limit and the next run continues
+  const deadline = Date.now() + 255000;
   const out = {};
-  for (const cc of countries) {
+  await Promise.all(countries.map(async (cc) => {
     out[cc] = {};
     // each step on its own: one failing source (e.g. Google down) doesn't stop the others
     for (const s of steps) {
@@ -39,11 +41,11 @@ async function handle(req) {
         if (s === 'trends') out[cc].trends = await runCollect(cc, ['trends']);
         else if (s === 'collect') out[cc].collect = await runCollect(cc, ['ads', 'gsc', 'site_search']);
         else if (s === 'decide') out[cc].decide = await runDecide(cc);
-        else if (s === 'autopilot') out[cc].autopilot = await runAutopilot(cc);
+        else if (s === 'autopilot') out[cc].autopilot = await runAutopilot(cc, { deadline });
         else if (s === 'improve') out[cc].improve = await runImprove(cc);
       } catch (e) { out[cc][`${s}Error`] = String(e?.message || e).slice(0, 300); }
     }
-  }
+  }));
   return NextResponse.json({ ok: true, job, steps, at: new Date().toISOString(), results: out });
 }
 

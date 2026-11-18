@@ -75,7 +75,9 @@ function RunDetail({ id, onBack }) {
         </div>
         <h2 className="text-[18px] font-bold mt-3 leading-snug" style={{ color: T.textPrimary }}>{r.headline || (run.status === 'running' ? 'This run is still working…' : 'No report')}</h2>
         <div className="mt-2 space-y-2 text-[13px] leading-relaxed" style={{ color: T.textBody }}>{(r.summary || []).map((p, i) => <p key={i}>{p}</p>)}</div>
-        <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Written by {r.writtenBy === 'numbers' ? 'the numbers (no AI available this run)' : r.writtenBy || run.model || '—'}{r.aiNote ? ` · ${r.aiNote}` : ''}</p>
+        {r.writtenBy === 'numbers'
+          ? <div className="mt-3"><Banner tone="warning"><b>Not written by Claude this run.</b> {r.aiNote || 'Claude did not answer.'} — the report below is written from the numbers only; the data is complete.</Banner></div>
+          : <p className="text-[11px] mt-3" style={{ color: T.textMuted }}>Written by Claude ({r.writtenBy || run.model || '—'})</p>}
         {run.error ? <div className="mt-3"><Banner>{run.error}</Banner></div> : null}
       </section>
 

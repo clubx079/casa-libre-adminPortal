@@ -8,7 +8,7 @@ import { getSession } from '@/lib/auth';
 import { activeCountry } from '@/lib/adminCountry';
 import { mayRead } from '@/lib/analyst/access';
 import { ccOf, isMissingTable } from '@/lib/seo/store';
-import { listRuns, getRun, runningRun, runPipeline } from '@/lib/seo/runLog';
+import { listRuns, getRun, runningRun, runPipeline, isRunning } from '@/lib/seo/runLog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,7 +39,7 @@ export async function POST() {
   const cc = ccOf(activeCountry());
   if (!mayRead(cc)) return NextResponse.json({ error: 'You do not have access to this country.' }, { status: 403 });
   try {
-    if (await runningRun(cc)) return NextResponse.json({ error: 'A run is already in progress for this country.' }, { status: 409 });
+    if (isRunning(cc) || await runningRun(cc)) return NextResponse.json({ error: 'A run is already in progress for this country.' }, { status: 409 });
   } catch (e) {
     if (isMissingTable(e)) return NextResponse.json({ error: 'Run migrations/012_seo_runs.sql in this country\'s database first.' }, { status: 400 });
     return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: 500 });

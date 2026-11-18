@@ -3,6 +3,7 @@
 // written every Monday 07:00 (Paraguay) by the cron (no manual run button). Click a report
 // to read it and handle its draft emails. Data: /api/manager. lib/manager/*.
 // Tab "AI Analyst" (#analyst): why the numbers moved, any country / period (components/manager/AnalystTab.js).
+// Tab "AI SEO" (#seo): the report of every SEO pipeline run (components/manager/SeoTab.js).
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,8 +11,9 @@ import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automat
 import OpenIssuesDays from '@/components/manager/OpenIssuesDays';
 import SecurityCard from '@/components/manager/SecurityCard';
 import AnalystTab from '@/components/manager/AnalystTab';
+import SeoTab from '@/components/manager/SeoTab';
 
-const TABS = [['reports', 'Reports'], ['analyst', 'AI Analyst']];
+const TABS = [['reports', 'Reports'], ['analyst', 'AI Analyst'], ['seo', 'AI SEO']];
 
 const STATUS ={ running: ['info', 'Writing…'], done: ['success', 'Ready'], failed: ['danger', 'Failed'] };
 
@@ -22,8 +24,8 @@ export default function ManagerPage() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [tab, setTab] = useState('reports');
-  useEffect(() => { if (window.location.hash === '#analyst') setTab('analyst'); }, []);
-  const pickTab = (t) => { setTab(t); window.history.replaceState(null, '', t === 'analyst' ? '#analyst' : window.location.pathname); };
+  useEffect(() => { const h = window.location.hash.slice(1); if (h === 'analyst' || h === 'seo') setTab(h); }, []);
+  const pickTab = (t) => { setTab(t); window.history.replaceState(null, '', t === 'reports' ? window.location.pathname : `#${t}`); };
 
   const load = useCallback(() => {
     fetch('/api/manager').then((r) => r.json()).then((j) => { if (j.error) setErr(j.error); else { setErr(''); setData(j); } }).catch(() => setErr('failed'));
@@ -49,7 +51,7 @@ export default function ManagerPage() {
             style={tab === id ? { borderColor: T.primary, color: T.textPrimary } : { borderColor: 'transparent', color: T.textMuted }}>{label}</button>
         ))}
       </div>
-      {tab === 'analyst' ? <AnalystTab /> : (<>
+      {tab === 'analyst' ? <AnalystTab /> : tab === 'seo' ? <SeoTab /> : (<>
       {data?.configured === false && <Banner tone="warning">Set <span className="font-mono">ANTHROPIC_API_KEY</span> on the server to turn the Admin Manager on.</Banner>}
       {err === 'migration_pending' || data?.pending ? (
         <Banner tone="warning"><b>Not set up for this country yet.</b> Apply <span className="font-mono">migrations/007_admin_manager.sql</span> (admin repo) to this country&apos;s database in the AiroBase SQL editor, then reload.</Banner>

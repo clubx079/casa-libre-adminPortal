@@ -45,6 +45,6 @@ export async function POST() {
     return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: 500 });
   }
   // background: the admin server is long-lived (Docker); the tab polls GET until the run is done
-  runPipeline(cc, { trigger: 'manual', by: session.email || null, deadline: Date.now() + 150000 }).catch(() => {});
+  runPipeline(cc, { trigger: 'manual', by: session.email || null, deadline: Date.now() + 120000 }).catch(() => {});
   return NextResponse.json({ ok: true, started: true });
 }

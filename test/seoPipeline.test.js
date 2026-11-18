@@ -256,3 +256,12 @@ describe('draft template + settings', () => {
     expect(parsePath('/alquiler/departamentos/asuncion/baratos')).toEqual({ op: 'alquiler', tipo: 'departamentos', ciudad: 'asuncion', variant: 'baratos' });
   });
 });
+
+describe('SEO matcher — a "barrio" named like its city', () => {
+  it('never hijacks the city search (live PY: listings with neighbourhood "Asunción")', () => {
+    const p = { cities, barrios: [{ slug: 'asuncion', name: 'Asunción', ciudad: 'asuncion' }, { slug: 'villa-morra', name: 'Villa Morra', ciudad: 'asuncion' }] };
+    expect(matchTerm('alquiler departamento 1 dormitorio asunción baratos', p)).toMatchObject({ kind: 'variant', url: '/alquiler/departamentos/asuncion/1-dormitorio' });
+    expect(matchTerm('alquiler de departamentos asuncion', p)).toMatchObject({ kind: 'city', url: '/alquiler/departamentos/asuncion' });
+    expect(matchTerm('departamentos en alquiler villa morra', p)).toMatchObject({ kind: 'barrio', url: '/alquiler/departamentos/asuncion/villa-morra' });
+  });
+});

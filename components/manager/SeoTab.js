@@ -5,6 +5,7 @@
 // Data: /api/manager/seo (lib/seo/runLog.js, table seo_runs — migrations/012_seo_runs.sql).
 import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Pill, Banner, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
+import SeoPipeline from '@/components/seo/SeoPipeline';
 
 const STATUS = { improving: ['success', 'Improving'], steady: ['info', 'Steady'], declining: ['danger', 'Declining'], starting: ['neutral', 'Starting'] };
 const RUN = { running: ['info', 'Running…'], done: ['success', 'Done'], failed: ['danger', 'Failed'] };
@@ -177,7 +178,24 @@ function RunDetail({ id, onBack }) {
   );
 }
 
+const VIEWS = [['reports', 'Run reports'], ['pipeline', 'Pipeline: opportunities, guides, changes, signals, settings']];
+
 export default function SeoTab() {
+  const [view, setView] = useState('reports');
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {VIEWS.map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setView(k)} className="text-[12.5px] font-semibold px-3.5 py-1.5 rounded-full border transition-colors"
+            style={view === k ? { background: T.primary, color: '#fff', borderColor: T.primary } : { borderColor: T.borderLight, color: T.textBody }}>{label}</button>
+        ))}
+      </div>
+      {view === 'pipeline' ? <SeoPipeline /> : <SeoRuns />}
+    </div>
+  );
+}
+
+function SeoRuns() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState(null);

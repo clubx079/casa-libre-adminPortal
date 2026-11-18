@@ -7,7 +7,7 @@
 //   4 weeks with no impressions and changes a title at most once per 14 days (lib/seo/settings.js).
 // Single stages still work on their own (manual runs, not recorded): ?job=trends | collect | decide | autopilot | improve
 // ?country=py|bo|uy|ve|sv|all (default all). Countries run side by side. Time budget (300 s): Autopilot
-// stops at 150 s (the next run continues), then Improve, the snapshot and the report (AI ≤ 45 s each try).
+// stops at 120 s (the next run continues), then Improve, the snapshot and the report (Claude ≤ 90 s).
 import { NextResponse } from 'next/server';
 import { runPipeline, STEPS } from '@/lib/seo/runLog';
 import { SEO_COUNTRIES } from '@/lib/seo/store';
@@ -27,7 +27,7 @@ async function handle(req) {
   const c = (sp.get('country') || 'all').toLowerCase();
   const countries = c === 'all' ? SEO_COUNTRIES : SEO_COUNTRIES.includes(c) ? [c] : null;
   if (!countries) return NextResponse.json({ error: 'bad country' }, { status: 400 });
-  const deadline = Date.now() + 150000;
+  const deadline = Date.now() + 120000;
   const out = {};
   await Promise.all(countries.map(async (cc) => {
     try {

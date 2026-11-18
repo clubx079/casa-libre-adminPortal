@@ -14,7 +14,6 @@ const NAV = [
   ['/properties', 'Properties', 'home'],
   ['/analytics', 'Analytics', 'chart'],
   ['/search-console', 'Search Console', 'chart'],
-  ['/seo', 'SEO', 'bolt'],
   ['/manager', 'Admin Manager', 'bolt'],
   ['/ai-usage', 'AI usage', 'chart'],
   ['/utm-links', 'UTM Links', 'link'],

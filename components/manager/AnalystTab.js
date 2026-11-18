@@ -390,7 +390,7 @@ export default function AnalystTab() {
       {run?.status === 'done' ? <Result run={run} /> : null}
 
       {(meta?.runs || []).length ? (
-        <Card title="Earlier analyses" right={<span className="text-[11px]" style={{ color: T.textMuted }}>kept on this server, not in the database</span>}>
+        <Card title="Earlier analyses" right={<span className="text-[11px]" style={{ color: T.textMuted }}>saved in the database</span>}>
           <SmallTable
             head={['Analysis', 'Country', 'Period', 'Cost']}
             rows={meta.runs.slice(0, 15).map((r) => [

@@ -369,24 +369,24 @@ export default function AutomationsPage() {
   const prPer = pn?.perStep || {};
   const prStats = pn?.sent ? ` ${pn.sent.toLocaleString('en-US')} sent so far${Object.keys(prPer).length > 1 ? ` (${Object.keys(prPer).sort((x, y) => x - y).map((k) => `#${k}: ${prPer[k]}`).join(' · ')})` : ''}.` : '';
   // "Show your face" (lib/photoFaceAdmin.js)
-  const pf = data.photoFace;
-  const pfs = pf?.settings;
+  const faData = data.photoFace;
+  const faSet = faData?.settings;
   const eFa = errors.face || {};
-  const faDirty = !!(pfs && faform && (JSON.stringify(prHours(faform.steps)) !== JSON.stringify(pfs.steps)
-    || String(faform.templateId || '') !== String(pfs.templateId || '') || String(faform.reminderTemplateId || '') !== String(pfs.reminderTemplateId || '')));
+  const faDirty = !!(faSet && faform && (JSON.stringify(prHours(faform.steps)) !== JSON.stringify(faSet.steps)
+    || String(faform.templateId || '') !== String(faSet.templateId || '') || String(faform.reminderTemplateId || '') !== String(faSet.reminderTemplateId || '')));
   const faPatch = () => ({ steps: prHours(faform.steps), templateId: faform.templateId, reminderTemplateId: faform.reminderTemplateId });
   const toggleFace = async () => {
-    const on = !pfs.enabled;
-    const when = pfs.steps.map(photoFaceStepLabel).join(', ');
+    const on = !faSet.enabled;
+    const when = faSet.steps.map(photoFaceStepLabel).join(', ');
     if (on && !(await ask(`Switch "Show your face" on?
 
-Verified users whose approved profile photo is a logo, text or something else (not a real photo of them — checked by AI) get an email ${when}. Before each email the photo is checked again: once it is a real photo of the person, nothing more is sent. Each email goes once; one more than 7 days late is skipped.${pf.setUp ? '' : '
+Verified users whose approved profile photo is a logo, text or something else (not a real photo of them — checked by AI) get an email ${when}. Before each email the photo is checked again: once it is a real photo of the person, nothing more is sent. Each email goes once; one more than 7 days late is skipped.${faData.setUp ? '' : `
 
-This also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
-    run('face', 'toggle', () => put('face', pf.setUp ? { enabled: on } : { ...faPatch(), enabled: on }, on ? '“Show your face” is on.' : '“Show your face” is off.'));
+This also creates the two default emails (Spanish) — edit them in Email templates.`}`))) return;
+    run('face', 'toggle', () => put('face', faData.setUp ? { enabled: on } : { ...faPatch(), enabled: on }, on ? '“Show your face” is on.' : '“Show your face” is off.'));
   };
-  const faPer = pf?.perStep || {};
-  const faStats = pf?.sent ? ` ${pf.sent.toLocaleString('en-US')} sent so far${Object.keys(faPer).length > 1 ? ` (${Object.keys(faPer).sort((x, y) => x - y).map((k) => `#${k}: ${faPer[k]}`).join(' · ')})` : ''}.` : '';
+  const faPer = faData?.perStep || {};
+  const faStats = faData?.sent ? ` ${faData.sent.toLocaleString('en-US')} sent so far${Object.keys(faPer).length > 1 ? ` (${Object.keys(faPer).sort((x, y) => x - y).map((k) => `#${k}: ${faPer[k]}`).join(' · ')})` : ''}.` : '';
   const toggleNoListing = async () => {
     const on = !ns.enabled;
     if (on && !(await ask(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
@@ -708,15 +708,15 @@ This also creates the two default emails (Spanish) — edit them in Email templa
         </AutomationCard>
       ) : null}
 
-      {pfs && faform ? (
+      {faSet && faform ? (
         <AutomationCard
           title="Show your face"
           channelId="profile_photo_face"
           description="Emails sellers whose approved profile photo is a logo, text or something else — not a real photo of them — explaining that buyers are more comfortable when they know who they are dealing with. Logos are never blocked; this only encourages a real photo."
-          enabled={pfs.enabled} enabledAt={pfs.enabledAt} busy={busy.face}
-          onToggle={toggleFace} dirty={faDirty || !pf.setUp}
-          onSave={() => run('face', 'save', () => put('face', faPatch(), pf.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
-          footnote={`The AI checks each approved photo once (face / logo or text / other). Before every email the photo is read again: once it is a real photo of the person, or it is removed, nothing more is sent. Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped.${pf.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${faStats}`}
+          enabled={faSet.enabled} enabledAt={faSet.enabledAt} busy={busy.face}
+          onToggle={toggleFace} dirty={faDirty || !faData.setUp}
+          onSave={() => run('face', 'save', () => put('face', faPatch(), faData.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
+          footnote={`The AI checks each approved photo once (face / logo or text / other). Before every email the photo is read again: once it is a real photo of the person, or it is removed, nothing more is sent. Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped.${faData.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${faStats}`}
         >
           <StepCard n={1} kind="Trigger" title="An approved profile photo that is a logo, text or something else" />
           <Connector />

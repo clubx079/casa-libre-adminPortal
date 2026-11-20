@@ -115,12 +115,11 @@ function Activity({ bot }) {
 
 function Connection({ bot }) {
   const p = PRODUCT[bot.product];
-  const rows = bot.product === 'bot'
-    ? [['Runs on', 'Grok Bot (our Grok Pro account)'], ['Instructions', 'Written in plain language inside Grok, from the settings on this page'], ['Reports back to', `admin.casa-libre.com/api/bots/${bot.key}/run (planned)`], ['Logins', 'The bot\'s own accounts, never a team member\'s']]
-    : [['Runs on', 'Grok API, called from the admin on the schedule'], ['Key', 'xAI API key with a team spend limit (not added yet)'], ['Saves to', bot.key === 'football' ? 'The football site\'s article queue' : 'The outside-events list read by the AI Analyst and AI SEO'], ['Logged in', 'AI usage, next to Claude and Groq']];
+  const saves = { football: 'The football site\'s article queue', 'analyst-x': 'The outside-events list read by the AI Analyst', 'news-feed': 'The outside-events list read by the AI Analyst and AI SEO' }[bot.key];
+  const rows = [['Runs on', 'Grok Bot (our Grok Pro account)'], ['Instructions', 'Written in plain language inside Grok, from the settings on this page'], ['Reports back to', `admin.casa-libre.com/api/bots/${bot.key}/run`], ...(saves ? [['Saves to', saves]] : []), ['Logins', 'The bot\'s own accounts, never a team member\'s']];
   return (
     <div className="flex flex-col gap-4">
-      <Banner tone="warning"><b>Not connected yet.</b> {p.label}: {p.hint.toLowerCase()}. Connecting it is the next step; until then nothing runs and nothing is spent.</Banner>
+      <Banner tone="warning"><b>Not connected yet.</b> {p.hint}.</Banner>
       <dl className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-x-4 gap-y-2.5 text-[13px]">
         {rows.flatMap(([k, v]) => [<dt key={`${k}-k`} style={{ color: T.textSecondary }}>{k}</dt>, <dd key={`${k}-v`} style={{ color: T.textBody }}>{v}</dd>])}
       </dl>
@@ -180,9 +179,6 @@ export default function BotsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Bots" sub="Grok collects outside data on a schedule, Claude analyses it, and a person approves anything that leaves Casa-Libre. Every run will be logged here." />
-      <Banner tone="warning">
-        <b>Preview.</b> The bots are not connected yet: nothing runs and nothing is spent. Settings are saved in this browser only, until the bots are wired to the admin.
-      </Banner>
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">
         <nav aria-label="Bots" className="flex flex-col gap-2">
@@ -195,7 +191,7 @@ export default function BotsPage() {
                 style={{ background: active ? T.bgWhite : 'transparent', border: `1px solid ${active ? T.primary : T.borderLight}` }}>
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-[14px] font-bold leading-snug" style={{ color: T.textPrimary }}>{b.name}</span>
-                  <Pill tone={b.product === 'bot' ? 'ink' : 'info'}>{PRODUCT[b.product].label}</Pill>
+                  <Pill tone="ink">{PRODUCT[b.product].label}</Pill>
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-[12px]" style={{ color: T.textSecondary }}>
                   <span className="inline-block w-2 h-2 rounded-full" style={{ background: T.textMuted }} aria-hidden />
@@ -210,7 +206,7 @@ export default function BotsPage() {
           <header className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-[20px] font-bold tracking-head" style={{ color: T.textPrimary }}>{bot.name}</h2>
-              <Pill tone={bot.product === 'bot' ? 'ink' : 'info'}>{PRODUCT[bot.product].label}</Pill>
+              <Pill tone="ink">{PRODUCT[bot.product].label}</Pill>
               <Pill tone="neutral">Not connected</Pill>
               <Pill tone={settings[bot.key].enabled ? 'success' : 'neutral'}>{settings[bot.key].enabled ? 'Switched on' : 'Off'}</Pill>
             </div>

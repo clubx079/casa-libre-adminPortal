@@ -290,26 +290,40 @@ function SeoRuns({ siteKey }) {
   );
 }
 
-// "This run vs the previous run": the two latest finished runs side by side (lib/seo/runCompare.js).
+// "This run vs the previous run" (lib/seo/runCompare.js): the latest finished run against the most recent
+// earlier run whose Google data covers DIFFERENT dates (two runs on the same day read the same data).
 function RunCompare({ runs, siteKey, onOpen }) {
-  const done = runs.filter((r) => r.status === 'done').slice(0, 2);
+  const done = runs.filter((r) => r.status === 'done').slice(0, 8);
   const [cmp, setCmp] = useState(null);
+  const [sameOnly, setSameOnly] = useState(false);
   const [origin, setOrigin] = useState('');
   const ids = done.map((r) => r.id).join(',');
   useEffect(() => {
-    if (done.length < 2) { setCmp(null); return undefined; }
+    setCmp(null); setSameOnly(false);
+    if (done.length < 2) return undefined;
     let alive = true;
-    Promise.all(done.map((r) => fetch(withSite(`/api/manager/seo?id=${r.id}`, siteKey)).then((x) => x.json())))
-      .then(([cur, prev]) => {
-        if (!alive || !cur?.run || !prev?.run) return;
-        setOrigin(siteKey ? `https://${siteDomain(siteKey) || ''}` : (cur.origin || ''));
-        setCmp(compareRuns(prev.run, cur.run));
-      }).catch(() => {});
+    const get = (id) => fetch(withSite(`/api/manager/seo?id=${id}`, siteKey)).then((x) => x.json());
+    (async () => {
+      const cur = await get(done[0].id);
+      if (!alive || !cur?.run) return;
+      const end = cur.run.snapshot?.window?.end;
+      for (const r of done.slice(1)) {
+        const prev = await get(r.id);
+        if (!alive) return;
+        if (prev?.run && prev.run.snapshot?.window?.end !== end) {
+          setOrigin(siteKey ? `https://${siteDomain(siteKey) || ''}` : (cur.origin || ''));
+          setCmp(compareRuns(prev.run, cur.run));
+          return;
+        }
+      }
+      setSameOnly(true);
+    })().catch(() => {});
     return () => { alive = false; };
   }, [ids, siteKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (done.length < 2) {
     return done.length === 1 ? <p className="text-[12.5px]" style={{ color: T.textMuted }}>The comparison with the previous run appears here after the second run.</p> : null;
   }
+  if (sameOnly) return <p className="text-[12.5px]" style={{ color: T.textMuted }}>No comparison yet: the earlier runs used the same Google data (same dates) as the latest one. It appears after a run on a later day.</p>;
   if (!cmp) return <p className="text-[12.5px]" style={{ color: T.textMuted }}>Loading the comparison…</p>;
   const tone = (t) => (t === 'good' ? T.success : t === 'bad' ? T.danger : T.textSecondary);
   const val = (r, v) => (v == null ? '—' : r.kind === 'position' ? Number(v).toFixed(1) : Number(v).toLocaleString('en-US'));

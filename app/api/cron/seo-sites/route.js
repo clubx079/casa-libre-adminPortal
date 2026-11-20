@@ -27,13 +27,21 @@ async function handle(req) {
   if (!keys) return NextResponse.json({ error: 'bad site' }, { status: 400 });
   const deadline = Date.now() + 120000;
   const out = {};
-  await Promise.all(keys.map(async (key) => {
+  const work = Promise.all(keys.map(async (key) => {
     try {
       out[key] = job === 'all'
         ? await runSitePipeline(key, { trigger: 'cron', deadline })
         : await runSitePipeline(key, { trigger: `manual:${job}`, deadline, steps: [job], record: false });
     } catch (e) { out[key] = { error: String(e?.message || e).slice(0, 300) }; }
   }));
+  // Guide writing takes minutes; a proxy in front of the admin may close the request first and the
+  // caller would see a 502. So by default answer at once and let the run finish on the server
+  // (each run is recorded in seo_runs and shown in Admin Manager → AI SEO). ?wait=1 = old behaviour.
+  if (sp.get('wait') !== '1') {
+    work.catch(() => {});
+    return NextResponse.json({ ok: true, started: true, job, sites: keys, at: new Date().toISOString(), note: 'running on the server; results appear in Admin Manager → AI SEO' }, { status: 202 });
+  }
+  await work;
   return NextResponse.json({ ok: true, job, at: new Date().toISOString(), results: out });
 }
 

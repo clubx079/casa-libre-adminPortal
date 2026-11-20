@@ -29,13 +29,19 @@ async function handle(req) {
   if (!countries) return NextResponse.json({ error: 'bad country' }, { status: 400 });
   const deadline = Date.now() + 120000;
   const out = {};
-  await Promise.all(countries.map(async (cc) => {
+  const work = Promise.all(countries.map(async (cc) => {
     try {
       out[cc] = job === 'all'
         ? await runPipeline(cc, { trigger: 'cron', deadline })
         : await runPipeline(cc, { trigger: `manual:${job}`, deadline, steps: [job], record: false });
     } catch (e) { out[cc] = { error: String(e?.message || e).slice(0, 300) }; }
   }));
+  // answer at once and finish on the server (a proxy may close a long request); ?wait=1 = wait for results
+  if (sp.get('wait') !== '1') {
+    work.catch(() => {});
+    return NextResponse.json({ ok: true, started: true, job, countries, at: new Date().toISOString(), note: 'running on the server; results appear in Admin Manager → AI SEO' }, { status: 202 });
+  }
+  await work;
   return NextResponse.json({ ok: true, job, at: new Date().toISOString(), results: out });
 }
 

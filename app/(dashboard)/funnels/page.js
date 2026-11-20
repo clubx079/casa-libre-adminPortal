@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, X, ExternalLink, Filter, Sparkles } from 'lucide-react';
-import SeoSitesTab from '@/components/funnels/SeoSitesTab';
+import { Search, X, ExternalLink, Filter } from 'lucide-react';
 import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automations/ui';
 import {
   SITE_FIELDS, FUNNEL_STATUSES, STATUS_LABEL, LEAD_RANGES, DEFAULT_LEAD_DAYS, waLink, utmOf,
@@ -449,23 +448,22 @@ export default function FunnelsPage() {
   const [tab, setTab] = useState('leads');
   const [seen, setSeen] = useState({ leads: true });
   useEffect(() => { setSeen((s) => ({ ...s, [tab]: true })); }, [tab]);
-  const tabs = useMemo(() => [['leads', 'Leads'], ['analytics', 'Analytics'], ['seo', 'AI SEO']], []);
+  const tabs = useMemo(() => [['leads', 'Leads'], ['analytics', 'Analytics']], []);
 
   return (
     <div className="space-y-5">
       <PageHeader title="Funnels"
-        sub="The six Casa-Libre SEO sites: owners (.org, .online), agents (Paraguay, Bolivia) and the two guide libraries. Pick one or several sites. Leads come from the owner sites' forms and are read from the selected country's database; analytics from PostHog; AI SEO shows each site's daily SEO pipeline." />
+        sub="The six Casa-Libre SEO sites: owners (.org, .online), agents (Paraguay, Bolivia) and the two guide libraries. Pick one or several sites. Leads come from the owner sites' forms and are read from the selected country's database; analytics from PostHog." />
       <div className="flex items-center gap-6 border-b" style={{ borderColor: T.borderLight }}>
         {tabs.map(([k, l]) => (
           <button key={k} type="button" onClick={() => setTab(k)} className="pb-2.5 -mb-px text-[14px] font-semibold border-b-2 transition-colors inline-flex items-center gap-1.5"
             style={tab === k ? { borderColor: T.textPrimary, color: T.textPrimary } : { borderColor: 'transparent', color: T.textSecondary }}>
-            {k === 'analytics' ? <Filter className="w-3.5 h-3.5" /> : null}{k === 'seo' ? <Sparkles className="w-3.5 h-3.5" /> : null}{l}
+            {k === 'analytics' ? <Filter className="w-3.5 h-3.5" /> : null}{l}
           </button>
         ))}
       </div>
       <div hidden={tab !== 'leads'}><LeadsTab /></div>
       <div hidden={tab !== 'analytics'}>{seen.analytics ? <AnalyticsTab /> : null}</div>
-      <div hidden={tab !== 'seo'}>{seen.seo ? <SeoSitesTab /> : null}</div>
     </div>
   );
 }

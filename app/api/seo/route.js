@@ -1,6 +1,6 @@
 // GET /api/seo?tab=opportunities|drafts|changes|signals|watch|settings — Admin → SEO data for the
 // active country (lib/seo/*). POST /api/seo/action does the changes.
-// ?site=<key> (org|online|agpy|agbo|libpy|libbo): the same tabs for one of the six SEO sites (lib/seoSites/*;
+// ?site=<key> (org|online|agpy|agbo|libpy|libbo|hub): the same tabs for one of the six SEO sites or the hub (lib/seoSites/*;
 // PY DB, country 'site:<key>'). Drafts then carry `path` (the guide's address on the site). Without it: as before.
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';

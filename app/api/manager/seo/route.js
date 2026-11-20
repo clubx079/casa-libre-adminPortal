@@ -3,7 +3,7 @@
 // GET  /api/manager/seo?id=<uuid> → one run in full (report, changes, snapshot, comparison)
 // POST /api/manager/seo           → "Run now": the full pipeline + report for the active country, in the
 //                                   background (the tab polls); refused while one is already running.
-// ?site=<key> (org|online|agpy|agbo|libpy|libbo): the same for one of the six SEO sites (Funnels → AI SEO,
+// ?site=<key> (org|online|agpy|agbo|libpy|libbo|hub): the same for one of the six SEO sites or the casa-libre.com hub (Admin Manager → AI SEO,
 // lib/seoSites/runLog.js; rows in the PY DB with country 'site:<key>'). Without it: exactly as before.
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';

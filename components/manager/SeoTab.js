@@ -3,12 +3,13 @@
 // Each run: status, the AI report, what it changed and why (pages added, edited, guides), keywords and
 // rankings, the results of every page the pipeline touched, and the comparison with the previous run.
 // Data: /api/manager/seo (lib/seo/runLog.js, table seo_runs — migrations/012_seo_runs.sql).
-// Optional `site` prop (a key of lib/funnelSites.js): the same views for one of the six SEO sites (Admin → Funnels
-// → AI SEO); every request then carries site=<key>. Sites only get guides, titles and internal links.
+// Optional `site` prop (a key of lib/seoSites/scope.js: the six funnel sites or 'hub' = casa-libre.com): the same
+// views for that site (Admin Manager → AI SEO → Funnel sites / casa-libre.com hub, components/manager/SeoSections.js);
+// every request then carries site=<key>. Sites only get guides, titles and internal links.
 import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Pill, Banner, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
 import SeoPipeline from '@/components/seo/SeoPipeline';
-import { funnelSiteDomain } from '@/lib/funnelSites';
+import { siteDomain } from '@/lib/seoSites/scope';
 
 /** Appends site=<key> to an API URL when a site is given (else the URL is unchanged). */
 const withSite = (url, siteKey) => (siteKey ? `${url}${url.includes('?') ? '&' : '?'}site=${encodeURIComponent(siteKey)}` : url);
@@ -53,7 +54,7 @@ function Tile({ label, value, delta, deltaText, invert }) {
 function RunDetail({ id, onBack, siteKey }) {
   const [run, setRun] = useState(null);
   const [err, setErr] = useState('');
-  const domain = siteKey ? funnelSiteDomain(siteKey) || siteKey : 'casa-libre';
+  const domain = siteKey ? siteDomain(siteKey) || siteKey : 'casa-libre';
   useEffect(() => {
     let alive = true;
     fetch(withSite(`/api/manager/seo?id=${id}`, siteKey)).then((r) => r.json()).then((j) => { if (!alive) return; if (j.error) setErr(j.error); else setRun(j.run); }).catch(() => alive && setErr('failed'));
@@ -213,7 +214,7 @@ export default function SeoTab({ site = null }) {
 
 function SeoRuns({ siteKey }) {
   const [data, setData] = useState(null);
-  const domain = siteKey ? funnelSiteDomain(siteKey) || siteKey : '';
+  const domain = siteKey ? siteDomain(siteKey) || siteKey : '';
   const [err, setErr] = useState('');
   const [open, setOpen] = useState(null);
   const [starting, setStarting] = useState(false);

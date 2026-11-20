@@ -1,10 +1,10 @@
-// The AI SEO pipeline of the six Casa-Libre SEO sites on a timer (AiroBase Cron,
-// `Authorization: Bearer {{secrets.CRON_SECRET}}`). ONE cron for all six:   ?job=all   once a day
+// The AI SEO pipeline of the six Casa-Libre SEO sites + the casa-libre.com hub on a timer (AiroBase Cron,
+// `Authorization: Bearer {{secrets.CRON_SECRET}}`). ONE cron for all seven:   ?job=all   once a day
 //   → per site: Google Trends, Search Console (+ Ads for the PY sites), Decide, Autopilot (writes and
 //   publishes guides, adds links, within the daily caps), Improve, then the run record + AI report and ONE
 //   publish ping to the site (lib/seoSites/runLog.js). Sites run side by side, each with the same deadline
 //   logic as /api/cron/seo (Autopilot stops at 120 s, the next run continues).
-// ?site=<key> (org|online|agpy|agbo|libpy|libbo, default all) · single stages (manual, not recorded):
+// ?site=<key> (org|online|agpy|agbo|libpy|libbo|hub, default all) · single stages (manual, not recorded):
 // ?job=trends | collect | decide | autopilot | improve
 import { NextResponse } from 'next/server';
 import { runSitePipeline, STEPS } from '@/lib/seoSites/runLog';

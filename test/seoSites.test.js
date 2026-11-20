@@ -17,7 +17,7 @@ describe('site scope helpers', () => {
     expect(siteKeyOf('site:agpy')).toBe('agpy');
     expect(siteKeyOf('py')).toBe(null);
     expect(isSiteScope('site:nope')).toBe(false);
-    expect(SITE_KEYS).toEqual(['org', 'online', 'agpy', 'agbo', 'libpy', 'libbo']);
+    expect(SITE_KEYS).toEqual(['org', 'online', 'agpy', 'agbo', 'libpy', 'libbo', 'hub']);
   });
   it('finds a site by key or domain, rejects the rest', () => {
     expect(siteFor('agenteinmobiliarioparaguay.com').key).toBe('agpy');

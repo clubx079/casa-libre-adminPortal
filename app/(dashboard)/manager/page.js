@@ -3,7 +3,8 @@
 // written every Monday 07:00 (Paraguay) by the cron (no manual run button). Click a report
 // to read it and handle its draft emails. Data: /api/manager. lib/manager/*.
 // Tab "AI Analyst" (#analyst): why the numbers moved, any country / period (components/manager/AnalystTab.js).
-// Tab "AI SEO" (#seo): the report of every SEO pipeline run (components/manager/SeoTab.js).
+// Tab "AI SEO" (#seo): the SEO pipeline of the buyer portal, the six funnel sites and the casa-libre.com hub —
+// one section each (components/manager/SeoSections.js → components/manager/SeoTab.js).
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -11,7 +12,7 @@ import { T, CARD, PageHeader, Pill, Banner, fmtDate } from '@/components/automat
 import OpenIssuesDays from '@/components/manager/OpenIssuesDays';
 import SecurityCard from '@/components/manager/SecurityCard';
 import AnalystTab from '@/components/manager/AnalystTab';
-import SeoTab from '@/components/manager/SeoTab';
+import SeoSections from '@/components/manager/SeoSections';
 
 const TABS = [['reports', 'Reports'], ['analyst', 'AI Analyst'], ['seo', 'AI SEO']];
 
@@ -51,7 +52,7 @@ export default function ManagerPage() {
             style={tab === id ? { borderColor: T.primary, color: T.textPrimary } : { borderColor: 'transparent', color: T.textMuted }}>{label}</button>
         ))}
       </div>
-      {tab === 'analyst' ? <AnalystTab /> : tab === 'seo' ? <SeoTab /> : (<>
+      {tab === 'analyst' ? <AnalystTab /> : tab === 'seo' ? <SeoSections /> : (<>
       {data?.configured === false && <Banner tone="warning">Set <span className="font-mono">ANTHROPIC_API_KEY</span> on the server to turn the Admin Manager on.</Banner>}
       {err === 'migration_pending' || data?.pending ? (
         <Banner tone="warning"><b>Not set up for this country yet.</b> Apply <span className="font-mono">migrations/007_admin_manager.sql</span> (admin repo) to this country&apos;s database in the AiroBase SQL editor, then reload.</Banner>

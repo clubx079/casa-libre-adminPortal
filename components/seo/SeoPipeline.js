@@ -9,12 +9,12 @@
 //   Watch          performance per page (Search Console + Ads + PostHog contacts)
 //   Settings       feature switches + thresholds
 // Data: /api/seo, actions: /api/seo/action (lib/seo/*).
-// Optional `site` prop (a key of lib/funnelSites.js): the pipeline of one of the six SEO sites (Admin → Funnels →
-// AI SEO). Every GET then carries site=<key> and every action body `site`. Sites have no listings, filter pages or
+// Optional `site` prop (a key of lib/seoSites/scope.js: the six funnel sites or 'hub' = casa-libre.com): the pipeline
+// of that site (Admin Manager → AI SEO, components/manager/SeoSections.js). Every GET then carries site=<key> and every action body `site`. Sites have no listings, filter pages or
 // site search box: only guides, titles and internal links, so those parts are hidden for a site.
 import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Banner, Pill, btnPrimary, btnSecondary, fmtDate, inputCls } from '@/components/automations/ui';
-import { funnelSiteDomain } from '@/lib/funnelSites';
+import { siteDomain } from '@/lib/seoSites/scope';
 
 const TABS = [['opportunities', 'Opportunities'], ['drafts', 'Drafts'], ['changes', 'Changes'], ['signals', 'Signals'], ['watch', 'Watch'], ['settings', 'Settings']];
 const TYPE = {
@@ -123,7 +123,7 @@ function Drafts({ data, busy, run, site }) {
   return (
     <div className="space-y-3">
       {site
-        ? <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on {funnelSiteDomain(site) || site} (its guide list, sitemap and llms.txt) within 5 minutes; read, edit or unpublish them here.</p>
+        ? <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on {siteDomain(site) || site} (its guide list, sitemap and llms.txt) within 5 minutes; read, edit or unpublish them here.</p>
         : <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on the website&apos;s /guias at once; read, edit or unpublish them here. Numbers like <span className="font-mono">{'{{median:/alquiler/departamentos/asuncion}}'}</span> are filled from live listings on the website and refresh every month.</p>}
       {!rows.length ? <Banner tone="warning">No drafts yet. On Opportunities, use “Draft it” on a guide or trend opportunity.</Banner> : null}
       {rows.map((d) => (
@@ -325,7 +325,7 @@ export default function SeoPipeline({ site = null }) {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <p className="text-[12.5px]" style={{ color: T.textSecondary }}>{site
-          ? `${funnelSiteDomain(site) || site} · Collect → Decide → Write guides → Publish → Watch → Improve — runs by itself every day; run a single stage here.`
+          ? `${siteDomain(site) || site} · Collect → Decide → Write guides → Publish → Watch → Improve — runs by itself every day; run a single stage here.`
           : `${data?.country?.toUpperCase() || ''} · Collect → Decide → Create → Publish → Watch → Improve — runs by itself every day; run a single stage here.`}</p>
           <div className="flex flex-wrap gap-1.5">
             <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => run({ action: 'run', job: 'collect' }, 'Collected')}>{busy === 'run' ? 'Running…' : 'Collect'}</button>

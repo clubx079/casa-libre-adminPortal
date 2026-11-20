@@ -14,6 +14,7 @@ import { ccOf, isMissingTable } from '@/lib/seo/store';
 import { listRuns, getRun, runningRun, runPipeline, isRunning } from '@/lib/seo/runLog';
 import * as SiteRuns from '@/lib/seoSites/runLog';
 import { siteFor } from '@/lib/seoSites/scope';
+import { GSC_SITES } from '@/lib/searchConsole';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,7 +78,7 @@ export async function GET(req) {
     if (id) {
       if (!UUID.test(id)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
       const run = await getRun(cc, id);
-      return run ? NextResponse.json({ country: cc, run }) : NextResponse.json({ error: 'not found' }, { status: 404 });
+      return run ? NextResponse.json({ country: cc, run, origin: GSC_SITES[cc]?.origin || null }) : NextResponse.json({ error: 'not found' }, { status: 404 });
     }
     return NextResponse.json({ country: cc, runs: await listRuns(cc) });
   } catch (e) {

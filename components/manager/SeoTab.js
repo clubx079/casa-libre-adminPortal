@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Pill, Banner, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
 import SeoPipeline from '@/components/seo/SeoPipeline';
 import SeoImpact from '@/components/manager/SeoImpact';
+import { compareRuns } from '@/lib/seo/runCompare';
 import { siteDomain } from '@/lib/seoSites/scope';
 
 /** Appends site=<key> to an API URL when a site is given (else the URL is unchanged). */
@@ -258,6 +259,7 @@ function SeoRuns({ siteKey }) {
       {err ? <Banner>{err}</Banner> : null}
       {!data && !err ? <p className="text-[13px]" style={{ color: T.textMuted }}>Loading…</p> : null}
       {data && !data.pending && !runs.length ? <p className="text-[13px]" style={{ color: T.textMuted }}>{siteKey ? 'No runs yet for this site. The first one happens with the next daily run, or press Run now.' : 'No runs yet. The first one happens at the next 06:00 (Paraguay), or press Run now.'}</p> : null}
+      <RunCompare runs={runs} siteKey={siteKey} onOpen={setOpen} />
       {runs.length ? (
         <div className="overflow-x-auto" style={CARD}>
           <table className="w-full text-xs min-w-[820px]">
@@ -285,5 +287,70 @@ function SeoRuns({ siteKey }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// "This run vs the previous run": the two latest finished runs side by side (lib/seo/runCompare.js).
+function RunCompare({ runs, siteKey, onOpen }) {
+  const done = runs.filter((r) => r.status === 'done').slice(0, 2);
+  const [cmp, setCmp] = useState(null);
+  const [origin, setOrigin] = useState('');
+  const ids = done.map((r) => r.id).join(',');
+  useEffect(() => {
+    if (done.length < 2) { setCmp(null); return undefined; }
+    let alive = true;
+    Promise.all(done.map((r) => fetch(withSite(`/api/manager/seo?id=${r.id}`, siteKey)).then((x) => x.json())))
+      .then(([cur, prev]) => {
+        if (!alive || !cur?.run || !prev?.run) return;
+        setOrigin(siteKey ? `https://${siteDomain(siteKey) || ''}` : (cur.origin || ''));
+        setCmp(compareRuns(prev.run, cur.run));
+      }).catch(() => {});
+    return () => { alive = false; };
+  }, [ids, siteKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (done.length < 2) {
+    return done.length === 1 ? <p className="text-[12.5px]" style={{ color: T.textMuted }}>The comparison with the previous run appears here after the second run.</p> : null;
+  }
+  if (!cmp) return <p className="text-[12.5px]" style={{ color: T.textMuted }}>Loading the comparison…</p>;
+  const tone = (t) => (t === 'good' ? T.success : t === 'bad' ? T.danger : T.textSecondary);
+  const val = (r, v) => (v == null ? '—' : r.kind === 'position' ? Number(v).toFixed(1) : Number(v).toLocaleString('en-US'));
+  const group = (g, title) => cmp.rows.filter((r) => r.group === g).map((r, i) => (
+    <tr key={`${g}-${r.label}`} className="border-t" style={{ borderColor: T.borderLight }}>
+      <td className="px-3 py-2.5" style={{ color: T.textBody }}>{i === 0 ? <b style={{ color: T.textPrimary }}>{title}: </b> : null}{r.label}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: T.textBody }}>{val(r, r.prev)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: T.textBody }}>{val(r, r.cur)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{ color: tone(r.change.tone) }}>{r.change.text}</td>
+    </tr>
+  ));
+  return (
+    <section className="p-5" style={CARD}>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+        <div>
+          <h3 className="text-[15px] font-bold" style={{ color: T.textPrimary }}>This run vs the previous run</h3>
+          <p className="text-[12px] mt-0.5" style={{ color: T.textSecondary }}>The pages the AI SEO touched and the whole site on Google, from the two latest runs.{cmp.overlap ? ' The two periods overlap, so treat this as an early signal; new pages need 2–4 weeks.' : ''}</p>
+        </div>
+      </div>
+      <div className="overflow-x-auto mt-3">
+        <table className="w-full text-[12.5px] min-w-[640px]">
+          <thead><tr>
+            <th className="px-3 py-2 text-left font-semibold" style={{ color: T.textMuted }}>&nbsp;</th>
+            <th className="px-3 py-2 text-right font-semibold" style={{ color: T.textMuted }}><button type="button" className="underline decoration-black/20 hover:decoration-black" onClick={() => onOpen(cmp.prev.id)}>Previous run, {fmtDate(cmp.prev.at)}</button><div className="font-normal">{cmp.prev.label}</div></th>
+            <th className="px-3 py-2 text-right font-semibold" style={{ color: T.textMuted }}><button type="button" className="underline decoration-black/20 hover:decoration-black" onClick={() => onOpen(cmp.cur.id)}>Latest run, {fmtDate(cmp.cur.at)}</button><div className="font-normal">{cmp.cur.label}</div></th>
+            <th className="px-3 py-2 text-right font-semibold" style={{ color: T.textMuted }}>Change</th>
+          </tr></thead>
+          <tbody>{group('pages', 'Pages the AI SEO touched')}{group('site', 'Whole site')}</tbody>
+        </table>
+      </div>
+      <div className="mt-4">
+        <h4 className="text-[13px] font-bold" style={{ color: T.textPrimary }}>Pages the AI SEO touched that got clicks</h4>
+        {cmp.clicked.length ? (
+          <ul className="mt-1.5 space-y-1 text-[12.5px]">{cmp.clicked.map((p) => (
+            <li key={p.path} style={{ color: T.textBody }}>
+              {origin ? <a href={`${origin}${p.path}`} target="_blank" rel="noreferrer" className="font-mono text-[11.5px] underline decoration-black/20 hover:decoration-black" style={{ color: T.textPrimary }}>{origin.replace(/^https?:\/\//, '')}{p.path}</a> : <span className="font-mono text-[11.5px]">{p.path}</span>}
+              {' '}— {p.kind}: {p.clicks} {p.clicks === 1 ? 'click' : 'clicks'}, position {p.position ?? '—'}
+            </li>
+          ))}</ul>
+        ) : <p className="text-[12.5px] mt-1" style={{ color: T.textMuted }}>None yet in the latest run&apos;s Google data.</p>}
+      </div>
+    </section>
   );
 }

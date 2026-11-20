@@ -61,7 +61,7 @@ export default function TemplateEditor({ params }) {
   const router = useRouter();
   const isNew = params.id === 'new';
   const [form, setForm] = useState(EMPTY);
-  const [meta, setMeta] = useState({ key: null, name: '', usedBy: [], updated_at: null }); // name = as saved
+  const [meta, setMeta] = useState({ key: null, name: '', usedBy: [], updated_at: null, liveVars: {}, liveNote: '' }); // name = as saved
   const [country, setCountry] = useState('py');
   const [loading, setLoading] = useState(!isNew);
   const [pending, setPending] = useState(false);
@@ -89,7 +89,7 @@ export default function TemplateEditor({ params }) {
         if (!isNew && j.row) {
           const r = j.row;
           setForm({ name: r.name || '', subject: r.subject || '', heading: r.heading || '', body: r.body || '', button_label: r.button_label || '', button_url: r.button_url || '', is_active: r.is_active !== false });
-          setMeta({ key: r.key, name: r.name || '', usedBy: r.usedBy || [], updated_at: r.updated_at });
+          setMeta({ key: r.key, name: r.name || '', usedBy: r.usedBy || [], updated_at: r.updated_at, liveVars: r.liveVars || {}, liveNote: r.liveNote || '' });
         }
       } catch (e) { if (alive) setNotice({ tone: 'error', text: String(e.message || e) }); }
       finally { if (alive) setLoading(false); }
@@ -151,10 +151,11 @@ export default function TemplateEditor({ params }) {
   // English of the saved name (not re-translated on every keystroke).
   const enName = useEnglishNames(isNew || loading ? [] : [{ id: 'this', key: meta.key, name: meta.name }]).this;
   const shown = english ? { ...form, ...Object.fromEntries(Object.entries(en).filter(([, v]) => v != null)) } : form;
-  const preview = useMemo(() => renderTemplate(shown, sampleVars, countryFrame(country, {
+  // prices and days are the REAL ones from this country's settings (lib/priceVars.js), the rest sample data
+  const preview = useMemo(() => renderTemplate(shown, { ...sampleVars, ...(meta.liveVars || {}) }, countryFrame(country, {
     appleSrc: `data:image/png;base64,${BADGE_APPLE_PNG}`,
     playSrc: `data:image/png;base64,${BADGE_PLAY_PNG}`,
-  })), [shown, country]); // eslint-disable-line react-hooks/exhaustive-deps
+  })), [shown, country, meta.liveVars]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function check() {
     const v = validateTemplate(form);
@@ -175,7 +176,7 @@ export default function TemplateEditor({ params }) {
       if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
       setDirty(false);
       if (isNew) { router.replace(`/email-templates/${j.row.id}`); return; }
-      setMeta((m) => ({ ...m, name: form.name, updated_at: j.row?.updated_at || new Date().toISOString(), usedBy: j.row?.usedBy || m.usedBy }));
+      setMeta((m) => ({ ...m, name: form.name, updated_at: j.row?.updated_at || new Date().toISOString(), usedBy: j.row?.usedBy || m.usedBy, liveVars: j.row?.liveVars || m.liveVars, liveNote: j.row?.liveNote || m.liveNote }));
       setNotice({ tone: 'success', text: 'Saved.' });
     } catch (e) { setNotice({ tone: 'error', text: e.message }); }
     finally { setBusy(''); }
@@ -321,7 +322,8 @@ export default function TemplateEditor({ params }) {
             <div className="px-5 py-3 border-b" style={{ borderColor: T.borderLight, background: T.bgSurface }}>
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>
-                  {english ? 'English preview · not saved, emails go out in Spanish' : 'Preview · sample data'}
+                  {english ? 'English preview · not saved, emails go out in Spanish' : 'Preview · sample data, real prices'}
+                  {meta.liveNote ? <span className="block normal-case tracking-normal mt-0.5" style={{ color: T.textSecondary }}>{meta.liveNote} — from this country's settings</span> : null}
                 </div>
                 <button type="button" onClick={() => setEnglish((v) => !v)}
                   className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors"

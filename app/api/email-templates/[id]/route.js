@@ -8,6 +8,7 @@ import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { validateTemplate, templateUsage } from '@/lib/automationAdmin';
 import { dbError, q } from '@/lib/automationDb';
+import { livePriceVars } from '@/lib/priceVars';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,9 @@ async function load(db, id) {
   const [row] = await db.select('email_templates', `select=*&id=eq.${q(id)}&limit=1`);
   if (!row) return null;
   const automations = await db.select('automations', 'select=*');
-  return { ...row, usedBy: templateUsage(row.id, automations) };
+  // the real prices / days this country's settings put in this template (lib/priceVars.js)
+  const live = livePriceVars(row.id, automations);
+  return { ...row, usedBy: templateUsage(row.id, automations), liveVars: live.vars, liveNote: live.note };
 }
 
 export async function GET(_req, { params }) {

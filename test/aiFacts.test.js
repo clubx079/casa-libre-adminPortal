@@ -22,12 +22,12 @@ describe('AI fact sheet', () => {
       { id: 'p1', slug: 'casa-equipetrol-x', status: 'published', admin_status: 'active', is_complete: true, property_type: 'casa', listing_type: 'sale', city: 'Santa Cruz', price: 95000, currency: 'USD', created_at: '2026-10-21T00:00:00Z' },
       { id: 'p2', status: 'payment_pending', property_type: 'terreno', listing_type: 'sale', city: 'Santa Cruz', raw_data: { paid_listing: { gift: { offered_at: '2026-10-29T00:00:00Z', expires_at: '2026-11-12T00:00:00Z' } } } },
     ];
-    const f = buildFactSheet({ ...base, user, listings, paid: { enabled: true, freePerMonth: 2, price: 'US$5.80' } });
+    const f = buildFactSheet({ ...base, user, listings, paid: { enabled: true, freePerMonth: 2, price: 'US$5.80', days: 60, extendPrice: 'US$5', extendDays: 30 } });
     expect(f.listings[0]).toMatchObject({ state: 'LIVE on the site', link: 'https://casa-libre.com.bo/propiedad/casa-equipetrol-x' });
     expect(f.listings[1].state).toMatch(/FREE-listing gift is open until 2026-11-12/);
     expect(f.listings[1].link).toBe('https://casa-libre.com.bo/cuenta/publicaciones');   // not live → My listings
     expect(f.situation).toMatch(/waiting for payment/);
-    expect(f.paid_listings).toMatchObject({ free_listings_per_month: 2, price_of_an_extra_listing: 'US$5.80', extra_listing_lasts_days: 90 });
+    expect(f.paid_listings).toMatchObject({ free_listings_per_month: 2, price_of_an_extra_listing: 'US$5.80', extra_listing_lasts_days: 60, extend_a_listing: 'US$5 for 30 more days' });
   });
   it('no account', () => {
     expect(situationOf({ user: null, codeRequested: true })).toMatch(/sign-up code but never finished/);
@@ -45,12 +45,12 @@ describe('AI fact sheet · activity (the salesperson\'s numbers)', () => {
     const f = buildFactSheet({
       cc: 'py', countryName: 'Paraguay', site: 'https://casa-libre.com.py', user: { id: 'u1', full_name: 'Ana', created_at: '2026-10-01T00:00:00Z' },
       listings: [{ id: 'p1', slug: 'casa-1', status: 'active', admin_status: 'active', property_type: 'casa', listing_type: 'sale', city: 'Luque', created_at: '2026-10-02T00:00:00Z' }],
-      paid: { enabled: true, freePerMonth: 2, price: 'US$5.80' },
+      paid: { enabled: true, freePerMonth: 2, price: 'US$5.80', days: 60, extendPrice: 'US$5', extendDays: 30 },
       activity: { site: { visitors_last_7_days: 2197, visitors_growth_pct: 92 }, byListing: new Map([['p1', { views_total: 48, views_last_7_days: 12, buyer_contacts: 3 }]]) },
     });
     expect(f.listings[0]).toMatchObject({ views_total: 48, views_last_7_days: 12, buyer_contacts: 3 });
     expect(f.site_activity).toMatchObject({ visitors_last_7_days: 2197, visitors_growth_pct: 92 });
-    expect(f.paid_listings.other_portals_charge).toMatch(/US\$40/);
+    expect(f.paid_listings.other_portals_charge).toBeUndefined();   // no other portal named, no typed-in price
   });
   it('no activity → the sheet still builds', () => {
     const f = buildFactSheet({ cc: 'py', countryName: 'Paraguay', site: 'https://casa-libre.com.py' });

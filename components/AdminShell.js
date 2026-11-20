@@ -15,6 +15,7 @@ const NAV = [
   ['/analytics', 'Analytics', 'chart'],
   ['/search-console', 'Search Console', 'chart'],
   ['/manager', 'Admin Manager', 'bolt'],
+  ['/bots', 'Bots', 'bolt'],
   ['/ai-usage', 'AI usage', 'chart'],
   ['/utm-links', 'UTM Links', 'link'],
   ['/scrape', 'Scrapers', 'scrape'],

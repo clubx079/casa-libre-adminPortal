@@ -75,7 +75,7 @@ describe('paths', () => {
   });
   it('every app/api folder is mapped (a new API must be given its pages)', () => {
     const dir = path.join(__dirname, '..', 'app', 'api');
-    const always = ['auth', 'country', 'unread', 'translate-preview', 'media', 'team', 'cron', 'relay'];
+    const always = ['auth', 'country', 'unread', 'translate-preview', 'media', 'team', 'cron', 'relay', 'seo-sites'];
     const folders = fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isDirectory());
     const unmapped = folders.filter((f) => !always.includes(f) && !API_PAGES[f]);
     expect(unmapped).toEqual([]);

@@ -9,8 +9,12 @@
 //   Watch          performance per page (Search Console + Ads + PostHog contacts)
 //   Settings       feature switches + thresholds
 // Data: /api/seo, actions: /api/seo/action (lib/seo/*).
+// Optional `site` prop (a key of lib/funnelSites.js): the pipeline of one of the six SEO sites (Admin → Funnels →
+// AI SEO). Every GET then carries site=<key> and every action body `site`. Sites have no listings, filter pages or
+// site search box: only guides, titles and internal links, so those parts are hidden for a site.
 import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Banner, Pill, btnPrimary, btnSecondary, fmtDate, inputCls } from '@/components/automations/ui';
+import { funnelSiteDomain } from '@/lib/funnelSites';
 
 const TABS = [['opportunities', 'Opportunities'], ['drafts', 'Drafts'], ['changes', 'Changes'], ['signals', 'Signals'], ['watch', 'Watch'], ['settings', 'Settings']];
 const TYPE = {
@@ -53,7 +57,7 @@ function evidenceLine(o) {
   return bits.join(' · ');
 }
 
-function Opportunities({ data, reload, busy, run }) {
+function Opportunities({ data, reload, busy, run, site }) {
   const [status, setStatus] = useState('open');
   useEffect(() => { reload({ status }); }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = data?.rows || [];
@@ -61,14 +65,16 @@ function Opportunities({ data, reload, busy, run }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {['open', 'applied', 'dismissed'].map((s) => <button key={s} type="button" onClick={() => setStatus(s)} className={btnSecondary} style={{ borderColor: T.borderLight, background: status === s ? T.bgSurface : undefined, fontWeight: status === s ? 700 : 500 }}>{s}</button>)}
-        <span className="text-[12px] ml-auto" style={{ color: T.textMuted }}>Score = demand (Ads conversions, clicks, Google impressions, site searches) × listings × closeness to page 1</span>
+        <span className="text-[12px] ml-auto" style={{ color: T.textMuted }}>{site
+          ? 'Score = demand (Google impressions, Ads clicks and conversions) × closeness to page 1'
+          : 'Score = demand (Ads conversions, clicks, Google impressions, site searches) × listings × closeness to page 1'}</span>
       </div>
       <Table head={<><Th>Type</Th><Th>Search</Th><Th>Page</Th><Th>Why</Th><Th right>Score</Th><Th /></>} empty={rows.length ? null : 'Nothing here. Run Collect + Decide (top right).'}>
         {rows.map((o) => (
           <tr key={o.id} className="border-t" style={{ borderColor: T.borderLight }}>
             <Td><Pill tone={TYPE[o.type]?.[1]}>{TYPE[o.type]?.[0] || o.type}</Pill></Td>
             <Td><b>{o.term}</b></Td>
-            <Td mono>{o.url || '—'}{o.page ? <div className="text-[11px]" style={{ color: T.textMuted }}>{o.page.exists ? (o.page.indexable ? 'live · indexed' : 'live · noindex') : 'no page yet'} · {o.page.count} listings</div> : null}</Td>
+            <Td mono>{o.url || '—'}{o.page ? <div className="text-[11px]" style={{ color: T.textMuted }}>{o.page.exists ? (o.page.indexable ? 'live · indexed' : 'live · noindex') : 'no page yet'}{site ? '' : ` · ${o.page.count} listings`}</div> : null}</Td>
             <Td><span className="text-[12px]">{evidenceLine(o)}</span></Td>
             <Td right>{Number(o.score).toFixed(1)}</Td>
             <Td>{o.status === 'open' ? (
@@ -84,7 +90,12 @@ function Opportunities({ data, reload, busy, run }) {
   );
 }
 
-function DraftEditor({ d, onSave, onCancel, busy }) {
+const SECTIONS_HELP = 'Sections (JSON: [{ h2, paras: [] }])';
+const SITE_SECTIONS_HELP = 'Sections (JSON: [{ id, h2, blocks: [{ t: "p", html } | { t: "ul", items: [] }] }])';
+// Site guides keep HTML (only <a>, <strong>, <em>) in their blocks; the preview shows the text only.
+const plain = (html) => String(html || '').replace(/<[^>]*>/g, '');
+
+function DraftEditor({ d, onSave, onCancel, busy, site }) {
   const [v, setV] = useState({ title: d.title, h1: d.h1, description: d.description || '', answer: d.answer || '', sections: JSON.stringify(d.sections, null, 2), faq: JSON.stringify(d.faq, null, 2) });
   const [err, setErr] = useState(null);
   const save = () => {
@@ -97,28 +108,30 @@ function DraftEditor({ d, onSave, onCancel, busy }) {
   );
   return (
     <div className="space-y-2 mt-3">
-      {field('title', 'Title')}{field('h1', 'H1')}{field('description', 'Meta description')}{field('answer', 'Short answer', 3)}{field('sections', 'Sections (JSON: [{ h2, paras: [] }])', 10)}{field('faq', 'FAQ (JSON: [{ q, a }])', 6)}
+      {field('title', 'Title')}{field('h1', 'H1')}{field('description', 'Meta description')}{field('answer', 'Short answer', 3)}{field('sections', site ? SITE_SECTIONS_HELP : SECTIONS_HELP, 10)}{field('faq', 'FAQ (JSON: [{ q, a }])', 6)}
       {err ? <Banner>{err}</Banner> : null}
       <div className="flex gap-2"><button type="button" className={btnPrimary} disabled={!!busy} onClick={save}>Save</button><button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={onCancel}>Cancel</button></div>
     </div>
   );
 }
 
-function Drafts({ data, busy, run }) {
+function Drafts({ data, busy, run, site }) {
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null);
   const rows = data?.rows || [];
   const tone = { draft: 'warning', approved: 'success', rejected: 'neutral' };
   return (
     <div className="space-y-3">
-      <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on the website&apos;s /guias at once; read, edit or unpublish them here. Numbers like <span className="font-mono">{'{{median:/alquiler/departamentos/asuncion}}'}</span> are filled from live listings on the website and refresh every month.</p>
+      {site
+        ? <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on {funnelSiteDomain(site) || site} (its guide list, sitemap and llms.txt) within 5 minutes; read, edit or unpublish them here.</p>
+        : <p className="text-[12.5px]" style={{ color: T.textSecondary }}>Guides are written and published by the daily run (Autopilot) and appear on the website&apos;s /guias at once; read, edit or unpublish them here. Numbers like <span className="font-mono">{'{{median:/alquiler/departamentos/asuncion}}'}</span> are filled from live listings on the website and refresh every month.</p>}
       {!rows.length ? <Banner tone="warning">No drafts yet. On Opportunities, use “Draft it” on a guide or trend opportunity.</Banner> : null}
       {rows.map((d) => (
         <div key={d.id} className="rounded-[14px] p-4" style={CARD}>
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone={tone[d.status]}>{d.status === 'approved' ? 'published' : d.status}</Pill>
             <Pill tone={d.source === 'claude' ? 'info' : 'neutral'}>{d.source === 'claude' ? `Claude${d.model ? ` · ${d.model}` : ''}` : 'Template'}</Pill>
-            <span className="text-[12px] font-mono" style={{ color: T.textMuted }}>/guias/{d.slug}</span>
+            <span className="text-[12px] font-mono" style={{ color: T.textMuted }}>{site ? (d.path || `/${d.slug}`) : `/guias/${d.slug}`}</span>
             <span className="text-[12px] ml-auto" style={{ color: T.textMuted }}>{fmtDate(d.updated_at, true)}</span>
           </div>
           <div className="text-[16px] font-bold mt-2" style={{ color: T.textPrimary }}>{d.h1}</div>
@@ -127,17 +140,21 @@ function Drafts({ data, busy, run }) {
           <div className="flex flex-wrap gap-1.5 mt-3">
             <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => setOpen(open === d.id ? null : d.id)}>{open === d.id ? 'Hide' : 'Read'}</button>
             {d.status === 'draft' ? <>
-              <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.success, color: T.success }} onClick={() => run({ action: 'approve', id: d.id }, 'Published on /guias')}>Approve &amp; publish</button>
+              <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.success, color: T.success }} onClick={() => run({ action: 'approve', id: d.id }, site ? 'Published' : 'Published on /guias')}>Approve &amp; publish</button>
               <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => setEdit(edit === d.id ? null : d.id)}>Edit</button>
               <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.info, color: T.info }} onClick={() => run({ action: 'regenerate', id: d.id }, 'Regenerated')}>Regenerate with Claude</button>
               <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.danger, color: T.danger }} onClick={() => run({ action: 'reject', id: d.id }, 'Rejected')}>Reject</button>
             </> : null}
           </div>
-          {edit === d.id ? <DraftEditor d={d} busy={busy} onCancel={() => setEdit(null)} onSave={(patch) => { setEdit(null); run({ action: 'edit_draft', id: d.id, patch }, 'Saved'); }} /> : null}
+          {edit === d.id ? <DraftEditor d={d} busy={busy} site={site}onCancel={() => setEdit(null)} onSave={(patch) => { setEdit(null); run({ action: 'edit_draft', id: d.id, patch }, 'Saved'); }} /> : null}
           {open === d.id ? (
             <div className="mt-3 space-y-3 text-[13px]" style={{ color: T.textBody }}>
               <div><b>Title:</b> {d.title}<br /><b>Description:</b> {d.description}</div>
-              {(d.sections || []).map((s, i) => <div key={i}><div className="font-bold">{s.h2}</div>{(s.paras || []).map((p, j) => <p key={j} className="mt-1">{p}</p>)}</div>)}
+              {site && d.related?.summary?.length ? <ul className="list-disc pl-5">{d.related.summary.map((x, i) => <li key={i}>{plain(x)}</li>)}</ul> : null}
+              {(d.sections || []).map((s, i) => <div key={i}><div className="font-bold">{s.h2}</div>{(s.paras || []).map((p, j) => <p key={j} className="mt-1">{p}</p>)}
+                {(s.blocks || []).map((b, j) => (b.t === 'ul'
+                  ? <ul key={`b${j}`} className="list-disc pl-5 mt-1">{(b.items || []).map((x, k) => <li key={k}>{plain(x)}</li>)}</ul>
+                  : <p key={`b${j}`} className="mt-1">{plain(b.html)}</p>))}</div>)}
               {(d.faq || []).length ? <div><div className="font-bold">FAQ</div>{d.faq.map((f, i) => <p key={i} className="mt-1"><b>{f.q}</b> {f.a}</p>)}</div> : null}
             </div>
           ) : null}
@@ -173,7 +190,7 @@ function Changes({ data, busy, run }) {
   );
 }
 
-function Signals({ data }) {
+function Signals({ data, site }) {
   if (!data) return null;
   const card = (title, sub, head, rows, cells) => (
     <div className="rounded-[14px] p-4" style={CARD}>
@@ -181,7 +198,7 @@ function Signals({ data }) {
       <div className="text-[12px] mb-2" style={{ color: T.textMuted }}>{sub}</div>
       <table className="w-full"><thead><tr>{head.map((h, i) => <Th key={h} right={i > 0}>{h}</Th>)}</tr></thead>
         <tbody>{rows.map((r, i) => <tr key={i} className="border-t" style={{ borderColor: T.borderLight }}>{cells(r).map((c, j) => <Td key={j} right={j > 0}>{c}</Td>)}</tr>)}</tbody></table>
-      {!rows.length ? <div className="text-[12.5px] py-3" style={{ color: T.textMuted }}>No data for this country.</div> : null}
+      {!rows.length ? <div className="text-[12.5px] py-3" style={{ color: T.textMuted }}>{site ? 'No data for this site.' : 'No data for this country.'}</div> : null}
     </div>
   );
   const c = data.counts || {};
@@ -191,27 +208,36 @@ function Signals({ data }) {
     <div className="grid gap-4 lg:grid-cols-2">
       {card('Google Ads search terms', `${num(c.ads)} terms · last 30 days · collected ${data.date || '—'}`, ['Search', 'Clicks', 'Conv.', 'Cost'], data.ads || [], (r) => [r.term, num(r.metrics.clicks), Number(r.metrics.conversions || 0).toFixed(1), `$${Number(r.metrics.cost || 0).toFixed(2)}`])}
       {card('Search Console queries', `${num(c.gsc)} query × page rows · last 28 days`, ['Search · page', 'Impr.', 'CTR', 'Pos.'], data.gsc || [], (r) => [<span key="q">{r.term}<div className="text-[11px] font-mono" style={{ color: T.textMuted }}>{r.page}</div></span>, num(r.metrics.impressions), pct(r.metrics.ctr), Number(r.metrics.position).toFixed(1)])}
-      {card('Site search box', `${num(c.site_search)} searches typed on Casa-Libre · last 30 days (PostHog search_applied)`, ['Typed', 'Times', 'People'], data.site || [], (r) => [r.term, num(r.metrics.searches), num(r.metrics.people)])}
+      {site ? null : card('Site search box', `${num(c.site_search)} searches typed on Casa-Libre · last 30 days (PostHog search_applied)`, ['Typed', 'Times', 'People'], data.site || [], (r) => [r.term, num(r.metrics.searches), num(r.metrics.people)])}
       {card('Google Trends — trending now', 'Hourly readings of the trending-searches RSS; property / economy topics become trend posts', ['Topic', 'Traffic', 'Seen'], data.trends || [], (r) => [<span key="t">{r.title} <Pill tone={r.topic === 'property' ? 'success' : r.topic === 'economy' ? 'info' : 'neutral'}>{r.topic}</Pill></span>, r.traffic_label || '—', fmtDate(r.seen_at, true)])}
     </div>
     </div>
   );
 }
 
-function Watch({ data }) {
+function Watch({ data, site }) {
   const rows = data?.pages || [];
   return (
     <div className="space-y-2">
       {data?.note ? <Banner tone="warning">{data.note}</Banner> : null}
-      <Table head={<><Th>Page</Th><Th right>Listings</Th><Th right>Google impr.</Th><Th right>Clicks</Th><Th right>Pos.</Th><Th>Top search</Th><Th right>Ads clicks</Th><Th right>Site searches</Th><Th right>Sessions</Th><Th right>Contacts</Th></>} empty={rows.length ? null : 'No data yet.'}>
-        {rows.map((r) => (
+      <Table head={site
+        ? <><Th>Page</Th><Th right>Google impr.</Th><Th right>Clicks</Th><Th right>Pos.</Th><Th>Top search</Th><Th right>Ads clicks</Th><Th right>Sessions</Th></>
+        : <><Th>Page</Th><Th right>Listings</Th><Th right>Google impr.</Th><Th right>Clicks</Th><Th right>Pos.</Th><Th>Top search</Th><Th right>Ads clicks</Th><Th right>Site searches</Th><Th right>Sessions</Th><Th right>Contacts</Th></>} empty={rows.length ? null : 'No data yet.'}>
+        {rows.map((r) => (site ? (
+          <tr key={r.path} className="border-t" style={{ borderColor: T.borderLight }}>
+            <Td mono>{r.path}{r.overridden ? <> <Pill tone="info">title</Pill></> : null}</Td>
+            <Td right>{num(r.gsc?.impressions)}</Td><Td right>{num(r.gsc?.clicks)}</Td><Td right>{r.gsc?.position ?? '—'}</Td>
+            <Td><span className="text-[12px]">{r.gsc?.topQuery || '—'}</span></Td>
+            <Td right>{r.ads ? num(r.ads.clicks) : '—'}</Td><Td right>{r.posthog ? num(r.posthog.sessions) : '—'}</Td>
+          </tr>
+        ) : (
           <tr key={r.path} className="border-t" style={{ borderColor: T.borderLight }}>
             <Td mono>{r.path}{r.overridden ? <> <Pill tone="info">title</Pill></> : null}{r.indexable === false && r.exists ? <> <Pill tone="neutral">noindex</Pill></> : null}</Td>
             <Td right>{r.listings ?? '—'}</Td><Td right>{num(r.gsc.impressions)}</Td><Td right>{num(r.gsc.clicks)}</Td><Td right>{r.gsc.position ?? '—'}</Td>
             <Td><span className="text-[12px]">{r.gsc.topQuery || '—'}</span></Td>
             <Td right>{num(r.ads.clicks)}</Td><Td right>{num(r.site.searches)}</Td><Td right>{r.posthog ? num(r.posthog.sessions) : '—'}</Td><Td right>{r.posthog ? num(r.posthog.contacts) : '—'}</Td>
           </tr>
-        ))}
+        )))}
       </Table>
     </div>
   );
@@ -230,8 +256,13 @@ const LIMITS = [
   ['maxNewPagesPerDay', 'Autopilot: new pages per day'], ['maxGuidesPerDay', 'Autopilot: guides per day'], ['titleDays', 'Title change: min days between'], ['zeroTrafficWeeks', 'Hide variant after N weeks with no impressions'], ['slipPositions', 'Slipping: positions lost week on week'],
 ];
 
-function Settings({ data, busy, run }) {
+// Settings that do nothing on a guide site (no listings, filter pages, variants or site search box).
+const SITE_HIDDEN = new Set(['collect.site_search', 'auto.variants', 'improve.autoRetire', 'minListings', 'provenSiteSearches', 'maxNewPagesPerDay', 'zeroTrafficWeeks']);
+
+function Settings({ data, busy, run, site }) {
   const [s, setS] = useState(data?.settings || null);
+  const switches = site ? SWITCHES.filter(([g, k]) => !SITE_HIDDEN.has(`${g}.${k}`)) : SWITCHES;
+  const limits = site ? LIMITS.filter(([k]) => !SITE_HIDDEN.has(k)) : LIMITS;
   useEffect(() => { setS(data?.settings || null); }, [data]);
   if (!s) return null;
   const get = (g, k) => (g ? s[g][k] : s[k]);
@@ -240,14 +271,14 @@ function Settings({ data, busy, run }) {
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="rounded-[14px] p-4 space-y-2" style={CARD}>
         <div className="text-[15px] font-bold">Switches</div>
-        {SWITCHES.map(([g, k, label]) => (
+        {switches.map(([g, k, label]) => (
           <label key={`${g}.${k}`} className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={!!get(g, k)} onChange={(e) => set(g, k, e.target.checked)} />{label}</label>
         ))}
         <div className="text-[12px] pt-2" style={{ color: T.textMuted }}>Website: <span className="font-mono">{data.website}</span>{data.devDb ? ' · local dev store (SEO_DB_URL)' : ''}. Google is read-only: the pipeline never changes ads or bids.</div>
       </div>
       <div className="rounded-[14px] p-4 space-y-2" style={CARD}>
         <div className="text-[15px] font-bold">Thresholds</div>
-        {LIMITS.map(([k, label]) => (
+        {limits.map(([k, label]) => (
           <label key={k} className="flex items-center justify-between gap-3 text-[13px]">{label}<input type="number" step="any" className={`${inputCls} max-w-[110px]`} value={s.thresholds[k]} onChange={(e) => setS({ ...s, thresholds: { ...s.thresholds, [k]: e.target.value } })} /></label>
         ))}
       </div>
@@ -256,7 +287,7 @@ function Settings({ data, busy, run }) {
   );
 }
 
-export default function SeoPipeline() {
+export default function SeoPipeline({ site = null }) {
   const [tab, setTab] = useState('opportunities');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -269,17 +300,18 @@ export default function SeoPipeline() {
     setExtra(params);
     try {
       const q = new URLSearchParams({ tab, ...params });
+      if (site) q.set('site', site);
       const r = await fetch(`/api/seo?${q}`, { cache: 'no-store' });
       setData(await r.json());
     } catch (e) { setData({ error: String(e.message || e) }); }
     setLoading(false);
-  }, [tab, extra]);
+  }, [tab, extra, site]);
   useEffect(() => { setData(null); if (tab !== 'opportunities') reload({}); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = async (body, done) => {
     setBusy(body.action); setMsg(null);
     try {
-      const j = await api(body);
+      const j = await api(site ? { ...body, site } : body);
       const note = j.result?.note || j.note || (j.draft ? `Draft saved (${j.draft.source === 'claude' ? 'Claude' : 'template'})${j.draft.note ? ` — ${j.draft.note}` : ''}` : null) || (j.source ? `Regenerated (${j.source})${j.note ? ` — ${j.note}` : ''}` : null);
       const pub = j.publish ? ` · website ${j.publish.ok ? 'updated' : `not reached (${j.publish.error || j.publish.status || j.publish.skipped || '?'}) — live within 5 min anyway`}` : '';
       const ran = j.collect || j.decide || j.improve ? ` · ${JSON.stringify(j.collect || j.decide || j.improve).slice(0, 300)}` : '';
@@ -292,7 +324,9 @@ export default function SeoPipeline() {
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <p className="text-[12.5px]" style={{ color: T.textSecondary }}>{`${data?.country?.toUpperCase() || ''} · Collect → Decide → Create → Publish → Watch → Improve — runs by itself every day; run a single stage here.`}</p>
+        <p className="text-[12.5px]" style={{ color: T.textSecondary }}>{site
+          ? `${funnelSiteDomain(site) || site} · Collect → Decide → Write guides → Publish → Watch → Improve — runs by itself every day; run a single stage here.`
+          : `${data?.country?.toUpperCase() || ''} · Collect → Decide → Create → Publish → Watch → Improve — runs by itself every day; run a single stage here.`}</p>
           <div className="flex flex-wrap gap-1.5">
             <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => run({ action: 'run', job: 'collect' }, 'Collected')}>{busy === 'run' ? 'Running…' : 'Collect'}</button>
             <button type="button" disabled={!!busy} className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => run({ action: 'run', job: 'decide' }, 'Decided')}>Decide</button>
@@ -305,15 +339,17 @@ export default function SeoPipeline() {
         ))}
       </div>
       {msg ? <div className="text-[12.5px] px-4 py-2.5 rounded-[12px]" style={{ background: msg.ok ? T.successSurface : T.dangerSurface, color: msg.ok ? T.success : T.danger }}>{msg.text}</div> : null}
-      {data?.missing ? <Banner tone="warning"><b>Not set up for this country yet.</b> Run <span className="font-mono">migrations/011_seo_pipeline.sql</span> on this country&apos;s database in the AiroBase SQL editor.</Banner> : null}
+      {data?.missing ? (site
+        ? <Banner tone="warning"><b>Not set up for the sites yet.</b> Run <span className="font-mono">migrations/011_seo_pipeline.sql</span> on the Paraguay database in the AiroBase SQL editor.</Banner>
+        : <Banner tone="warning"><b>Not set up for this country yet.</b> Run <span className="font-mono">migrations/011_seo_pipeline.sql</span> on this country&apos;s database in the AiroBase SQL editor.</Banner>) : null}
       {data?.error && !data?.missing ? <Banner>{data.error}</Banner> : null}
       {loading && !data ? <div className="text-[13px]" style={{ color: T.textMuted }}>Loading…</div> : null}
-      {tab === 'opportunities' ? <Opportunities data={data} reload={reload} busy={busy} run={run} /> : null}
-      {tab === 'drafts' ? <Drafts data={data} busy={busy} run={run} /> : null}
+      {tab === 'opportunities' ? <Opportunities data={data} reload={reload} busy={busy} run={run} site={site} /> : null}
+      {tab === 'drafts' ? <Drafts data={data} busy={busy} run={run} site={site} /> : null}
       {tab === 'changes' ? <Changes data={data} busy={busy} run={run} /> : null}
-      {tab === 'signals' ? <Signals data={data} /> : null}
-      {tab === 'watch' ? <Watch data={data} /> : null}
-      {tab === 'settings' ? <Settings data={data} busy={busy} run={run} /> : null}
+      {tab === 'signals' ? <Signals data={data} site={site} /> : null}
+      {tab === 'watch' ? <Watch data={data} site={site} /> : null}
+      {tab === 'settings' ? <Settings data={data} busy={busy} run={run} site={site} /> : null}
     </div>
   );
 }

@@ -17,6 +17,7 @@ const PUBLIC = [
   '/api/auth/login',
   '/api/media',
   '/api/cron',
+  '/api/seo-sites/feed',   // the six SEO sites read their AI SEO feed (Bearer SEO_PUBLISH_SECRET)
   '/api/relay/webhook',
   // Pre-login account flows (pages + their token-validated APIs):
   '/aceptar-invitacion',

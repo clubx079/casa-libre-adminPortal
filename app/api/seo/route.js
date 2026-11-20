@@ -1,5 +1,7 @@
 // GET /api/seo?tab=opportunities|drafts|changes|signals|watch|settings — Admin → SEO data for the
 // active country (lib/seo/*). POST /api/seo/action does the changes.
+// ?site=<key> (org|online|agpy|agbo|libpy|libbo): the same tabs for one of the six SEO sites (lib/seoSites/*;
+// PY DB, country 'site:<key>'). Drafts then carry `path` (the guide's address on the site). Without it: as before.
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { activeCountry } from '@/lib/adminCountry';
@@ -9,6 +11,8 @@ import { loadInventory } from '@/lib/seo/data';
 import { pageState } from '@/lib/seo/inventory';
 import { websiteUrl } from '@/lib/seo/website';
 import { TREND_GEOS } from '@/lib/seo/trends';
+import { siteFor, scopeOf, siteUrl, guidePath } from '@/lib/seoSites/scope';
+import { watch as siteWatch } from '@/lib/seoSites/run';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,9 +54,57 @@ async function tabData(cc, tab, sp) {
   return { error: 'unknown tab' };
 }
 
+// The same tabs for one SEO site: rows in the PY DB under country 'site:<key>'.
+async function siteTabData(site, tab, sp) {
+  const scope = scopeOf(site.key);
+  const q = enc(scope);
+  const db = seoDb(scope);
+  if (tab === 'opportunities') {
+    const status = ['open', 'applied', 'dismissed'].includes(sp.get('status')) ? sp.get('status') : 'open';
+    return { rows: (await db.select('seo_opportunities', `select=*&country=eq.${q}&status=eq.${status}&order=score.desc&limit=300`)).map((r) => ({ ...r, page: null })) };
+  }
+  if (tab === 'drafts') {
+    const rows = await db.select('seo_drafts', `select=*&country=eq.${q}&order=updated_at.desc&limit=200`);
+    return { rows: rows.map((d) => ({ ...d, path: guidePath(site, d.related?.cc, d.slug) })) };
+  }
+  if (tab === 'changes') {
+    return { rows: await db.select('seo_changes', `select=*&country=eq.${q}&order=created_at.desc&limit=200`), overrides: [...(await getOverrides(scope)).values()] };
+  }
+  if (tab === 'signals') {
+    const [latest] = await db.select('seo_signals', `select=date&country=eq.${q}&order=date.desc&limit=1`);
+    const date = latest?.date;
+    const pick = (source) => (date ? db.select('seo_signals', `select=term,page,date,metrics&country=eq.${q}&source=eq.${source}&date=eq.${date}&order=id.asc&limit=60`) : []);
+    const geos = site.countries.map((cc) => TREND_GEOS[cc]).join(',');
+    const [ads, gsc, trends, counts] = await Promise.all([
+      pick('ads'), pick('gsc'),
+      db.select('seo_trends', `select=title,traffic,traffic_label,topic,news,seen_at,pub_date,geo&geo=in.(${geos})&order=seen_at.desc&limit=80`),
+      Promise.all(['ads', 'gsc', 'site_search'].map((s) => (date ? db.selectWithCount('seo_signals', `select=id&country=eq.${q}&source=eq.${s}&date=eq.${date}&limit=1`).then((r) => [s, r.count]) : [s, 0]))),
+    ]);
+    const by = (k) => (a, b) => (b.metrics?.[k] || 0) - (a.metrics?.[k] || 0);
+    const seen = new Set();
+    const trendLatest = trends.filter((t) => (seen.has(t.title) ? false : seen.add(t.title)));
+    return { date, counts: Object.fromEntries(counts), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), trends: trendLatest.slice(0, 40) };
+  }
+  if (tab === 'watch') return siteWatch(site.key);
+  if (tab === 'settings') return { settings: await loadSettings(scope), website: siteUrl(site.key), devDb: !!process.env.SEO_DB_URL };
+  return { error: 'unknown tab' };
+}
+
 export async function GET(req) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   const sp = new URL(req.url).searchParams;
+  const siteParam = sp.get('site');
+  if (siteParam) {
+    const site = siteFor(siteParam);
+    const tab = sp.get('tab') || 'opportunities';
+    if (!site) return NextResponse.json({ error: 'unknown site' }, { status: 400 });
+    try {
+      return NextResponse.json({ country: 'py', site: site.key, tab, ...(await siteTabData(site, tab, sp)) });
+    } catch (e) {
+      if (isMissingTable(e)) return NextResponse.json({ country: 'py', site: site.key, tab, missing: true, error: 'Run migrations/011_seo_pipeline.sql on the PY DB first.' });
+      return NextResponse.json({ country: 'py', site: site.key, tab, error: String(e?.message || e).slice(0, 300) }, { status: 500 });
+    }
+  }
   const cc = ccOf(activeCountry());
   const tab = sp.get('tab') || 'opportunities';
   try {

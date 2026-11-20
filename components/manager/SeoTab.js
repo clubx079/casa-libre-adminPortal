@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { T, CARD, Pill, Banner, fmtDate, btnPrimary, btnSecondary } from '@/components/automations/ui';
 import SeoPipeline from '@/components/seo/SeoPipeline';
+import SeoImpact from '@/components/manager/SeoImpact';
 import { siteDomain } from '@/lib/seoSites/scope';
 
 /** Appends site=<key> to an API URL when a site is given (else the URL is unchanged). */
@@ -195,7 +196,7 @@ function RunDetail({ id, onBack, siteKey }) {
   );
 }
 
-const VIEWS = [['reports', 'Run reports'], ['pipeline', 'Pipeline: opportunities, guides, changes, signals, settings']];
+const VIEWS = [['reports', 'Run reports'], ['impact', 'Results of our changes'], ['pipeline', 'Pipeline: opportunities, guides, changes, signals, settings']];
 
 export default function SeoTab({ site = null }) {
   const [view, setView] = useState('reports');
@@ -207,7 +208,7 @@ export default function SeoTab({ site = null }) {
             style={view === k ? { background: T.primary, color: '#fff', borderColor: T.primary } : { borderColor: T.borderLight, color: T.textBody }}>{label}</button>
         ))}
       </div>
-      {view === 'pipeline' ? <SeoPipeline site={site} /> : <SeoRuns siteKey={site} />}
+      {view === 'pipeline' ? <SeoPipeline site={site} /> : view === 'impact' ? <SeoImpact siteKey={site} /> : <SeoRuns siteKey={site} />}
     </div>
   );
 }

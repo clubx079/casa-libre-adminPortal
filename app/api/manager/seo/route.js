@@ -1,6 +1,7 @@
 // Admin Manager → AI SEO tab (components/manager/SeoTab.js).
 // GET  /api/manager/seo           → the active country's SEO runs, newest first (light rows)
 // GET  /api/manager/seo?id=<uuid> → one run in full (report, changes, snapshot, comparison)
+// GET  /api/manager/seo?impact=1  → "Results of our changes": Google before vs after each page change (lib/seo/impactData.js)
 // POST /api/manager/seo           → "Run now": the full pipeline + report for the active country, in the
 //                                   background (the tab polls); refused while one is already running.
 // ?site=<key> (org|online|agpy|agbo|libpy|libbo|hub): the same for one of the six SEO sites or the casa-libre.com hub (Admin Manager → AI SEO,
@@ -30,6 +31,10 @@ const mayReadSite = (site) => site.countries.some((cc) => mayRead(cc));
 
 async function siteGET(req, site) {
   if (!mayReadSite(site)) return NextResponse.json({ error: 'You do not have access to this site.' }, { status: 403 });
+  if (new URL(req.url).searchParams.get('impact') === '1') {
+    try { const { impactSite } = await import('@/lib/seo/impactData'); return NextResponse.json({ site: site.key, impact: await impactSite(site) }); }
+    catch (e) { return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: 500 }); }
+  }
   const id = new URL(req.url).searchParams.get('id');
   try {
     if (id) {
@@ -63,6 +68,10 @@ export async function GET(req) {
   if (sp.site) return siteGET(req, sp.site);
   const cc = ccOf(activeCountry());
   if (!mayRead(cc)) return NextResponse.json({ error: 'You do not have access to this country.' }, { status: 403 });
+  if (new URL(req.url).searchParams.get('impact') === '1') {
+    try { const { impactBuyer } = await import('@/lib/seo/impactData'); return NextResponse.json({ country: cc, impact: await impactBuyer(cc) }); }
+    catch (e) { return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: isMissingTable(e) ? 200 : 500 }); }
+  }
   const id = new URL(req.url).searchParams.get('id');
   try {
     if (id) {

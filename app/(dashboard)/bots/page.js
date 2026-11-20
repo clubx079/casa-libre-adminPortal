@@ -86,8 +86,8 @@ function Activity({ bot }) {
   const cols = ['When', 'What it did', 'Found', 'Cost', 'Result', 'Waiting for approval'];
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[['Runs this month', '0'], ['Items found', '0'], ['Spent this month', 'US$0.00'], ['Waiting for approval', '0']].map(([k, v]) => (
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[['Runs this month', '0'], ['Items found', '0'], ['Waiting for approval', '0']].map(([k, v]) => (
           <div key={k} className="rounded-[12px] px-3.5 py-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
             <div className="text-[12px]" style={{ color: T.textSecondary }}>{k}</div>
             <div className="text-[20px] font-bold mt-0.5 tabular-nums" style={{ color: T.textPrimary }}>{v}</div>

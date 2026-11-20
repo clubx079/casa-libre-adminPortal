@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import LangSwitcher from '@/components/LangSwitcher';
@@ -8,37 +8,53 @@ import CountrySwitcher from '@/components/CountrySwitcher';
 import { useUnreadCounts } from '@/components/unread';
 import { pageKeyForPath } from '@/lib/adminPages';
 
-const NAV = [
-  ['/', 'Overview', 'dash'],
-  ['/users', 'Users', 'users'],
-  ['/properties', 'Properties', 'home'],
-  ['/analytics', 'Analytics', 'chart'],
-  ['/search-console', 'Search Console', 'chart'],
-  ['/manager', 'Admin Manager', 'bolt'],
-  ['/bots', 'Bots', 'bolt'],
-  ['/ai-usage', 'AI usage', 'chart'],
-  ['/utm-links', 'UTM Links', 'link'],
-  ['/scrape', 'Scrapers', 'scrape'],
-  ['/scraper-status', 'Scraper Status', 'scrape'],
-  ['/quarantine', 'Quarantine', 'shield'],
-  ['/reports', 'Reports', 'runs'],
-  ['/feedbacks', 'Feedback', 'shield'],
-  ['/partners', 'Partners', 'users'],
-  ['/leads', 'Leads', 'users'],
-  ['/funnels', 'Funnels', 'chart'],
-  ['/inbox', 'Inbox', 'chat'],
-  ['/alerts', 'Alerts', 'bell'],
-  ['/campaigns', 'WhatsApp Marketing', 'chat'],
-  ['/automations', 'Automations', 'bolt'],
-  ['/paid-features', 'Paid features', 'card'],
-  ['/referrals', 'Referrals', 'gift'],
-  ['/earnings', 'Earnings', 'card'],
-  ['/marketing', 'Marketing', 'chart'],
-  ['/app-updates', 'App updates', 'phone'],
-  ['/app-installs', 'App installs', 'phone'],
-  ['/email-templates', 'Templates', 'mail'],
-  ['/runs', 'Runs', 'runs'],
+// Sidebar sections. Each one folds open/closed; the one holding the current page opens by itself.
+const GROUPS = [
+  { key: 'inbox', label: 'Inbox & support', icon: 'chat', items: [
+    ['/inbox', 'Inbox', 'chat'],
+    ['/alerts', 'Alerts', 'bell'],
+    ['/reports', 'Reports', 'runs'],
+    ['/feedbacks', 'Feedback', 'shield'],
+  ] },
+  { key: 'listings', label: 'Listings & people', icon: 'home', items: [
+    ['/users', 'Users', 'users'],
+    ['/properties', 'Properties', 'home'],
+    ['/quarantine', 'Quarantine', 'shield'],
+    ['/partners', 'Partners', 'users'],
+    ['/leads', 'Leads', 'users'],
+  ] },
+  { key: 'marketing', label: 'Marketing & outreach', icon: 'mail', items: [
+    ['/marketing', 'Marketing', 'chart'],
+    ['/email-campaigns', 'Email & WhatsApp campaigns', 'mail'],
+    ['/campaigns', 'WhatsApp Marketing', 'chat'],
+    ['/automations', 'Automations', 'bolt'],
+    ['/email-templates', 'Templates', 'mail'],
+    ['/referrals', 'Referrals', 'gift'],
+    ['/utm-links', 'UTM Links', 'link'],
+    ['/funnels', 'Funnels', 'chart'],
+  ] },
+  { key: 'insights', label: 'Analytics & AI', icon: 'chart', items: [
+    ['/analytics', 'Analytics', 'chart'],
+    ['/search-console', 'Search Console', 'chart'],
+    ['/manager', 'Admin Manager', 'bolt'],
+    ['/bots', 'Bots', 'bolt'],
+    ['/ai-usage', 'AI usage', 'chart'],
+  ] },
+  { key: 'money', label: 'Money', icon: 'card', items: [
+    ['/earnings', 'Earnings', 'card'],
+    ['/paid-features', 'Paid features', 'card'],
+  ] },
+  { key: 'app', label: 'Mobile app', icon: 'phone', items: [
+    ['/app-installs', 'App installs', 'phone'],
+    ['/app-updates', 'App updates', 'phone'],
+  ] },
+  { key: 'data', label: 'Scrapers & jobs', icon: 'scrape', items: [
+    ['/scrape', 'Scrapers', 'scrape'],
+    ['/scraper-status', 'Scraper Status', 'scrape'],
+    ['/runs', 'Runs', 'runs'],
+  ] },
 ];
+const OPEN_KEY = 'cl_admin_nav_open_v1';
 
 function Icon({ name }) {
   const p = {
@@ -184,8 +200,9 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
   // Super admins get a full "Team" screen; everyone else gets "Account" (same
   // route, but the page only renders member management to superadmins).
   // A ready-made role or custom page list shows only its pages (the middleware also blocks the rest).
-  const mine = pages ? NAV.filter(([href]) => pages.includes(pageKeyForPath(href))) : NAV;
-  const nav = [...mine, isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user']];
+  const allowed = (href) => !pages || pages.includes(pageKeyForPath(href));
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([href]) => allowed(href)) })).filter((g) => g.items.length);
+  const team = isSuper ? ['/team', 'Team', 'users'] : ['/team', 'Account', 'user'];
 
   // Per-admin unread badges (each team member has their own — lib/unread.js).
   const unread = useUnreadCounts(path);
@@ -193,6 +210,62 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
   const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox, '/alerts': unread.alerts };
 
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
+  const activeGroup = groups.find((g) => g.items.some(([href]) => isActive(href)))?.key || null;
+
+  // Which sections the admin opened (remembered in this browser). The current page's section is always open.
+  const [opened, setOpened] = useState({});
+  useEffect(() => {
+    try { const v = JSON.parse(window.localStorage.getItem(OPEN_KEY) || '{}'); if (v && typeof v === 'object') setOpened(v); } catch { /* private window */ }
+  }, []);
+  const isOpen = (key) => (key in opened ? !!opened[key] : key === activeGroup);
+  const toggle = (key) => setOpened((o) => {
+    const n = { ...o, [key]: !isOpen(key) };
+    try { window.localStorage.setItem(OPEN_KEY, JSON.stringify(n)); } catch { /* ignore */ }
+    return n;
+  });
+  // Opening a page from a closed section (e.g. a link) opens that section.
+  useEffect(() => {
+    if (activeGroup && opened[activeGroup] === false) setOpened((o) => ({ ...o, [activeGroup]: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroup]);
+
+  const badge = (n, on) => (n > 0 ? (
+    <span className={`ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums flex items-center justify-center ${on ? 'bg-paper text-ink' : 'bg-[#B23A3A] text-white'}`}>
+      {n > 99 ? '99+' : n}
+    </span>
+  ) : null);
+
+  const item = ([href, label, ic], nested) => {
+    const on = isActive(href);
+    // Properties splits into two sub-tabs: Scraped (competitor scrapers) and Originals (buyer-portal submissions).
+    if (href === '/properties') {
+      const subs = [['/properties?kind=scraped', 'Scraped', 'scraped'], ['/properties?kind=originals', 'Originals', 'originals']];
+      return (
+        <div key={href} className="flex flex-col gap-0.5">
+          <div className={`flex items-center gap-3 ${nested ? 'px-3 py-2 text-[13.5px]' : 'px-3.5 py-2.5 text-[14px]'} rounded-input font-medium ${on ? 'text-ink' : 'text-ink/70'}`}>
+            <span className="text-ink/55"><Icon name={ic} /></span>
+            {label}
+          </div>
+          <div className="ml-[24px] flex flex-col gap-0.5 border-l border-ink/12 pl-2.5">
+            {subs.map(([shref, slabel, skind]) => (
+              <Link key={shref} href={shref} onClick={() => setOpen(false)}
+                className={`px-3 py-1.5 rounded-input text-[13px] font-medium transition-colors ${on && kindParam === skind ? 'bg-ink text-paper' : 'text-ink/60 hover:bg-ink/5'}`}>
+                {slabel}
+              </Link>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <Link key={href} href={href} onClick={() => setOpen(false)} aria-current={on ? 'page' : undefined}
+        className={`flex items-center gap-3 ${nested ? 'px-3 py-2 text-[13.5px]' : 'px-3.5 py-2.5 text-[14px]'} rounded-input font-medium transition-colors ${on ? 'bg-ink text-paper' : 'text-ink/70 hover:bg-ink/5'}`}>
+        <span className={on ? 'text-paper' : 'text-ink/55'}><Icon name={ic} /></span>
+        {label}
+        {badge(BADGE[href], on)}
+      </Link>
+    );
+  };
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -233,60 +306,32 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 pt-1 flex flex-col gap-1 cl-scroll">
-          {nav.map(([href, label, ic]) => {
-            const on = isActive(href);
-            // Properties splits into two sub-tabs: Scraped (competitor scrapers) and
-            // Originals (buyer-portal user submissions).
-            if (href === '/properties') {
-              const subs = [
-                ['/properties?kind=scraped', 'Scraped', 'scraped'],
-                ['/properties?kind=originals', 'Originals', 'originals'],
-              ];
-              return (
-                <div key={href} className="flex flex-col gap-1">
-                  <div className={`flex items-center gap-3 px-3.5 py-2.5 rounded-input text-[14px] font-medium ${on ? 'text-ink' : 'text-ink/70'}`}>
-                    <span className="text-ink/55"><Icon name={ic} /></span>
-                    {label}
-                  </div>
-                  <div className="ml-[27px] flex flex-col gap-1 border-l border-ink/12 pl-2.5">
-                    {subs.map(([shref, slabel, skind]) => {
-                      const son = on && kindParam === skind;
-                      return (
-                        <Link
-                          key={shref}
-                          href={shref}
-                          onClick={() => setOpen(false)}
-                          className={`px-3 py-2 rounded-input text-[13px] font-medium transition-colors ${son ? 'bg-ink text-paper' : 'text-ink/60 hover:bg-ink/5'}`}
-                        >
-                          {slabel}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
+          {allowed('/') ? item(['/', 'Overview', 'dash'], false) : null}
+          {groups.map((g) => {
+            const expanded = isOpen(g.key);
+            const hasActive = g.key === activeGroup;
+            const waiting = g.items.reduce((s, [href]) => s + (BADGE[href] || 0), 0);
             return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-input text-[14px] font-medium transition-colors ${
-                  on ? 'bg-ink text-paper' : 'text-ink/70 hover:bg-ink/5'
-                }`}
-              >
-                <span className={on ? 'text-paper' : 'text-ink/55'}>
-                  <Icon name={ic} />
-                </span>
-                {label}
-                {BADGE[href] > 0 ? (
-                  <span className={`ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums flex items-center justify-center ${on ? 'bg-paper text-ink' : 'bg-[#B23A3A] text-white'}`} aria-label={`${BADGE[href]} ${href === '/alerts' ? 'open' : 'unread'}`}>
-                    {BADGE[href] > 99 ? '99+' : BADGE[href]}
-                  </span>
+              <div key={g.key} className="flex flex-col">
+                <button type="button" onClick={() => toggle(g.key)} aria-expanded={expanded} aria-controls={`nav-${g.key}`}
+                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-input text-[14px] font-semibold text-left transition-colors hover:bg-ink/5 ${hasActive ? 'text-ink' : 'text-ink/75'}`}>
+                  <span className="text-ink/55"><Icon name={g.icon} /></span>
+                  <span className="flex-1 min-w-0 truncate">{g.label}</span>
+                  {!expanded && waiting > 0 ? badge(waiting, false) : null}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                    className={`shrink-0 text-ink/40 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} aria-hidden>
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                </button>
+                {expanded ? (
+                  <div id={`nav-${g.key}`} className="ml-[24px] mt-0.5 mb-1.5 pl-2 border-l border-ink/12 flex flex-col gap-0.5">
+                    {g.items.map((it) => item(it, true))}
+                  </div>
                 ) : null}
-              </Link>
+              </div>
             );
           })}
+          <div className="mt-1 pt-2 border-t border-ink/10">{item(team, false)}</div>
         </nav>
 
         <div className="p-3 border-t border-ink/10 shrink-0">

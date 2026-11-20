@@ -1608,7 +1608,10 @@ const EmailAnalytics = ({ master }) => {
             </p>
             {data.truncated ? <p className="text-[10px] mb-3" style={{ color: T.warning }}>Resend&apos;s history doesn&apos;t reach back this far — the oldest emails in this period are missing.</p> : null}
 
-            <h3 className="text-xs font-bold mb-2" style={{ color: T.textPrimary }}>By email type</h3>
+            <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+              <h3 className="text-xs font-bold" style={{ color: T.textPrimary }}>By email type</h3>
+              <a href="/email-campaigns" className="text-xs font-semibold underline underline-offset-2" style={{ color: T.textPrimary }}>Every campaign, with WhatsApp and week-by-week changes: Email &amp; WhatsApp campaigns</a>
+            </div>
             {data.byType.length === 0 ? (
               <p className="text-xs mb-5" style={{ color: T.textMuted }}>No emails sent in this period.</p>
             ) : (

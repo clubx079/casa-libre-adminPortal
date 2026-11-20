@@ -21,10 +21,29 @@ const profileOf = (u) => {
   const c = savedProfileCompletion(u);
   return { count: c.count, total: c.total, pct: c.pct, tone: c.tone, missing: c.missing, personalized: c.personalized, whatsapp: c.whatsapp };
 };
-// The profile columns exist once website migrations 021/022 ran; without them → the old select.
+// What the approved photo shows (website lib/profilePhotoKind.js, migration 013): face / logo / other.
+const PHOTO_COLS = 'profile_photo_status,profile_photo_key,profile_photo_kind,profile_photo_kind_key';
+// The profile columns exist once website migrations 021/022 ran, the photo kind once 013 ran;
+// without them → the older select.
 async function withProfileCols(run, base) {
+  try { return await run(`${base},${PROFILE_COLS},${PHOTO_COLS}`); } catch { /* 013 not applied */ }
   try { return await run(`${base},${PROFILE_COLS}`); } catch { return run(base); }
 }
+// The approved photo → { url, kind: 'face' | 'logo' | 'other' | null (not checked yet) } or null.
+const photoOf = (u) => {
+  if (!u.profile_photo_url || (u.profile_photo_status && u.profile_photo_status !== 'approved')) return null;
+  const current = u.profile_photo_kind && (!u.profile_photo_key || u.profile_photo_kind_key === u.profile_photo_key);
+  return { url: u.profile_photo_url, kind: current ? u.profile_photo_kind : null };
+};
+// The Users filter (?profile=…), on the whole country, not just the rows shown.
+const PROFILE_FILTERS = {
+  personalized: (u) => profileOf(u).personalized,
+  not_personalized: (u) => !profileOf(u).personalized,
+  photo: (u) => !!photoOf(u),
+  face: (u) => photoOf(u)?.kind === 'face',
+  logo: (u) => ['logo', 'other'].includes(photoOf(u)?.kind),
+  no_photo: (u) => !photoOf(u),
+};
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,6 +77,7 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();
+  const pf = PROFILE_FILTERS[searchParams.get('profile') || ''] || null;
 
   const cols = 'id,email,full_name,phone,phone_verified_at,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
   let query = `select=${cols}&${HIDE_DELETED_USERS}&order=created_at.desc&limit=500`;
@@ -82,6 +102,19 @@ export async function GET(request) {
     }
     query += `&id=in.(${ids.slice(0, 500).map((id) => `"${id}"`).join(',')})`;
   }
+  if (pf) {
+    // Profile filter: every account of the country is checked, then the matching ones are loaded
+    // (newest first, up to 500; combined with the search when there is one).
+    const db = dbFor(activeCountry());
+    const everyone = await withProfileCols((c) => selectAll(db, 'users', `select=${c}&${HIDE_DELETED_USERS}&order=id.asc`), 'id,email,full_name,created_at,phone_verified_at,profile_photo_url');
+    const ids = everyone.filter(pf).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((u) => String(u.id));
+    if (!ids.length) {
+      const extra = await internalEmails(activeCountry());
+      const stats = await summaryStats(db, extra).catch(() => null);
+      return NextResponse.json({ users: [], count: 0, stats });
+    }
+    query += `&id=in.(${ids.slice(0, 500).map((id) => `"${id}"`).join(',')})`;
+  }
 
   try {
     const [{ rows, count }, extra] = await Promise.all([
@@ -90,7 +123,7 @@ export async function GET(request) {
     ]);
     // Team / Pakistan accounts never show (lib/internalTraffic + internalAudience).
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
-    for (const u of users) u.profile = profileOf(u);
+    for (const u of users) { u.profile = profileOf(u); u.photo = photoOf(u); }
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
     // How many listings each one published (lib/listingCount.js).
     // Only published ones; a listing waiting for payment is counted apart (listings_waiting).

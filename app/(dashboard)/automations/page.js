@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 import { profileStepFromHours, profileStepLabel, PROFILE_STEPS } from '@/lib/profileNudgeAdmin';
+import { photoFaceStepFromHours, photoFaceStepLabel, PHOTO_FACE_STEPS } from '@/lib/photoFaceAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
@@ -217,6 +218,7 @@ export default function AutomationsPage() {
   const [pform, setPform] = useState(null);
   const [rform, setRform] = useState(null);   // "Promote the referral program"
   const [prform, setPrform] = useState(null);  // "Personalize your profile"
+  const [faform, setFaform] = useState(null);  // "Show your face"
   const { dialog, confirm } = useDialog();
   // "Switch … on?\n\nwhat happens" → the admin dialog (title + text), Switch on / Switch off.
   const ask = (text) => {
@@ -252,6 +254,8 @@ export default function AutomationsPage() {
     setRform(rp ? { firstAfterHours: rp.firstAfterHours, everyDays: rp.everyDays, maxSends: rp.maxSends, includeExisting: rp.includeExisting, perRun: rp.perRun, templateId: rp.templateId || '' } : null);
     const prs = j.profileNudge?.settings;
     setPrform(prs ? { steps: prs.steps.map(profileStepFromHours), templateId: prs.templateId || '', reminderTemplateId: prs.reminderTemplateId || '' } : null);
+    const fas = j.photoFace?.settings;
+    setFaform(fas ? { steps: fas.steps.map(photoFaceStepFromHours), templateId: fas.templateId || '', reminderTemplateId: fas.reminderTemplateId || '' } : null);
     const ss = j.saves?.settings;
     setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
@@ -270,7 +274,7 @@ export default function AutomationsPage() {
 
   async function put(which, patch, okText) {
     setErrors({}); setNotice(''); setError('');
-    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : which === 'promo' ? { id: 'referral_promo', ...patch } : which === 'profile' ? { id: 'profile_personalization', ...patch } : patch;
+    const body = which === 'views' ? { id: 'listing_views_milestone', ...patch } : which === 'drafts' ? { id: 'draft_reminders', ...patch } : which === 'dups' ? { id: 'duplicate_listings', ...patch } : which === 'deleted' ? { id: 'listing_deleted', ...patch } : which === 'nolist' ? { id: 'no_listing_nudge', ...patch } : which === 'held' ? { id: 'listing_held', ...patch } : which === 'saves' ? { id: 'listing_saves_milestone', ...patch } : which === 'pay' ? { id: 'payment_followup', ...patch } : which === 'promo' ? { id: 'referral_promo', ...patch } : which === 'profile' ? { id: 'profile_personalization', ...patch } : which === 'face' ? { id: 'profile_photo_face', ...patch } : patch;
     const res = await fetch('/api/automations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json();
     if (res.status === 400 && j.errors) { setErrors({ [which]: j.errors }); setError(j.errors.enabled || 'Fix the highlighted fields.'); return false; }
@@ -364,6 +368,25 @@ export default function AutomationsPage() {
   };
   const prPer = pn?.perStep || {};
   const prStats = pn?.sent ? ` ${pn.sent.toLocaleString('en-US')} sent so far${Object.keys(prPer).length > 1 ? ` (${Object.keys(prPer).sort((x, y) => x - y).map((k) => `#${k}: ${prPer[k]}`).join(' · ')})` : ''}.` : '';
+  // "Show your face" (lib/photoFaceAdmin.js)
+  const pf = data.photoFace;
+  const pfs = pf?.settings;
+  const eFa = errors.face || {};
+  const faDirty = !!(pfs && faform && (JSON.stringify(prHours(faform.steps)) !== JSON.stringify(pfs.steps)
+    || String(faform.templateId || '') !== String(pfs.templateId || '') || String(faform.reminderTemplateId || '') !== String(pfs.reminderTemplateId || '')));
+  const faPatch = () => ({ steps: prHours(faform.steps), templateId: faform.templateId, reminderTemplateId: faform.reminderTemplateId });
+  const toggleFace = async () => {
+    const on = !pfs.enabled;
+    const when = pfs.steps.map(photoFaceStepLabel).join(', ');
+    if (on && !(await ask(`Switch "Show your face" on?
+
+Verified users whose approved profile photo is a logo, text or something else (not a real photo of them — checked by AI) get an email ${when}. Before each email the photo is checked again: once it is a real photo of the person, nothing more is sent. Each email goes once; one more than 7 days late is skipped.${pf.setUp ? '' : '
+
+This also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
+    run('face', 'toggle', () => put('face', pf.setUp ? { enabled: on } : { ...faPatch(), enabled: on }, on ? '“Show your face” is on.' : '“Show your face” is off.'));
+  };
+  const faPer = pf?.perStep || {};
+  const faStats = pf?.sent ? ` ${pf.sent.toLocaleString('en-US')} sent so far${Object.keys(faPer).length > 1 ? ` (${Object.keys(faPer).sort((x, y) => x - y).map((k) => `#${k}: ${faPer[k]}`).join(' · ')})` : ''}.` : '';
   const toggleNoListing = async () => {
     const on = !ns.enabled;
     if (on && !(await ask(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
@@ -680,6 +703,34 @@ export default function AutomationsPage() {
             <TemplatePicker label="Later emails" value={prform.reminderTemplateId} templates={data.templates} onChange={(v) => setPrform((f) => ({ ...f, reminderTemplateId: v }))} />
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
               The button link is <span className="font-mono">{'{{settings_url}}'}</span> — /cuenta/ajustes, tagged utm_campaign=profile_personalization (signed-out people sign in and land there). <span className="font-mono">{'{{progress_line}}'}</span> says how far they got.
+            </p>
+          </StepCard>
+        </AutomationCard>
+      ) : null}
+
+      {pfs && faform ? (
+        <AutomationCard
+          title="Show your face"
+          channelId="profile_photo_face"
+          description="Emails sellers whose approved profile photo is a logo, text or something else — not a real photo of them — explaining that buyers are more comfortable when they know who they are dealing with. Logos are never blocked; this only encourages a real photo."
+          enabled={pfs.enabled} enabledAt={pfs.enabledAt} busy={busy.face}
+          onToggle={toggleFace} dirty={faDirty || !pf.setUp}
+          onSave={() => run('face', 'save', () => put('face', faPatch(), pf.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
+          footnote={`The AI checks each approved photo once (face / logo or text / other). Before every email the photo is read again: once it is a real photo of the person, or it is removed, nothing more is sent. Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped.${pf.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${faStats}`}
+        >
+          <StepCard n={1} kind="Trigger" title="An approved profile photo that is a logo, text or something else" />
+          <Connector />
+          <StepCard n={2} kind="Emails" title="Send after this long since the photo was approved">
+            <DraftSteps steps={faform.steps} errors={eFa} min={0} label="Email" max={PHOTO_FACE_STEPS.max}
+              note={<>Default: 1 day, 3 days and 7 days. Add up to {PHOTO_FACE_STEPS.max} emails. Stops as soon as the photo is a real photo of the person.</>}
+              onChange={(steps) => setFaform((f) => ({ ...f, steps }))} />
+          </StepCard>
+          <Connector />
+          <StepCard n={3} kind="Email" title="Email with a button to Settings → profile photo">
+            <TemplatePicker label="First email" value={faform.templateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, templateId: v }))} error={eFa.templateId} />
+            <TemplatePicker label="Later emails" value={faform.reminderTemplateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, reminderTemplateId: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              The button link is <span className="font-mono">{'{{settings_url}}'}</span> — /cuenta/ajustes, tagged utm_campaign=profile_photo_face. <span className="font-mono">{'{{photo_line}}'}</span> names what they uploaded (a logo or text, or an image that doesn’t show their face).
             </p>
           </StepCard>
         </AutomationCard>

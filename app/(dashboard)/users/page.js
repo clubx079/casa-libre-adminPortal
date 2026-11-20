@@ -92,6 +92,7 @@ export default function UsersPage() {
   const [error, setError] = useState(false);
   const [q, setQ] = useState('');
   const [term, setTerm] = useState('');
+  const [pfilter, setPfilter] = useState('');   // profile filter (api/users ?profile=)
   const [geoData, setGeoData] = useState({}); // ip -> { city, state, country }
   const [busy, setBusy] = useState(null); // { id, field } of the in-flight PATCH, or null
   const [confirmUser, setConfirmUser] = useState(null); // user pending delete confirmation (opens the modal)
@@ -102,7 +103,10 @@ export default function UsersPage() {
     setLoading(true); setError(false);
     (async () => {
       try {
-        const res = await fetch(`/api/users${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+        const qs = new URLSearchParams();
+        if (term) qs.set('q', term);
+        if (pfilter) qs.set('profile', pfilter);
+        const res = await fetch(`/api/users${qs.toString() ? `?${qs}` : ''}`);
         const json = await res.json();
         if (!cancelled) {
           if (res.ok) {
@@ -119,7 +123,7 @@ export default function UsersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [term]);
+  }, [term, pfilter]);
 
   // Resolve buyer IPs -> city/state/country. The free ip-api.com tier is
   // rate-limited, so we seed from the localStorage cache first (instant,
@@ -280,6 +284,17 @@ export default function UsersPage() {
               </button>
             )}
           </form>
+          {/* Profile Personalization filter — on every account of the country, not only the rows shown */}
+          <select value={pfilter} onChange={(e) => setPfilter(e.target.value)} aria-label="Filter by profile"
+            className="outline-none text-[13px]" style={{ padding: '8px 12px', border: `1px solid ${T.borderLight}`, borderRadius: '999px', background: T.bgWhite, color: T.textBody }}>
+            <option value="">All users</option>
+            <option value="personalized">Personalized profile</option>
+            <option value="not_personalized">Not personalized</option>
+            <option value="photo">With a profile photo</option>
+            <option value="face">Photo: real face</option>
+            <option value="logo">Photo: logo, text or other</option>
+            <option value="no_photo">No profile photo</option>
+          </select>
         </div>
 
         <div className="overflow-x-auto cl-scroll">
@@ -307,7 +322,7 @@ export default function UsersPage() {
                   <td colSpan="11" className="px-6 py-12 text-center">
                     <UsersIcon className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>No users found</p>
-                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term ? 'Try a different search.' : 'Users appear here once people sign in to the buyer portal.'}</p>
+                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term || pfilter ? 'Try a different search or filter.' : 'Users appear here once people sign in to the buyer portal.'}</p>
                   </td>
                 </tr>
               ) : users.map((u) => {
@@ -319,7 +334,16 @@ export default function UsersPage() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = T.bgWhite)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <span className="w-8 h-8 shrink-0 rounded-full bg-ink text-paper flex items-center justify-center text-[13px] font-bold">{initial}</span>
+                        {u.photo?.url ? (
+                          // their approved profile photo (Profile Personalization); a small badge when it isn't a face
+                          <span className="relative w-8 h-8 shrink-0" title={u.photo.kind === 'face' ? 'Profile photo: real face' : u.photo.kind === 'logo' ? 'Profile photo: logo or text' : u.photo.kind === 'other' ? 'Profile photo: not a face' : 'Profile photo'}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={u.photo.url} alt="" loading="lazy" className="w-8 h-8 rounded-full object-cover" style={{ border: `1px solid ${T.borderLight}`, background: T.bgSurface }} />
+                            {u.photo.kind && u.photo.kind !== 'face' ? <span className="absolute -bottom-1 -right-1 text-[8px] font-bold px-1 rounded-full" style={{ background: T.warningSurface, color: T.warning, border: '1px solid #fff' }}>{u.photo.kind === 'logo' ? 'LOGO' : '?'}</span> : null}
+                          </span>
+                        ) : (
+                          <span className="w-8 h-8 shrink-0 rounded-full bg-ink text-paper flex items-center justify-center text-[13px] font-bold">{initial}</span>
+                        )}
                         <div className="min-w-0">
                           <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }}>{name}</p>
                           <p className="text-[11px] font-mono truncate" style={{ color: T.textMuted }}>{u.email}</p>

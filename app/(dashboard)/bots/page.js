@@ -3,7 +3,7 @@
 // now: no bot is connected, nothing runs, and the settings are kept in this browser. Once a bot is
 // wired up, every run lands in its activity log here (what it did, what it found, what it cost,
 // what waits for approval) — the team's check on the bots.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { T, CARD, PageHeader, Pill, Banner, inputCls, btnPrimary, btnSecondary } from '@/components/automations/ui';
 import { BOTS, PRODUCT, COMMON_FIELDS, botByKey, mergeBotSettings, validateBotSettings, scheduleLabel } from '@/lib/grokBots';
 
@@ -82,47 +82,156 @@ function Chain({ steps }) {
   );
 }
 
-function Activity({ bot }) {
-  const cols = ['When', 'What it did', 'Found', 'Cost', 'Result', 'Waiting for approval'];
+const RUN_STATUS = { sent: ['info', 'Working…'], done: ['success', 'Done'], failed: ['danger', 'Failed'], no_answer: ['warning', 'No answer'] };
+const APPROVAL = { pending: ['warning', 'Waiting for approval'], approved: ['success', 'Approved'], rejected: ['neutral', 'Rejected'], none: [null, ''] };
+const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return '—'; } };
+const thisMonth = (iso) => { const d = new Date(iso); const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth(); };
+
+function ItemList({ items }) {
+  if (!items?.length) return <p className="text-[12.5px]" style={{ color: T.textMuted }}>No items in this run.</p>;
+  const keys = [...new Set(items.slice(0, 50).flatMap((x) => Object.keys(x)))].slice(0, 8);
+  const cell = (v) => {
+    if (v == null || v === '') return '—';
+    const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /^https?:\/\//.test(t) ? <a href={t} target="_blank" rel="noreferrer" className="underline decoration-black/20 hover:decoration-black break-all">{t.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}</a> : t.slice(0, 220);
+  };
+  return (
+    <div className="overflow-x-auto rounded-[10px]" style={{ border: `1px solid ${T.borderLight}` }}>
+      <table className="w-full text-[12px]">
+        <thead><tr style={{ background: T.bgSurface }}>{keys.map((k) => <th key={k} className="text-left font-semibold px-2.5 py-2 whitespace-nowrap" style={{ color: T.textSecondary }}>{k}</th>)}</tr></thead>
+        <tbody>{items.slice(0, 200).map((it, i) => (
+          <tr key={i} className="border-t align-top" style={{ borderColor: T.borderLight }}>{keys.map((k) => <td key={k} className="px-2.5 py-2" style={{ color: T.textBody }}>{cell(it[k])}</td>)}</tr>
+        ))}</tbody>
+      </table>
+      {items.length > 200 ? <p className="text-[11.5px] px-2.5 py-2" style={{ color: T.textMuted }}>Showing 200 of {items.length}.</p> : null}
+    </div>
+  );
+}
+
+function Activity({ bot, info, onRefresh, onRun, busy }) {
+  const runs = info?.runs || [];
+  const [open, setOpen] = useState(null);
+  const decide = async (id, approval) => {
+    await fetch(`/api/bots/runs/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approval }) }).catch(() => {});
+    onRefresh();
+  };
+  const month = runs.filter((r) => thisMonth(r.startedAt) && r.trigger !== 'test');
+  const tiles = [['Runs this month', month.length], ['Items found', month.reduce((s, r) => s + (r.itemCount || 0), 0)], ['Waiting for approval', runs.filter((r) => r.approval === 'pending').length]];
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className={btnPrimary} disabled={!info?.connected || busy} onClick={() => onRun(false)}>{busy ? 'Sending…' : 'Run now'}</button>
+        <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }} onClick={onRefresh}>Refresh</button>
+        {!info?.connected ? <span className="text-[12.5px]" style={{ color: T.textSecondary }}>Connect the bot in the Connection tab first.</span> : null}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {[['Runs this month', '0'], ['Items found', '0'], ['Waiting for approval', '0']].map(([k, v]) => (
+        {tiles.map(([k, v]) => (
           <div key={k} className="rounded-[12px] px-3.5 py-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
             <div className="text-[12px]" style={{ color: T.textSecondary }}>{k}</div>
             <div className="text-[20px] font-bold mt-0.5 tabular-nums" style={{ color: T.textPrimary }}>{v}</div>
           </div>
         ))}
       </div>
-      <div className="overflow-x-auto rounded-[12px]" style={{ border: `1px solid ${T.borderLight}` }}>
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr style={{ background: T.bgSurface }}>{cols.map((c) => <th key={c} className="text-left font-semibold px-3 py-2.5 whitespace-nowrap" style={{ color: T.textSecondary }}>{c}</th>)}</tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={cols.length} className="px-4 py-10 text-center" style={{ color: T.textSecondary }}>
-                <div className="font-semibold text-[13px]" style={{ color: T.textPrimary }}>No runs yet</div>
-                <div className="mt-1 max-w-md mx-auto">Once {bot.name.toLowerCase()} is connected, every run shows up here: what it did, what it found, what it cost, and anything waiting for your approval.</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {!runs.length ? (
+        <div className="rounded-[12px] px-4 py-10 text-center" style={{ border: `1px solid ${T.borderLight}`, color: T.textSecondary }}>
+          <div className="font-semibold text-[13px]" style={{ color: T.textPrimary }}>No runs yet</div>
+          <div className="mt-1 max-w-md mx-auto text-[12.5px]">{info?.connected ? 'Press Run now to send the first job. The results appear here when the bot reports back.' : `Connect ${bot.name.toLowerCase()} in the Connection tab, then press Test connection.`}</div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {runs.map((r) => {
+            const [tone, label] = RUN_STATUS[r.status] || RUN_STATUS.sent;
+            const [atone, alabel] = APPROVAL[r.approval] || APPROVAL.none;
+            const isOpen = open === r.id;
+            return (
+              <div key={r.id} className="rounded-[12px]" style={{ border: `1px solid ${T.borderLight}` }}>
+                <button type="button" onClick={() => setOpen(isOpen ? null : r.id)} className="w-full text-left px-3.5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
+                  <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{when(r.startedAt)}</span>
+                  <Pill tone={tone}>{label}</Pill>
+                  <span style={{ color: T.textSecondary }}>{r.trigger === 'test' ? 'Connection test' : 'Job'}{r.by ? ` · ${r.by}` : ''}</span>
+                  <span className="tabular-nums" style={{ color: T.textBody }}>{r.itemCount} found</span>
+                  {alabel ? <Pill tone={atone}>{alabel}</Pill> : null}
+                  <span className="ml-auto" style={{ color: T.textMuted }}>{isOpen ? 'Hide' : 'Details'}</span>
+                </button>
+                {isOpen ? (
+                  <div className="px-3.5 pb-3.5 flex flex-col gap-3" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                    <div className="pt-3 text-[12.5px]" style={{ color: T.textBody }}>
+                      <b style={{ color: T.textPrimary }}>Summary: </b>{r.summary || (r.status === 'sent' ? 'The bot is working on it.' : r.status === 'no_answer' ? 'The bot never reported back. Check its chat in Grok.' : '—')}
+                      {r.error ? <div className="mt-1" style={{ color: T.danger }}>{r.error}</div> : null}
+                    </div>
+                    <ItemList items={r.items} />
+                    {r.approval === 'pending' ? (
+                      <div className="flex gap-2">
+                        <button type="button" className={btnPrimary} onClick={() => decide(r.id, 'approved')}>Approve results</button>
+                        <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }} onClick={() => decide(r.id, 'rejected')}>Reject</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function Connection({ bot }) {
-  const p = PRODUCT[bot.product];
-  const saves = { football: 'The football site\'s article queue', 'analyst-x': 'The outside-events list read by the AI Analyst', 'news-feed': 'The outside-events list read by the AI Analyst and AI SEO' }[bot.key];
-  const rows = [['Runs on', 'Grok Bot (our Grok Pro account)'], ['Instructions', 'Written in plain language inside Grok, from the settings on this page'], ['Reports back to', `admin.casa-libre.com/api/bots/${bot.key}/run`], ...(saves ? [['Saves to', saves]] : []), ['Logins', 'The bot\'s own accounts, never a team member\'s']];
+function Connection({ bot, info, onRefresh, onRun, busy }) {
+  const [url, setUrl] = useState('');
+  const [key, setKey] = useState('');
+  const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+  const c = info?.connection;
+  const save = async () => {
+    setSaving(true); setMsg('');
+    try {
+      const j = await fetch(`/api/bots/${bot.key}/connection`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, key }) }).then((r) => r.json());
+      if (j.error) setMsg(j.error); else { setUrl(''); setKey(''); setMsg('Connected. Now press Test connection.'); onRefresh(); }
+    } catch { setMsg('Could not save. Check your connection and try again.'); }
+    setSaving(false);
+  };
+  const disconnect = async () => {
+    if (!window.confirm(`Disconnect ${bot.name}? The admin will stop sending it jobs.`)) return;
+    await fetch(`/api/bots/${bot.key}/connection`, { method: 'DELETE' }).catch(() => {});
+    onRefresh();
+  };
+  const testState = !c ? null : c.lastTestOk === true ? ['success', `Test passed${c.lastTestAt ? ` · ${when(c.lastTestAt)}` : ''}`] : c.lastTestOk === false ? ['danger', 'Test failed — see Activity'] : c.lastTestAt ? ['info', 'Test sent — waiting for the bot'] : ['neutral', 'Not tested yet'];
   return (
-    <div className="flex flex-col gap-4">
-      <Banner tone="warning"><b>Not connected yet.</b> {p.hint}.</Banner>
-      <dl className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-x-4 gap-y-2.5 text-[13px]">
-        {rows.flatMap(([k, v]) => [<dt key={`${k}-k`} style={{ color: T.textSecondary }}>{k}</dt>, <dd key={`${k}-v`} style={{ color: T.textBody }}>{v}</dd>])}
-      </dl>
+    <div className="flex flex-col gap-5">
+      {c ? (
+        <div className="rounded-[12px] px-4 py-3.5 flex flex-col gap-3" style={{ background: T.bgSurface, border: `1px solid ${T.borderLight}` }}>
+          <div className="flex flex-wrap items-center gap-2 text-[13px]">
+            <Pill tone="success">Connected</Pill>
+            <span style={{ color: T.textBody }}>since {when(c.connectedAt)}{c.by ? ` by ${c.by}` : ''} · webhook at {c.host || '—'}</span>
+            <Pill tone={testState[0]}>{testState[1]}</Pill>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btnPrimary} disabled={busy} onClick={() => onRun(true)}>{busy ? 'Sending…' : 'Test connection'}</button>
+            <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }} onClick={onRefresh}>Refresh</button>
+            <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.danger }} onClick={disconnect}>Disconnect</button>
+          </div>
+          <p className="text-[12px]" style={{ color: T.textSecondary }}>Test connection sends a tiny job; the bot answers within a minute or two and the result shows in Activity. To change the webhook, paste a new one below.</p>
+        </div>
+      ) : <Banner tone="warning"><b>Not connected yet.</b> Paste the webhook of this bot&apos;s &ldquo;Casa-Libre job&rdquo; routine below.</Banner>}
+
+      <div className="flex flex-col gap-3 max-w-2xl">
+        <h3 className="text-[14px] font-bold" style={{ color: T.textPrimary }}>{c ? 'Replace the webhook' : 'Connect the bot'}</h3>
+        <ol className="list-decimal pl-5 text-[12.5px] space-y-1" style={{ color: T.textBody }}>
+          <li>In the Grok Bot desktop app open the bot, then Routines → &ldquo;Casa-Libre job&rdquo; → Webhook.</li>
+          <li>Copy &ldquo;POST to&rdquo; and &ldquo;key&rdquo; into the fields below and press Save.</li>
+          <li>Press Test connection.</li>
+        </ol>
+        <label className="text-[13px] font-semibold" htmlFor="wh-url" style={{ color: T.textPrimary }}>POST to</label>
+        <input id="wh-url" className={inputCls} placeholder="https://api2.cursor.sh/automations/webhook/…" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" />
+        <label className="text-[13px] font-semibold" htmlFor="wh-key" style={{ color: T.textPrimary }}>Key</label>
+        <input id="wh-key" type="password" className={inputCls} placeholder="crsr_…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
+        <p className="text-[12px]" style={{ color: T.textSecondary }}>The key is stored on the server only and is never shown again.</p>
+        <div className="flex items-center gap-3">
+          <button type="button" className={btnPrimary} disabled={saving || !url || !key} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+          {msg ? <span className="text-[12.5px]" role="status" style={{ color: msg.startsWith('Connected') ? T.success : T.danger }}>{msg}</span> : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -166,6 +275,22 @@ export default function BotsPage() {
   const [store, setStore] = useState({});
   const [sel, setSel] = useState(BOTS[0].key);
   const [tab, setTab] = useState('activity');
+  const [live, setLive] = useState(null);       // /api/bots: connections + runs
+  const [liveErr, setLiveErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [runMsg, setRunMsg] = useState('');
+  const load = useCallback(() => {
+    fetch('/api/bots').then((r) => r.json()).then((j) => {
+      if (j.error) setLiveErr(j.error); else if (j.pending) setLiveErr('pending'); else { setLiveErr(''); setLive(j.bots); }
+    }).catch(() => setLiveErr('Could not load the bots. Reload the page.'));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const working = live ? Object.values(live).some((b) => b.runs.some((r) => r.status === 'sent')) : false;
+  useEffect(() => {
+    if (!working) return undefined;
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [working, load]);
   useEffect(() => {
     setStore(readStore());
     try { const k = localStorage.getItem(SEL); if (botByKey(k)) setSel(k); } catch { /* ignore */ }
@@ -175,10 +300,24 @@ export default function BotsPage() {
   const settings = useMemo(() => Object.fromEntries(BOTS.map((b) => [b.key, mergeBotSettings(b, store[b.key])])), [store]);
   const save = (s) => { const next = { ...store, [bot.key]: s }; const ok = writeStore(next); setStore(next); return ok; };
   const tabs = [['activity', 'Activity'], ['settings', 'Settings'], ['connection', 'Connection']];
+  const info = live?.[sel] || null;
+  const run = async (test) => {
+    setBusy(true); setRunMsg('');
+    try {
+      const j = await fetch(`/api/bots/${sel}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ test, settings: settings[sel] }) }).then((r) => r.json());
+      if (j.error && !j.runId) setRunMsg(j.error);
+      else if (!j.started) setRunMsg(j.error || 'Grok did not accept the job.');
+      else setRunMsg(test ? 'Test sent. The bot answers in a minute or two; it shows in Activity.' : 'Job sent. Results appear in Activity when the bot reports back.');
+      setTab('activity'); load();
+    } catch { setRunMsg('Could not send the job. Try again.'); }
+    setBusy(false);
+  };
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Bots" sub="Grok collects outside data on a schedule, Claude analyses it, and a person approves anything that leaves Casa-Libre. Every run will be logged here." />
+      {liveErr === 'pending' ? <Banner tone="warning"><b>Not set up yet.</b> Run <span className="font-mono">migrations/control/003_bots.sql</span> in the control DB (AiroBase SQL editor), then reload.</Banner> : liveErr ? <Banner>{liveErr}</Banner> : null}
+      {runMsg ? <Banner tone="warning">{runMsg}</Banner> : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">
         <nav aria-label="Bots" className="flex flex-col gap-2">
@@ -194,8 +333,8 @@ export default function BotsPage() {
                   <Pill tone="ink">{PRODUCT[b.product].label}</Pill>
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-[12px]" style={{ color: T.textSecondary }}>
-                  <span className="inline-block w-2 h-2 rounded-full" style={{ background: T.textMuted }} aria-hidden />
-                  Not connected · {scheduleLabel(s)}
+                  <span className="inline-block w-2 h-2 rounded-full" style={{ background: live?.[b.key]?.connected ? T.success : T.textMuted }} aria-hidden />
+                  {live?.[b.key]?.connected ? 'Connected' : 'Not connected'} · {scheduleLabel(s)}
                 </div>
               </button>
             );
@@ -207,7 +346,7 @@ export default function BotsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-[20px] font-bold tracking-head" style={{ color: T.textPrimary }}>{bot.name}</h2>
               <Pill tone="ink">{PRODUCT[bot.product].label}</Pill>
-              <Pill tone="neutral">Not connected</Pill>
+              <Pill tone={info?.connected ? 'success' : 'neutral'}>{info?.connected ? 'Connected' : 'Not connected'}</Pill>
               <Pill tone={settings[bot.key].enabled ? 'success' : 'neutral'}>{settings[bot.key].enabled ? 'Switched on' : 'Off'}</Pill>
             </div>
             <p className="text-[13.5px] leading-relaxed max-w-3xl" style={{ color: T.textBody }}>{bot.summary}</p>
@@ -233,9 +372,9 @@ export default function BotsPage() {
           </div>
 
           <div role="tabpanel">
-            {tab === 'activity' ? <Activity bot={bot} /> : null}
+            {tab === 'activity' ? <Activity bot={bot} info={info} onRefresh={load} onRun={run} busy={busy} /> : null}
             {tab === 'settings' ? <Settings bot={bot} saved={settings[bot.key]} onSave={save} /> : null}
-            {tab === 'connection' ? <Connection bot={bot} /> : null}
+            {tab === 'connection' ? <Connection bot={bot} info={info} onRefresh={load} onRun={run} busy={busy} /> : null}
           </div>
         </section>
       </div>

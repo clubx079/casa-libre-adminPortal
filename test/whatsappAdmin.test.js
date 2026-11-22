@@ -39,8 +39,9 @@ describe('validateChannels', () => {
     expect(validateChannels({ channel: 'both', wa_templates: { e1: 'cl_publicacion_vence', e3: 'cl_plan_agentes' } }, { slots, relay }))
       .toEqual({ ok: true, value: { channel: 'both', wa_templates: { e1: 'cl_publicacion_vence', e3: 'cl_plan_agentes' } } });
   });
-  it('only where the template links work (Paraguay)', () => {
-    expect(validateChannels({ channel: 'whatsapp', wa_templates: { e1: 'cl_publicacion_vence' } }, { slots, relay, country: 'bo' }).error).toBe('whatsapp_not_for_country');
+  it('only in Casa Libre countries (all 5 since Nov 22)', () => {
+    expect(validateChannels({ channel: 'whatsapp', wa_templates: { e1: 'cl_publicacion_vence' } }, { slots, relay, country: 'br' }).error).toBe('whatsapp_not_for_country');
+    expect(validateChannels({ channel: 'whatsapp', wa_templates: { e1: 'cl_publicacion_vence' } }, { slots, relay, country: 'bo' }).error).toBeUndefined();
   });
 });
 

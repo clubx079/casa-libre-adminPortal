@@ -12,7 +12,7 @@ const PRICE = { utility: 'about US$0.011 / message', marketing: 'about US$0.074 
 const ERRORS = {
   pick_a_whatsapp_template: 'Pick a WhatsApp template for at least one email.',
   whatsapp_template_not_approved: 'That WhatsApp template is not approved by Meta yet.',
-  whatsapp_not_for_country: 'WhatsApp templates link to the Paraguay site — available for Paraguay only for now.',
+  whatsapp_not_for_country: 'WhatsApp is not available for this country yet.',
   migration_pending: 'This country’s database needs migration 017 first.',
   bad_repeat_days: 'Use a whole number of days between 1 and 365, or leave it empty.',
 };

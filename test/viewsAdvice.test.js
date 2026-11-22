@@ -52,7 +52,8 @@ describe('Admin Manager — views but no contacts', () => {
     it('WhatsApp when approved + PY + a number; email otherwise', () => {
       expect(adviceChannel({ ...pick, country: 'py', approved: true })).toEqual({ channel: 'whatsapp', to: '+595981123456', variables: adviceWhatsApp(pick) });
       expect(adviceChannel({ ...pick, country: 'py', approved: false })).toEqual({ channel: 'email' });   // not approved yet
-      expect(adviceChannel({ ...pick, country: 'bo', approved: true })).toEqual({ channel: 'email' });    // not a WhatsApp country
+      expect(adviceChannel({ ...pick, country: 'br', approved: true })).toEqual({ channel: 'email' });    // not a WhatsApp country
+      expect(adviceChannel({ ...pick, country: 'bo', approved: true }).channel).toBe('whatsapp');        // every Casa Libre country since Nov 22
       expect(adviceChannel({ ...pick, user: { ...tato, phone: null }, country: 'py', approved: true })).toEqual({ channel: 'email' });
       expect(adviceChannel({ ...pick, user: { ...tato, whatsapp_opted_out_at: '2026-10-30T00:00:00Z' }, country: 'py', approved: true })).toEqual({ channel: 'email' });
       expect(adviceChannel({ ...pick, user: { ...tato, full_name: '' }, country: 'py', approved: true })).toEqual({ channel: 'email' });   // no name for {{1}}

@@ -30,6 +30,7 @@ const GROUPS = [
     ['/automations', 'Automations', 'bolt'],
     ['/email-templates', 'Templates', 'mail'],
     ['/referrals', 'Referrals', 'gift'],
+    ['/shares', 'Listing shares', 'link'],
     ['/utm-links', 'UTM Links', 'link'],
     ['/funnels', 'Funnels', 'chart'],
   ] },

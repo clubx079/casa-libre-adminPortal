@@ -1,6 +1,6 @@
 // Overview: the first screen of the admin. Top to bottom:
 //   the week in one sentence (visitors → opened a home → contacted a seller) for the picked country,
-//   visitors per day, the newest homes owners put up (photos),
+//   visitors per day, campaigns + listing shares (last 7 days), the newest homes owners put up (photos),
 //   every country side by side, and the newest users (with their photo when they have one).
 // Database parts render at once; PostHog parts stream in behind their own <Suspense>, so a slow
 // PostHog never holds the page. Data: lib/overviewData.js.
@@ -13,6 +13,7 @@ import { week, daily, liveNow, countries, local, tzOf } from '@/lib/overviewData
 import { CountryTable } from '@/components/OverviewCountries';
 import { Card, CardLink, CardNote, WeekChange, RateChange } from '@/components/AdminCard';
 import { campaignsFor } from '@/lib/messageCampaignsData';
+import { sharesWeek } from '@/lib/shareData';
 import { listingUrl } from '@/lib/buyerSite';
 
 export const dynamic = 'force-dynamic';
@@ -218,6 +219,21 @@ async function Campaigns({ cc }) {
   );
 }
 
+// ── Listing shares, last 7 days vs the 7 before; the whole card opens the Shares page ──
+async function Shares({ cc }) {
+  const d = await sharesWeek(cc).catch(() => null);
+  if (!d) return <p className="p-5 text-[13px] text-ink/50">Share numbers aren&apos;t available right now.</p>;
+  return (
+    <Link href="/shares?days=7" className="block p-5 hover:bg-ink/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink">
+      <div className="grid grid-cols-3 gap-3">
+        <CampaignStat label="Visitors from shares" value={fmt(d.visitors.w)} change={<WeekChange now={d.visitors.w} before={d.visitors.p} />} />
+        <CampaignStat label="Shares" value={fmt(d.shared.w)} change={<WeekChange now={d.shared.w} before={d.shared.p} />} />
+        <CampaignStat label="Link clicks" value={fmt(d.clicks.w)} change={<WeekChange now={d.clicks.w} before={d.clicks.p} />} />
+      </div>
+    </Link>
+  );
+}
+
 async function Countries({ active }) {
   const list = filterCountriesForSession(await listCountries().catch(() => []));
   if (list.length < 2) return null;
@@ -265,9 +281,14 @@ export default async function OverviewPage() {
         </Card>
       </div>
 
-      <Card title="Campaigns, last 7 days" aside={<CardLink href="/email-campaigns">All campaigns</CardLink>}>
-        <Suspense fallback={<Skel h={110} />}><Campaigns cc={cc} /></Suspense>
-      </Card>
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,8fr)_minmax(0,4fr)] gap-5 items-stretch">
+        <Card title="Campaigns, last 7 days" aside={<CardLink href="/email-campaigns">All campaigns</CardLink>} className="h-full">
+          <Suspense fallback={<Skel h={110} />}><Campaigns cc={cc} /></Suspense>
+        </Card>
+        <Card title="Shares, last 7 days" aside={<CardLink href="/shares">Listing shares</CardLink>} className="h-full">
+          <Suspense fallback={<Skel h={110} />}><Shares cc={cc} /></Suspense>
+        </Card>
+      </div>
 
       <Card title="Newest homes from owners" aside={<CardLink href="/properties?kind=originals">All owner listings</CardLink>}>
         {!d.homes.length ? <p className="p-5 text-[13px] text-ink/50">No owner has listed a home in {NAMES[cc] || 'this country'} yet.</p> : (

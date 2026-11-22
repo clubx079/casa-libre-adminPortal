@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
-import { validateTemplate, countryFrame } from '@/lib/automationAdmin';
+import { validateTemplate, countryFrame, countryInfo } from '@/lib/automationAdmin';
 import { renderTemplate, sampleVars } from '@/lib/emailTemplateRender';
 import { BADGE_APPLE_CID, BADGE_PLAY_CID } from '@/lib/emailBadges';
 import { sendTemplateTest } from '@/lib/email';
@@ -35,7 +35,7 @@ export async function POST(req, { params }) {
   // real prices / days from this country's settings, the rest sample data
   let live = {};
   try { live = livePriceVars(params.id, await db.select('automations', 'select=*')).vars; } catch { live = {}; }
-  const msg = renderTemplate(tpl, { ...sampleVars, ...live }, countryFrame(country, { appleSrc: `cid:${BADGE_APPLE_CID}`, playSrc: `cid:${BADGE_PLAY_CID}` }));
+  const msg = renderTemplate(tpl, { ...sampleVars, country_name: countryInfo(country).countryName, ...live }, countryFrame(country, { appleSrc: `cid:${BADGE_APPLE_CID}`, playSrc: `cid:${BADGE_PLAY_CID}` }));
   const res = await sendTemplateTest({ country, ...msg });
   if (!res.ok) return NextResponse.json({ error: 'send_failed', message: res.error }, { status: 502 });
   try {

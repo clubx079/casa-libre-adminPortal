@@ -2,9 +2,13 @@
 // {{secrets.CRON_SECRET}}` (AiroBase Cron "0 * * * *"). ?country=<code> (default py), ?dry=1 →
 // decide and report only. Suspends new accounts from a blocked region or a scraper-like IP and
 // emails them; the admin keeps or lifts each one in Open issues.
+// Also emails the team every NEW alert of the Alerts page once (lib/alertNotifyRun.js) — so new
+// needs-a-person / CARTERA / PROYECTO alerts reach the team even when nobody has the admin open.
 import { NextResponse } from 'next/server';
 import { runSecurityWatch } from '@/lib/securityWatchRun';
 import { forgetIssues } from '@/lib/openIssuesStore';
+import { loadAlerts } from '@/lib/alertsData';
+import { notifyNewAlerts } from '@/lib/alertNotifyRun';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +23,13 @@ async function handle(req) {
   try {
     const r = await runSecurityWatch(country, { dryRun: sp.get('dry') === '1' });
     if (r.suspended.length && !r.dryRun) forgetIssues(country);
-    return NextResponse.json({ ok: true, ...r });
+    const dry = sp.get('dry') === '1';
+    if (dry) globalThis.__clAlertNotifyDry = true;
+    const alertEmails = await loadAlerts(country, { fresh: true })
+      .then((d) => notifyNewAlerts(country, d.alerts, { dryRun: dry }))
+      .catch((e) => ({ error: String(e?.message || e).slice(0, 200) }))
+      .finally(() => { if (dry) globalThis.__clAlertNotifyDry = false; });
+    return NextResponse.json({ ok: true, ...r, alertEmails });
   } catch (e) {
     return NextResponse.json({ error: String(e?.message || e).slice(0, 300) }, { status: 500 });
   }

@@ -68,7 +68,8 @@ describe('Personalize your profile — settings', () => {
       expect(TEMPLATE_EN[t.key].name.es).toBe(t.name);
       for (const f of TEMPLATE_FIELDS) expect(TEMPLATE_EN[t.key][f].es).toBe(t[f]);
     }
-    expect(PROFILE_TEMPLATES[0].body).toMatch(/\{\{progress_line\}\}/);
+    expect(PROFILE_TEMPLATES[1].body).toMatch(/\{\{progress_line\}\}/);
+    expect(PROFILE_TEMPLATES[0].body).toMatch(/!\[[^\]]+\]\(https:\/\/casa-libre\.com\.py\/api\/media\/email-assets\//);
     expect(templateUsage('a', [{ id: PROFILE_NUDGE_ID, template_id: 'a', reminder_template_id: 'b' }])).toEqual(['Personalize your profile → first email']);
   });
   it('counts sent emails per step', () => {

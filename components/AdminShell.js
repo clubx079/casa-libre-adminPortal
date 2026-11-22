@@ -10,18 +10,18 @@ import { pageKeyForPath } from '@/lib/adminPages';
 
 // Sidebar sections. Each one folds open/closed; the one holding the current page opens by itself.
 const GROUPS = [
-  { key: 'inbox', label: 'Inbox & support', icon: 'chat', items: [
-    ['/inbox', 'Inbox', 'chat'],
-    ['/alerts', 'Alerts', 'bell'],
-    ['/reports', 'Reports', 'runs'],
-    ['/feedbacks', 'Feedback', 'shield'],
-  ] },
   { key: 'listings', label: 'Listings & people', icon: 'home', items: [
     ['/users', 'Users', 'users'],
     ['/properties', 'Properties', 'home'],
     ['/quarantine', 'Quarantine', 'shield'],
     ['/partners', 'Partners', 'users'],
     ['/leads', 'Leads', 'users'],
+  ] },
+  { key: 'inbox', label: 'Inbox & support', icon: 'chat', items: [
+    ['/inbox', 'Inbox', 'chat'],
+    ['/alerts', 'Alerts', 'bell'],
+    ['/reports', 'Reports', 'runs'],
+    ['/feedbacks', 'Feedback', 'shield'],
   ] },
   { key: 'marketing', label: 'Marketing & outreach', icon: 'mail', items: [
     ['/marketing', 'Marketing', 'chart'],
@@ -223,6 +223,12 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
     try { window.localStorage.setItem(OPEN_KEY, JSON.stringify(n)); } catch { /* ignore */ }
     return n;
   });
+  // The small "−" above Overview folds every section, the current page's too.
+  const collapseAll = () => setOpened(() => {
+    const n = Object.fromEntries(GROUPS.map((g) => [g.key, false]));
+    try { window.localStorage.setItem(OPEN_KEY, JSON.stringify(n)); } catch { /* ignore */ }
+    return n;
+  });
   // Opening a page from a closed section (e.g. a link) opens that section.
   useEffect(() => {
     if (activeGroup && opened[activeGroup] === false) setOpened((o) => ({ ...o, [activeGroup]: true }));
@@ -302,7 +308,7 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
         </div>
 
         <div className="px-5 pt-4 pb-1">
-          <span className="text-[10px] font-mono tracking-label uppercase text-ink/35">Admin</span>
+          <div className="flex items-center justify-between"><span className="text-[10px] font-mono tracking-label uppercase text-ink/35">Admin</span><button type="button" onClick={collapseAll} title="Collapse all sections" aria-label="Collapse all sections" className="w-5 h-5 rounded-[5px] border border-ink/15 flex items-center justify-center text-ink/50 hover:bg-ink/5 hover:text-ink"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden><path d="M5 12h14" /></svg></button></div>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 pt-1 flex flex-col gap-1 cl-scroll">

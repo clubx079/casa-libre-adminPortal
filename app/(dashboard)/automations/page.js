@@ -16,6 +16,7 @@ import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
 import { useDialog } from '@/components/Dialog';
+import NewsletterCard from '@/components/automations/NewsletterCard';
 
 // One step of the flow: a numbered card. Kind sets the label above the title.
 function StepCard({ n, kind, title, children }) {
@@ -863,6 +864,9 @@ This also creates the two default emails (Spanish) — edit them in Email templa
           </StepCard>
         </AutomationCard>
       ) : null}
+
+      {/* Weekly newsletter (its own API + state: components/automations/NewsletterCard.js) */}
+      <NewsletterCard />
 
       {pfs && pform ? (
         <AutomationCard

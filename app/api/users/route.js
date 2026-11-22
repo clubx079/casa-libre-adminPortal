@@ -1,3 +1,4 @@
+import { rejectedWhatLabel } from '@/lib/photoFaceAdmin';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
@@ -25,7 +26,10 @@ const profileOf = (u) => {
 const PHOTO_COLS = 'profile_photo_status,profile_photo_key,profile_photo_kind,profile_photo_kind_key';
 // The profile columns exist once website migrations 021/022 ran, the photo kind once 013 ran;
 // without them → the older select.
+// Turned-down uploads (neither a face nor a logo — website migration 014): the last one + how many.
+const REJECT_COLS = 'profile_photo_rejected_at,profile_photo_rejected_what,profile_photo_rejected_count';
 async function withProfileCols(run, base) {
+  try { return await run(`${base},${PROFILE_COLS},${PHOTO_COLS},${REJECT_COLS}`); } catch { /* 014 not applied */ }
   try { return await run(`${base},${PROFILE_COLS},${PHOTO_COLS}`); } catch { /* 013 not applied */ }
   try { return await run(`${base},${PROFILE_COLS}`); } catch { return run(base); }
 }
@@ -35,13 +39,19 @@ const photoOf = (u) => {
   const current = u.profile_photo_kind && (!u.profile_photo_key || u.profile_photo_kind_key === u.profile_photo_key);
   return { url: u.profile_photo_url, kind: current ? u.profile_photo_kind : null };
 };
+// The last turned-down upload → { at, what, label, count } or null (website lib/profilePhotoKind.js).
+const rejectedOf = (u) => (u.profile_photo_rejected_at
+  ? { at: u.profile_photo_rejected_at, what: u.profile_photo_rejected_what || 'other', label: rejectedWhatLabel(u.profile_photo_rejected_what), count: Number(u.profile_photo_rejected_count) || 1 }
+  : null);
 // The Users filter (?profile=…), on the whole country, not just the rows shown.
 const PROFILE_FILTERS = {
   personalized: (u) => profileOf(u).personalized,
   not_personalized: (u) => !profileOf(u).personalized,
   photo: (u) => !!photoOf(u),
   face: (u) => photoOf(u)?.kind === 'face',
-  logo: (u) => ['logo', 'other'].includes(photoOf(u)?.kind),
+  logo: (u) => photoOf(u)?.kind === 'logo',
+  unknown: (u) => photoOf(u)?.kind === 'other',          // the "?" photos (neither a face nor a logo)
+  rejected: (u) => !!u.profile_photo_rejected_at,        // tried to upload a wrong photo (turned down)
   no_photo: (u) => !photoOf(u),
 };
 
@@ -123,7 +133,7 @@ export async function GET(request) {
     ]);
     // Team / Pakistan accounts never show (lib/internalTraffic + internalAudience).
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
-    for (const u of users) { u.profile = profileOf(u); u.photo = photoOf(u); }
+    for (const u of users) { u.profile = profileOf(u); u.photo = photoOf(u); u.photo_rejected = rejectedOf(u); }
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
     // How many listings each one published (lib/listingCount.js).
     // Only published ones; a listing waiting for payment is counted apart (listings_waiting).

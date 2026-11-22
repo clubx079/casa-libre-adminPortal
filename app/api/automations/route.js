@@ -24,7 +24,7 @@ import { PROMO_ID, PROMO_TEMPLATE, promoConfig, promoCounts, promoScheduleText, 
 import { REFERRALS_ID, referralConfig } from '@/lib/referrals/core';
 import { selectAll } from '@/lib/selectAll';
 import { PROFILE_NUDGE_ID, profileNudgeConfig, profileNudgeStepCounts, saveProfileNudge } from '@/lib/profileNudgeAdmin';
-import { PHOTO_FACE_ID, photoFaceConfig, photoFaceStepCounts, savePhotoFace } from '@/lib/photoFaceAdmin';
+import { PHOTO_FACE_ID, PHOTO_WRONG_ID, photoFaceConfig, photoFaceStepCounts, photoWrongConfig, photoWrongCounts, savePhotoFace } from '@/lib/photoFaceAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -148,7 +148,13 @@ async function payload(db) {
   try {
     const [fa] = await db.select('automations', `select=*&id=eq.${PHOTO_FACE_ID}&limit=1`);
     const logs = fa ? await db.select('email_log', `select=dedupe_key&automation_id=eq.${PHOTO_FACE_ID}&status=in.(sent,delivered,read)&order=created_at.desc&limit=10000&${EMAIL_ONLY}`).catch(() => []) : [];
-    photoFace = { setUp: !!fa, settings: photoFaceConfig(fa || null), sent: logs.length, perStep: photoFaceStepCounts(logs) };
+    const perStep = photoFaceStepCounts(logs);
+    // the wrong-photo part (row PHOTO_WRONG_ID, same card): turned-down uploads and the "?" photos
+    const [wa] = await db.select('automations', `select=*&id=eq.${PHOTO_WRONG_ID}&limit=1`).catch(() => []);
+    photoFace = {
+      setUp: !!fa, settings: photoFaceConfig(fa || null), sent: Object.values(perStep).reduce((x, y) => x + y, 0), perStep,
+      wrong: { settings: photoWrongConfig(wa || null), ...photoWrongCounts(logs) },
+    };
   } catch { photoFace = null; }
   const convertedIds = runs.filter((r) => r.status === 'converted').map((r) => r.property_id).filter(Boolean);
   const payments = convertedIds.length

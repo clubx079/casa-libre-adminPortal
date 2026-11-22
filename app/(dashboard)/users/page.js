@@ -292,7 +292,9 @@ export default function UsersPage() {
             <option value="not_personalized">Not personalized</option>
             <option value="photo">With a profile photo</option>
             <option value="face">Photo: real face</option>
-            <option value="logo">Photo: logo, text or other</option>
+            <option value="logo">Photo: logo or text</option>
+            <option value="unknown">Photo: “?” (not a face or logo)</option>
+            <option value="rejected">Rejected photo upload</option>
             <option value="no_photo">No profile photo</option>
           </select>
         </div>
@@ -336,7 +338,7 @@ export default function UsersPage() {
                       <div className="flex items-center gap-2.5">
                         {u.photo?.url ? (
                           // their approved profile photo (Profile Personalization); a small badge when it isn't a face
-                          <span className="relative w-8 h-8 shrink-0" title={u.photo.kind === 'face' ? 'Profile photo: real face' : u.photo.kind === 'logo' ? 'Profile photo: logo or text' : u.photo.kind === 'other' ? 'Profile photo: not a face' : 'Profile photo'}>
+                          <span className="relative w-8 h-8 shrink-0" title={u.photo.kind === 'face' ? 'Profile photo: real face' : u.photo.kind === 'logo' ? 'Profile photo: logo or text' : u.photo.kind === 'other' ? 'Profile photo: not a face or a logo (gets the wrong-photo emails)' : 'Profile photo'}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={u.photo.url} alt="" loading="lazy" className="w-8 h-8 rounded-full object-cover" style={{ border: `1px solid ${T.borderLight}`, background: T.bgSurface }} />
                             {u.photo.kind && u.photo.kind !== 'face' ? <span className="absolute -bottom-1 -right-1 text-[8px] font-bold px-1 rounded-full" style={{ background: T.warningSurface, color: T.warning, border: '1px solid #fff' }}>{u.photo.kind === 'logo' ? 'LOGO' : '?'}</span> : null}
@@ -347,6 +349,14 @@ export default function UsersPage() {
                         <div className="min-w-0">
                           <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }}>{name}</p>
                           <p className="text-[11px] font-mono truncate" style={{ color: T.textMuted }}>{u.email}</p>
+                          {u.photo_rejected ? (
+                            // the last upload the AI turned down (neither a face nor a logo) — nothing was saved
+                            <span className="inline-block mt-0.5 text-[10px] font-semibold px-1.5 py-[1px] rounded-full" data-testid="photo-rejected-badge"
+                              title={`Last turned down ${new Date(u.photo_rejected.at).toLocaleString('en-US')} — ${u.photo_rejected.count} rejected upload${u.photo_rejected.count === 1 ? '' : 's'} in total. Nothing was saved; ${u.photo?.url ? 'their previous photo stays' : 'they have no photo'}.`}
+                              style={{ background: T.dangerSurface || '#FDECEC', color: T.danger, border: `1px solid ${T.danger}22` }}>
+                              Rejected photo: {u.photo_rejected.label}{u.photo_rejected.count > 1 ? ` ×${u.photo_rejected.count}` : ''}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </td>

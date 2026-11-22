@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { stepsFromHours, stepLabel, DRAFT_STEPS } from '@/lib/automationAdmin';
 import { profileStepFromHours, profileStepLabel, PROFILE_STEPS } from '@/lib/profileNudgeAdmin';
-import { photoFaceStepFromHours, photoFaceStepLabel, PHOTO_FACE_STEPS } from '@/lib/photoFaceAdmin';
+import { photoFaceStepFromHours, photoFaceStepLabel, photoWrongStepLabel, PHOTO_FACE_STEPS } from '@/lib/photoFaceAdmin';
 import { templateOptionLabel, fixedEnglish } from '@/lib/templateEnglish';
 import { useEnglishNames } from '@/components/automations/useEnglishNames';
 import { ChannelControl } from '@/components/automations/WhatsAppChannels';
@@ -255,7 +255,14 @@ export default function AutomationsPage() {
     const prs = j.profileNudge?.settings;
     setPrform(prs ? { steps: prs.steps.map(profileStepFromHours), templateId: prs.templateId || '', reminderTemplateId: prs.reminderTemplateId || '' } : null);
     const fas = j.photoFace?.settings;
-    setFaform(fas ? { steps: fas.steps.map(photoFaceStepFromHours), templateId: fas.templateId || '', reminderTemplateId: fas.reminderTemplateId || '' } : null);
+    const fws = j.photoFace?.wrong?.settings;
+    setFaform(fas ? {
+      steps: fas.steps.map(photoFaceStepFromHours), templateId: fas.templateId || '', reminderTemplateId: fas.reminderTemplateId || '',
+      // the wrong-photo part (row profile_photo_face_wrong)
+      wrongOn: fws ? (fws.setUp ? fws.enabled : true) : true,
+      wrongSteps: (fws?.steps || [2, 48, 168]).map(photoFaceStepFromHours),
+      wrongTemplateId: fws?.templateId || '', wrongReminderTemplateId: fws?.reminderTemplateId || '', keptTemplateId: fws?.keptTemplateId || '',
+    } : null);
     const ss = j.saves?.settings;
     setSform(ss ? { milestones: (ss.milestones || []).join(', '), template_id: ss.templateId || '' } : null);
   }
@@ -372,21 +379,39 @@ export default function AutomationsPage() {
   const faData = data.photoFace;
   const faSet = faData?.settings;
   const eFa = errors.face || {};
+  const fwSet = faData?.wrong?.settings;
+  const fwDirty = !!(fwSet && faform && (!fwSet.setUp || !!faform.wrongOn !== !!fwSet.enabled
+    || JSON.stringify(prHours(faform.wrongSteps)) !== JSON.stringify(fwSet.steps)
+    || String(faform.wrongTemplateId || '') !== String(fwSet.templateId || '') || String(faform.wrongReminderTemplateId || '') !== String(fwSet.reminderTemplateId || '')
+    || String(faform.keptTemplateId || '') !== String(fwSet.keptTemplateId || '')));
   const faDirty = !!(faSet && faform && (JSON.stringify(prHours(faform.steps)) !== JSON.stringify(faSet.steps)
-    || String(faform.templateId || '') !== String(faSet.templateId || '') || String(faform.reminderTemplateId || '') !== String(faSet.reminderTemplateId || '')));
-  const faPatch = () => ({ steps: prHours(faform.steps), templateId: faform.templateId, reminderTemplateId: faform.reminderTemplateId });
+    || String(faform.templateId || '') !== String(faSet.templateId || '') || String(faform.reminderTemplateId || '') !== String(faSet.reminderTemplateId || ''))) || fwDirty;
+  const faPatch = () => ({
+    steps: prHours(faform.steps), templateId: faform.templateId, reminderTemplateId: faform.reminderTemplateId,
+    // empty template pickers on the first save → the three default emails are created
+    wrong: {
+      enabled: !!faform.wrongOn, steps: prHours(faform.wrongSteps),
+      templateId: faform.wrongTemplateId || undefined, reminderTemplateId: faform.wrongReminderTemplateId || undefined, keptTemplateId: faform.keptTemplateId || undefined,
+    },
+  });
+  // DraftSteps reads errors.step_<i>: map the wrong-photo part's keys onto it
+  const eFw = Object.fromEntries(Object.entries(eFa).filter(([k]) => k.startsWith('wrong_step_')).map(([k, v]) => [k.slice(6), v]));
   const toggleFace = async () => {
     const on = !faSet.enabled;
     const when = faSet.steps.map(photoFaceStepLabel).join(', ');
     if (on && !(await ask(`Switch "Show your face" on?
 
-Verified users whose approved profile photo is a logo, text or something else (not a real photo of them — checked by AI) get an email ${when}. Before each email the photo is checked again: once it is a real photo of the person, nothing more is sent. Each email goes once; one more than 7 days late is skipped.${faData.setUp ? '' : `
+Verified users whose approved profile photo is a logo (checked by AI) get an email ${when}. Before each email the photo is checked again: once it is a real photo of the person, nothing more is sent.${faform?.wrongOn ? `
+
+Wrong photos: people whose upload was turned down (neither a face nor a logo) and people with a "?" photo get the wrong-photo emails ${prHours(faform.wrongSteps).map(photoWrongStepLabel).join(', ')}, until they have a face or a logo. People who still have a valid photo get ONE email that their new photo wasn't accepted.` : ''} Each email goes once; one more than 7 days late is skipped.${faData.setUp ? '' : `
 
 This also creates the two default emails (Spanish) — edit them in Email templates.`}`))) return;
     run('face', 'toggle', () => put('face', faData.setUp ? { enabled: on } : { ...faPatch(), enabled: on }, on ? '“Show your face” is on.' : '“Show your face” is off.'));
   };
   const faPer = faData?.perStep || {};
   const faStats = faData?.sent ? ` ${faData.sent.toLocaleString('en-US')} sent so far${Object.keys(faPer).length > 1 ? ` (${Object.keys(faPer).sort((x, y) => x - y).map((k) => `#${k}: ${faPer[k]}`).join(' · ')})` : ''}.` : '';
+  const fwPer = faData?.wrong?.perStep || {};
+  const fwStats = faData?.wrong?.sent ? ` Wrong-photo emails: ${faData.wrong.sent.toLocaleString('en-US')} sent (${[...Object.keys(fwPer).sort((x, y) => x - y).map((k) => `#${k}: ${fwPer[k]}`), `new photo not accepted: ${faData.wrong.kept || 0}`].join(' · ')}).` : '';
   const toggleNoListing = async () => {
     const on = !ns.enabled;
     if (on && !(await ask(`Switch "Signed up, no listing yet" on?\n\nVerified users who signed up ${ns.days} ${ns.days === 1 ? 'day' : 'days'} ago or more and have no listing and no draft get the welcome email, once. People who signed up before now only get it if it came due in the last 7 days.${nl.setUp ? '' : '\n\nThis also creates the two default emails (Spanish) — edit them in Email templates.'}`))) return;
@@ -712,13 +737,13 @@ This also creates the two default emails (Spanish) — edit them in Email templa
         <AutomationCard
           title="Show your face"
           channelId="profile_photo_face"
-          description="Emails sellers whose approved profile photo is a logo, text or something else — not a real photo of them — explaining that buyers are more comfortable when they know who they are dealing with. Logos are never blocked; this only encourages a real photo."
+          description="Emails sellers whose profile photo is a logo, explaining that buyers want to know who they are dealing with. Logos are never blocked. Uploads that are neither a face nor a logo (a house, an apartment, an object…) are turned down on the spot; those people — and the older “?” photos — get the wrong-photo emails below until they upload their face or their logo."
           enabled={faSet.enabled} enabledAt={faSet.enabledAt} busy={busy.face}
           onToggle={toggleFace} dirty={faDirty || !faData.setUp}
           onSave={() => run('face', 'save', () => put('face', faPatch(), faData.setUp ? 'Changes saved.' : 'Saved — the two default emails were created (Email templates).'))}
-          footnote={`The AI checks each approved photo once (face / logo or text / other). Before every email the photo is read again: once it is a real photo of the person, or it is removed, nothing more is sent. Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped.${faData.setUp ? '' : ' Not set up for this country yet: saving creates it with two default emails.'}${faStats}`}
+          footnote={`The AI checks each upload (face / logo / other) and each approved photo once. Before every email the photo is read again: once it is a real photo of the person (or, for wrong photos, a face or a logo), nothing more is sent. Each email once per person; one more than 7 days late is skipped; people who unsubscribed or bounced are skipped. Turned-down uploads are recorded only after migration 014.${faData.setUp ? '' : ' Not set up for this country yet: saving creates it with the default emails.'}${faStats}${fwStats}`}
         >
-          <StepCard n={1} kind="Trigger" title="An approved profile photo that is a logo, text or something else" />
+          <StepCard n={1} kind="Trigger" title="An approved profile photo that is a logo" />
           <Connector />
           <StepCard n={2} kind="Emails" title="Send after this long since the photo was approved">
             <DraftSteps steps={faform.steps} errors={eFa} min={0} label="Email" max={PHOTO_FACE_STEPS.max}
@@ -730,7 +755,31 @@ This also creates the two default emails (Spanish) — edit them in Email templa
             <TemplatePicker label="First email" value={faform.templateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, templateId: v }))} error={eFa.templateId} />
             <TemplatePicker label="Later emails" value={faform.reminderTemplateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, reminderTemplateId: v }))} />
             <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
-              The button link is <span className="font-mono">{'{{settings_url}}'}</span> — /cuenta/ajustes, tagged utm_campaign=profile_photo_face. <span className="font-mono">{'{{photo_line}}'}</span> names what they uploaded (a logo or text, or an image that doesn’t show their face).
+              The button link is <span className="font-mono">{'{{settings_url}}'}</span> — /cuenta/ajustes, tagged utm_campaign=profile_photo_face. <span className="font-mono">{'{{photo_line}}'}</span> says they have a logo instead of a photo of themselves.
+            </p>
+          </StepCard>
+          <Connector />
+          <StepCard n={4} kind="Trigger" title="Wrong photo: an upload turned down (neither a face nor a logo), or a “?” photo">
+            <label className="flex items-center gap-2 text-[13px]" style={{ color: T.textPrimary }}>
+              <input type="checkbox" checked={!!faform.wrongOn} onChange={(e) => setFaform((f) => ({ ...f, wrongOn: e.target.checked }))} data-testid="photo-wrong-on" />
+              Send the wrong-photo emails (only while “Show your face” is on)
+            </label>
+            {fwSet && !fwSet.setUp ? <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Not set up for this country yet: saving creates it with three default emails (Spanish).</p> : null}
+            {eFa.wrong_enabled ? <p className="text-[11px] mt-1" style={{ color: T.danger }}>{eFa.wrong_enabled}</p> : null}
+          </StepCard>
+          <Connector />
+          <StepCard n={5} kind="Emails" title="Send after this long since the upload was turned down">
+            <DraftSteps steps={faform.wrongSteps} errors={eFw} min={0} label="Email" max={PHOTO_FACE_STEPS.max}
+              note={<>Default: 2 hours, 2 days and 7 days. For the “?” photos the clock starts when this is switched on. Stops as soon as they have a face or a logo (a logo then gets the “Show your face” emails above).{eFa.wrong_steps ? <b style={{ color: T.danger }}> {eFa.wrong_steps}</b> : null}</>}
+              onChange={(wrongSteps) => setFaform((f) => ({ ...f, wrongSteps }))} />
+          </StepCard>
+          <Connector />
+          <StepCard n={6} kind="Email" title="Wrong-photo emails">
+            <TemplatePicker label="First email" value={faform.wrongTemplateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, wrongTemplateId: v }))} />
+            <TemplatePicker label="Later emails" value={faform.wrongReminderTemplateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, wrongReminderTemplateId: v }))} />
+            <TemplatePicker label="Still has a valid photo (one email: new photo not accepted)" value={faform.keptTemplateId} templates={data.templates} onChange={(v) => setFaform((f) => ({ ...f, keptTemplateId: v }))} />
+            <p className="text-[11px] leading-snug" style={{ color: T.textMuted }}>
+              <span className="font-mono">{'{{photo_line}}'}</span> says what happened: “La imagen que intentaste subir parece ser una foto de una casa…”, “La imagen de tu perfil no muestra tu cara ni el logo…” or “La nueva imagen que subiste parece ser una foto de… seguimos mostrando tu foto anterior”. The “new photo not accepted” email goes once (at the first step’s time), at most once per 30 days.
             </p>
           </StepCard>
         </AutomationCard>

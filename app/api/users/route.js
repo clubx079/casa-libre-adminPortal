@@ -7,6 +7,7 @@ import { HIDE_DELETED_USERS, userListingStats } from '@/lib/userInsights';
 import { selectAll } from '@/lib/selectAll';
 import { isInternalEmail } from '@/lib/internalTraffic';
 import { internalEmails } from '@/lib/internalAudience';
+import { readMarked, testReason } from '@/lib/testAccounts';
 import { listingCounts, countListings } from '@/lib/listingCount';
 import { DELETED_EVENT } from '@/lib/listingDeletion';
 import { listingPhones } from '@/lib/listingPhones';
@@ -103,6 +104,8 @@ export async function GET(request) {
   const q = (searchParams.get('q') || '').trim();
   const pf = PROFILE_FILTERS[searchParams.get('profile') || ''] || null;
   const tf = TYPE_FILTERS[searchParams.get('type') || ''] || null;
+  // ?show=test → ONLY the team / test & review accounts (hidden everywhere else, never counted)
+  const showTest = searchParams.get('show') === 'test';
   const types = typesLoader(dbFor(activeCountry()));
 
   const cols = 'id,email,full_name,phone,phone_verified_at,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
@@ -160,8 +163,14 @@ export async function GET(request) {
       withProfileCols((c) => selectWithCount('users', query.replace(`select=${cols}`, `select=${c}`)), cols),
       internalEmails(activeCountry()),
     ]);
-    // Team / Pakistan accounts never show (lib/internalTraffic + internalAudience).
-    const users = rows.filter((u) => !isInternalEmail(u.email, extra));
+    // Team / Pakistan / marked test accounts never show (lib/internalTraffic + internalAudience +
+    // testAccounts) — except in the "Test & review accounts" view, which shows only them.
+    const marked = showTest ? await readMarked(dbFor(activeCountry())).catch(() => ({})) : {};
+    const users = showTest
+      ? rows.filter((u) => isInternalEmail(u.email, extra)).map((u) => ({
+        ...u, test: testReason(u.email, { isTeam: isInternalEmail(u.email), isPakistan: !isInternalEmail(u.email) && !marked[String(u.email || '').toLowerCase()], marked }),
+      }))
+      : rows.filter((u) => !isInternalEmail(u.email, extra));
     for (const u of users) { u.profile = profileOf(u); u.photo = photoOf(u); u.photo_rejected = rejectedOf(u); }
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
     // Buyer or seller of each row (type, how we know, listed or not, group).
@@ -181,7 +190,7 @@ export async function GET(request) {
     const fromListing = await listingPhones(dbFor(activeCountry()).select, users.filter((u) => !u.phone).map((u) => u.id)).catch(() => new Map());
     for (const u of users) if (!u.phone && fromListing.has(String(u.id))) { u.phone = fromListing.get(String(u.id)); u.phone_source = 'listing'; }
     const stats = await withTypes(await statsP, types);
-    return NextResponse.json({ users, count: Math.max(0, count - (rows.length - users.length)), stats });
+    return NextResponse.json({ users, count: showTest ? users.length : Math.max(0, count - (rows.length - users.length)), stats });
   } catch (err) {
     console.error('[api/users]', err);
     return NextResponse.json({ error: err.message }, { status: 500 });

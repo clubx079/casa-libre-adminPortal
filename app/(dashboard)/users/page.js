@@ -145,6 +145,7 @@ export default function UsersPage() {
   const [term, setTerm] = useState('');
   const [pfilter, setPfilter] = useState('');   // profile filter (api/users ?profile=)
   const [tfilter, setTfilter] = useState('');   // buyer / seller filter (api/users ?type=)
+  const [show, setShow] = useState('');         // '' = real users · 'test' = only test & review accounts (?show=test)
   const [geoData, setGeoData] = useState({}); // ip -> { city, state, country }
   const [busy, setBusy] = useState(null); // { id, field } of the in-flight PATCH, or null
   const [confirmUser, setConfirmUser] = useState(null); // user pending delete confirmation (opens the modal)
@@ -159,6 +160,7 @@ export default function UsersPage() {
         if (term) qs.set('q', term);
         if (pfilter) qs.set('profile', pfilter);
         if (tfilter) qs.set('type', tfilter);
+        if (show) qs.set('show', show);
         const res = await fetch(`/api/users${qs.toString() ? `?${qs}` : ''}`);
         const json = await res.json();
         if (!cancelled) {
@@ -176,7 +178,7 @@ export default function UsersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [term, pfilter, tfilter]);
+  }, [term, pfilter, tfilter, show]);
 
   // Resolve buyer IPs -> city/state/country. The free ip-api.com tier is
   // rate-limited, so we seed from the localStorage cache first (instant,
@@ -235,6 +237,19 @@ export default function UsersPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // Mark / unmark a test or review account (POST /api/users/test-accounts). Marked accounts leave
+  // the list and every count at once; the "Test & review accounts" view shows them.
+  async function markTest(u, test) {
+    setBusy({ id: u.id, field: 'test' });
+    try {
+      const res = await fetch('/api/users/test-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, test }) });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((x) => x.id !== u.id));
+        setCount((c) => Math.max(0, c - 1));
+      }
+    } catch { /* button re-enables */ } finally { setBusy(null); }
   }
 
   // Permanently delete a user (admin cleanup of test accounts). Destructive, so the
@@ -351,6 +366,12 @@ export default function UsersPage() {
             <option value="rejected">Rejected photo upload</option>
             <option value="no_photo">No profile photo</option>
           </select>
+          {/* Test & review accounts: hidden everywhere and never counted; this shows only them */}
+          <select value={show} onChange={(e) => setShow(e.target.value)} aria-label="Real users or test accounts" data-testid="test-filter"
+            className="outline-none text-[13px]" style={{ padding: '8px 12px', border: `1px solid ${show ? T.warning : T.borderLight}`, borderRadius: '999px', background: show ? T.warningSurface : T.bgWhite, color: T.textBody }}>
+            <option value="">Real users</option>
+            <option value="test">Test &amp; review accounts</option>
+          </select>
           {/* Buyer or seller filter, on every account of the country */}
           <select value={tfilter} onChange={(e) => setTfilter(e.target.value)} aria-label="Filter by type" data-testid="type-filter"
             className="outline-none text-[13px]" style={{ padding: '8px 12px', border: `1px solid ${T.borderLight}`, borderRadius: '999px', background: T.bgWhite, color: T.textBody }}>
@@ -415,6 +436,13 @@ export default function UsersPage() {
                         <div className="min-w-0">
                           <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }}>{name}</p>
                           <p className="text-[11px] font-mono truncate" style={{ color: T.textMuted }}>{u.email}</p>
+                          {u.test ? (
+                            <span className="inline-block mt-0.5 mr-1 text-[10px] font-semibold px-1.5 py-[1px] rounded-full" data-testid="test-badge"
+                              title={u.test.kind === 'marked' ? `Marked as a test account${u.test.by ? ` by ${u.test.by}` : ''}${u.test.at ? ` on ${new Date(u.test.at).toLocaleDateString('en-US')}` : ''}. Hidden and not counted.` : 'Hidden and not counted.'}
+                              style={{ background: T.warningSurface, color: T.warning, border: `1px solid ${T.warning}33` }}>
+                              {u.test.label}
+                            </span>
+                          ) : null}
                           {u.photo_rejected ? (
                             // the last upload the AI turned down (neither a face nor a logo) — nothing was saved
                             <span className="inline-block mt-0.5 text-[10px] font-semibold px-1.5 py-[1px] rounded-full" data-testid="photo-rejected-badge"
@@ -518,6 +546,18 @@ export default function UsersPage() {
                         >
                           {busy?.id === u.id && busy?.field === 'blocked' ? '…' : u.blocked ? 'Unblock' : 'Block'}
                         </button>
+                        {u.email && (!u.test || u.test.kind === 'marked') ? (
+                          <button
+                            type="button"
+                            onClick={() => markTest(u, !u.test)}
+                            disabled={busy?.id === u.id}
+                            title={u.test ? 'Count this account again as a real user' : 'Hide this account everywhere and leave it out of every count'}
+                            className="text-[11px] font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50"
+                            style={{ borderColor: T.borderLight, background: T.bgWhite, color: T.textBody }}
+                          >
+                            {busy?.id === u.id && busy?.field === 'test' ? '…' : u.test ? 'Not a test account' : 'Mark as test'}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => { setDelErr(null); setConfirmUser(u); }}

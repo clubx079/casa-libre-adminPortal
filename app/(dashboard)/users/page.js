@@ -84,6 +84,57 @@ function ProfileCell({ p }) {
   );
 }
 
+// Buyer or seller (website lib/userType.js, admin lib/userTypeAdmin.js).
+const TYPE_STYLE = {
+  seller_listed: { label: 'Seller', detail: 'listed', bg: '#E4F1E9', fg: '#0F6E56', bar: '#0F6E56' },
+  seller_never_listed: { label: 'Seller', detail: 'never listed', bg: '#F5EAD5', fg: '#8A5A12', bar: '#D9A54A' },
+  buyer: { label: 'Buyer', detail: null, bg: '#E8EEF8', fg: '#2B4C7E', bar: '#2B4C7E' },
+  buyer_listed: { label: 'Buyer', detail: 'who listed', bg: '#EEE8F8', fg: '#5B3E8F', bar: '#8B6CC4' },
+  unknown: { label: 'Not known', detail: null, bg: '#FAF7F1', fg: '#9C978C', bar: '#E7E1D6' },
+};
+const SOURCE_TEXT = {
+  sell_funnel: 'Signed up in the sell form', app_sell: 'Signed up from the app Sell button', signup_choice: 'Answered after sign-up',
+  login_choice: 'Picked on the log-in screen', listing: 'Published a listing (type was empty)',
+  backfill_listed: 'Backfill: has listed', backfill_sell_funnel: 'Backfill: signed up in the sell form',
+  backfill_draft: 'Backfill: started a listing draft', backfill_login: 'Backfill: signed up from Log in, never listed',
+};
+function TypeCell({ t }) {
+  const s = TYPE_STYLE[t?.group] || TYPE_STYLE.unknown;
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5" title={t?.source ? SOURCE_TEXT[t.source] || t.source : 'No type yet (still gets every email)'} data-testid="type-cell">
+      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: s.bg, color: s.fg }}>{s.label}</span>
+      {s.detail && <span className="text-[10.5px] whitespace-nowrap" style={{ color: T.textMuted }}>{s.detail}</span>}
+    </span>
+  );
+}
+// Summary next to the tiles: % sellers / % buyers over accounts with a type, a bar of the 4 groups.
+function TypeShares({ s, ready, loading }) {
+  const c = s?.counts || {};
+  const groups = ['seller_listed', 'seller_never_listed', 'buyer_listed', 'buyer'];
+  const tip = (g) => `${TYPE_STYLE[g].label}${TYPE_STYLE[g].detail ? ' · ' + TYPE_STYLE[g].detail : ''}: ${c[g]}`;
+  return (
+    <div className="bg-white p-5 col-span-2" style={CARD} data-testid="type-shares">
+      <p className="text-xs font-medium" style={{ color: T.textSecondary }}>Sellers and buyers</p>
+      {loading ? <p className="text-3xl font-bold mt-3">—</p> : !ready || !s ? (
+        <p className="text-[12px] mt-3" style={{ color: T.textMuted }}>Not set up yet: run website migration 023_user_type.sql, then the backfill.</p>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-4 mt-2 flex-wrap">
+            <p className="text-3xl font-bold tracking-head" style={{ color: T.textPrimary }}>{s.pctSellers}%<span className="text-[13px] font-medium ml-1" style={{ color: T.textSecondary }}>sellers</span></p>
+            <p className="text-3xl font-bold tracking-head" style={{ color: T.textPrimary }}>{s.pctBuyers}%<span className="text-[13px] font-medium ml-1" style={{ color: T.textSecondary }}>buyers</span></p>
+          </div>
+          <div className="flex h-2 mt-3 rounded-full overflow-hidden" style={{ background: T.bgSurface }}>
+            {groups.map((g) => (s.known && c[g] ? <div key={g} style={{ width: `${(c[g] / s.known) * 100}%`, background: TYPE_STYLE[g].bar }} title={tip(g)} /> : null))}
+          </div>
+          <p className="text-[11px] mt-2 leading-snug" style={{ color: T.textMuted }}>
+            {s.pctSellersNeverListed}% of sellers never listed · {s.pctBuyersListed}% of buyers listed · {(c.seller_listed || 0) + (c.seller_never_listed || 0)} sellers, {(c.buyer || 0) + (c.buyer_listed || 0)} buyers{c.unknown ? ` · ${c.unknown} not known yet` : ''}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [count, setCount] = useState(0);
@@ -93,6 +144,7 @@ export default function UsersPage() {
   const [q, setQ] = useState('');
   const [term, setTerm] = useState('');
   const [pfilter, setPfilter] = useState('');   // profile filter (api/users ?profile=)
+  const [tfilter, setTfilter] = useState('');   // buyer / seller filter (api/users ?type=)
   const [geoData, setGeoData] = useState({}); // ip -> { city, state, country }
   const [busy, setBusy] = useState(null); // { id, field } of the in-flight PATCH, or null
   const [confirmUser, setConfirmUser] = useState(null); // user pending delete confirmation (opens the modal)
@@ -106,6 +158,7 @@ export default function UsersPage() {
         const qs = new URLSearchParams();
         if (term) qs.set('q', term);
         if (pfilter) qs.set('profile', pfilter);
+        if (tfilter) qs.set('type', tfilter);
         const res = await fetch(`/api/users${qs.toString() ? `?${qs}` : ''}`);
         const json = await res.json();
         if (!cancelled) {
@@ -123,7 +176,7 @@ export default function UsersPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [term, pfilter]);
+  }, [term, pfilter, tfilter]);
 
   // Resolve buyer IPs -> city/state/country. The free ip-api.com tier is
   // rate-limited, so we seed from the localStorage cache first (instant,
@@ -229,7 +282,7 @@ export default function UsersPage() {
       </div>
 
       {/* Stat strip — totals for the active country */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {[
           { label: 'Total users', value: totalCount.toLocaleString(), Icon: UsersIcon },
           { label: 'Verified users', value: verifiedCount.toLocaleString(), Icon: CheckCircle2 },
@@ -259,6 +312,7 @@ export default function UsersPage() {
             {hint && !loading && <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>{hint}</p>}
           </div>
         ))}
+        <TypeShares s={stats?.types} ready={!!stats?.typesReady} loading={loading} />
       </div>
 
       {/* Table */}
@@ -295,14 +349,26 @@ export default function UsersPage() {
             <option value="logo">Photo: logo, text or other</option>
             <option value="no_photo">No profile photo</option>
           </select>
+          {/* Buyer or seller filter, on every account of the country */}
+          <select value={tfilter} onChange={(e) => setTfilter(e.target.value)} aria-label="Filter by type" data-testid="type-filter"
+            className="outline-none text-[13px]" style={{ padding: '8px 12px', border: `1px solid ${T.borderLight}`, borderRadius: '999px', background: T.bgWhite, color: T.textBody }}>
+            <option value="">All types</option>
+            <option value="seller">Sellers</option>
+            <option value="seller_listed">Sellers · listed</option>
+            <option value="seller_never_listed">Sellers · never listed</option>
+            <option value="buyer">Buyers</option>
+            <option value="buyer_only">Buyers · never listed</option>
+            <option value="buyer_listed">Buyers who listed</option>
+            <option value="unknown">Type not known</option>
+          </select>
         </div>
 
         <div className="overflow-x-auto cl-scroll">
-          <table className="w-full min-w-[1180px]">
+          <table className="w-full min-w-[1280px]">
             <thead style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['User', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Listings', 'Profile', 'Joined', 'Last login', 'Actions'].map((h, i) => (
-                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 10 ? 'text-right' : i === 6 ? 'text-center' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
+                {['User', 'Type', 'Phone', 'IP', 'Location', 'Method', 'Status', 'Listings', 'Profile', 'Joined', 'Last login', 'Actions'].map((h, i) => (
+                  <th key={i} className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider ${i >= 11 ? 'text-right' : i === 7 ? 'text-center' : 'text-left'}`} style={{ color: T.textSecondary }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -310,19 +376,19 @@ export default function UsersPage() {
               {loading ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i} className="border-b animate-pulse" style={{ borderColor: T.borderLight }}>
-                    {[...Array(11)].map((__, j) => (
+                    {[...Array(12)].map((__, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-3 rounded" style={{ width: j === 0 ? '160px' : '70px', background: T.bgSurface }} /></td>
                     ))}
                   </tr>
                 ))
               ) : error ? (
-                <tr><td colSpan="11" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
+                <tr><td colSpan="12" className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load users. Check the DB connection.</td></tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="px-6 py-12 text-center">
+                  <td colSpan="12" className="px-6 py-12 text-center">
                     <UsersIcon className="w-10 h-10 mx-auto mb-3" style={{ color: T.borderLight }} />
                     <p className="text-sm font-medium" style={{ color: T.textSecondary }}>No users found</p>
-                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term || pfilter ? 'Try a different search or filter.' : 'Users appear here once people sign in to the buyer portal.'}</p>
+                    <p className="text-xs mt-1" style={{ color: T.textMuted }}>{term || pfilter || tfilter ? 'Try a different search or filter.' : 'Users appear here once people sign in to the buyer portal.'}</p>
                   </td>
                 </tr>
               ) : users.map((u) => {
@@ -350,6 +416,7 @@ export default function UsersPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-4 py-3"><TypeCell t={u.type} /></td>
                     <td className="px-4 py-3 text-xs" style={{ color: T.textBody }}>
                       {u.phone || '—'}
                       {u.phone_source === 'listing' ? <span className="block text-[10px]" style={{ color: T.textMuted }}>from listing</span> : null}

@@ -12,6 +12,7 @@ import { listingPhones } from '@/lib/listingPhones';
 import { matchesUser } from '@/lib/userSearch';
 import { PHONE_PREFIX } from '@/lib/paidListingsAdmin';
 import { savedProfileCompletion } from '@/lib/savedProfileCompletion';
+import { typeIndex, TYPE_FILTERS } from '@/lib/userTypeAdmin';
 
 // Profile Personalization (website Settings → Perfil profesional): the 7 items + "personalized"
 // (lib/profileCompletion.js — the same rule the "Personalize your profile" emails stop at).
@@ -43,6 +44,19 @@ const PROFILE_FILTERS = {
   face: (u) => photoOf(u)?.kind === 'face',
   logo: (u) => ['logo', 'other'].includes(photoOf(u)?.kind),
   no_photo: (u) => !photoOf(u),
+};
+
+// Buyer or seller (lib/userTypeAdmin.js): one whole-country read per request, shared by the
+// Type column, the ?type= filter and the summary percentages. Internal accounts left out.
+function typesLoader(db) {
+  let p = null;
+  return () => (p ||= internalEmails(activeCountry())
+    .then((extra) => typeIndex(db, { keep: (u) => !isInternalEmail(u.email, extra) }))
+    .catch(() => ({ ready: false, byId: new Map(), shares: null })));
+}
+const withTypes = async (stats, types) => {
+  const t = await types();
+  return stats ? { ...stats, types: t.shares, typesReady: t.ready } : stats;
 };
 
 export const runtime = 'nodejs';
@@ -78,6 +92,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();
   const pf = PROFILE_FILTERS[searchParams.get('profile') || ''] || null;
+  const tf = TYPE_FILTERS[searchParams.get('type') || ''] || null;
+  const types = typesLoader(dbFor(activeCountry()));
 
   const cols = 'id,email,full_name,phone,phone_verified_at,verified,active,auth_provider,created_at,last_login_at,ip_address,registration_ip,blocked,suspended';
   let query = `select=${cols}&${HIDE_DELETED_USERS}&order=created_at.desc&limit=500`;
@@ -97,7 +113,7 @@ export async function GET(request) {
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((u) => String(u.id));
     if (!ids.length) {
       const extra = await internalEmails(activeCountry());
-      const stats = await summaryStats(db, extra).catch(() => null);
+      const stats = await withTypes(await summaryStats(db, extra).catch(() => null), types);
       return NextResponse.json({ users: [], count: 0, stats });
     }
     query += `&id=in.(${ids.slice(0, 500).map((id) => `"${id}"`).join(',')})`;
@@ -110,7 +126,20 @@ export async function GET(request) {
     const ids = everyone.filter(pf).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((u) => String(u.id));
     if (!ids.length) {
       const extra = await internalEmails(activeCountry());
-      const stats = await summaryStats(db, extra).catch(() => null);
+      const stats = await withTypes(await summaryStats(db, extra).catch(() => null), types);
+      return NextResponse.json({ users: [], count: 0, stats });
+    }
+    query += `&id=in.(${ids.slice(0, 500).map((id) => `"${id}"`).join(',')})`;
+  }
+  if (tf) {
+    // Type filter (buyer / seller, listed or not): every account of the country, newest first.
+    const db = dbFor(activeCountry());
+    const [t, everyone] = await Promise.all([types(), selectAll(db, 'users', `select=id,created_at&${HIDE_DELETED_USERS}&order=id.asc`)]);
+    const ids = everyone.filter((u) => tf.includes(t.byId.get(String(u.id))?.group || 'unknown'))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((u) => String(u.id));
+    if (!ids.length) {
+      const extra = await internalEmails(activeCountry());
+      const stats = await withTypes(await summaryStats(db, extra).catch(() => null), types);
       return NextResponse.json({ users: [], count: 0, stats });
     }
     query += `&id=in.(${ids.slice(0, 500).map((id) => `"${id}"`).join(',')})`;
@@ -125,6 +154,9 @@ export async function GET(request) {
     const users = rows.filter((u) => !isInternalEmail(u.email, extra));
     for (const u of users) { u.profile = profileOf(u); u.photo = photoOf(u); }
     const statsP = summaryStats(dbFor(activeCountry()), extra).catch((e) => { console.error('[api/users] stats', e); return null; });
+    // Buyer or seller of each row (type, how we know, listed or not, group).
+    const typeIdx = await types();
+    for (const u of users) u.type = typeIdx.byId.get(String(u.id)) || { type: null, source: null, listed: false, group: 'unknown' };
     // How many listings each one published (lib/listingCount.js).
     // Only published ones; a listing waiting for payment is counted apart (listings_waiting).
     const counts = await listingCounts(dbFor(activeCountry()).select, users.map((u) => u.id)).catch(() => ({ published: new Map(), waiting: new Map() }));
@@ -138,7 +170,7 @@ export async function GET(request) {
     // No phone on the profile → the one on their newest listing (shown as "from listing").
     const fromListing = await listingPhones(dbFor(activeCountry()).select, users.filter((u) => !u.phone).map((u) => u.id)).catch(() => new Map());
     for (const u of users) if (!u.phone && fromListing.has(String(u.id))) { u.phone = fromListing.get(String(u.id)); u.phone_source = 'listing'; }
-    const stats = await statsP;
+    const stats = await withTypes(await statsP, types);
     return NextResponse.json({ users, count: Math.max(0, count - (rows.length - users.length)), stats });
   } catch (err) {
     console.error('[api/users]', err);

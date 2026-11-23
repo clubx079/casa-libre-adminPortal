@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { RANGES, DEFAULT_DAYS, rangeName, rangeLabel, sectionDays, pickSection, optionsWith } from '@/lib/analyticsRange';
 import UserTimeline from '@/components/users/UserTimeline';
@@ -1439,12 +1439,150 @@ const UsersAnalytics = ({ deep = false, onDeepDone, master = DEFAULT_DAYS, platf
 // (so one person refreshing does not read as demand).
 // platform 'ios' | 'android' = only views from that app (iPhone / Android users tabs). Without it: website + app,
 // the same count sellers get in their views email — that request is unchanged.
+// Property analytics → "By source" / "By user" (lib/propertyViewsBy.js): every live listing of a
+// scraper (e.g. Habitamia) or of the owners, or every listing of one person by email — the
+// scope's combined views first, then each listing with its own views (0 included).
+const PropertyScope = ({ days, platform, scope }) => {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr(''); setData(null);
+    const qs = new URLSearchParams({ type: 'propertiesBy', days: String(days), ...(scope.source ? { source: scope.source } : {}), ...(scope.email ? { email: scope.email } : {}) });
+    fetch(`/api/analytics/posthog?${qs}${pf(platform)}`)
+      .then((r) => r.json())
+      .then((d) => { if (!alive) return; if (d?.error) setErr(typeof d.error === 'string' ? d.error : 'Could not load.'); else setData(d); })
+      .catch(() => { if (alive) setErr('Could not load. Try again.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days, scope.source, scope.email]); // eslint-disable-line react-hooks/exhaustive-deps
+  const money = (n) => (n == null ? '' : `US$ ${Math.round(n).toLocaleString('en-US')}`);
+  const rows = (data?.rows || []).filter((r) => !q || `${r.title} ${r.city} ${r.neighborhood} ${r.type}`.toLowerCase().includes(q.toLowerCase()));
+  const top = Math.max(1, ...(data?.rows || []).map((r) => r.views));
+  if (loading) return <p className="text-xs" style={{ color: T.textMuted }}>Loading every listing and its views…</p>;
+  if (err) return <p className="text-xs" style={{ color: T.danger }}>{err}</p>;
+  if (!data) return null;
+  const t = data.totals;
+  return (
+    <div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {[
+          ['Listings', t.listings],
+          ['Viewed at least once', t.viewed],
+          ['Views (all combined)', t.views],
+          [t.visitorsExact ? 'People' : 'People (sum per listing)', t.visitors],
+        ].map(([k, v]) => (
+          <div key={k} className="p-3" style={{ ...CARD, background: T.bgSurface }}>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: T.textMuted }}>{k}</div>
+            <div className="text-xl font-bold mt-0.5" style={{ color: T.textPrimary }}>{Number(v || 0).toLocaleString('en-US')}</div>
+          </div>
+        ))}
+      </div>
+      {data.scope?.kind === 'user' ? <p className="text-[11px] mb-3" style={{ color: T.textBody }}>{data.scope.name} · {data.scope.email} — all their listings (live or not)</p> : null}
+      {data.truncated ? <p className="text-[11px] mb-3" style={{ color: T.warning || T.textMuted }}>Showing the newest {t.listings.toLocaleString('en-US')} listings of this source.</p> : null}
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter these listings (address, city, type)…" className="w-full mb-3 px-3 py-2 text-[12px] rounded-[10px] outline-none" style={{ border: `1px solid ${T.borderLight}`, color: T.textPrimary }} data-testid="scope-filter" />
+      {rows.length === 0 ? <p className="text-xs" style={{ color: T.textMuted }}>No listings here.</p> : (
+        <div className="space-y-3">
+          {rows.map((r, i) => (
+            <div key={r.propertyId} className="flex items-center gap-3" data-testid="scope-row">
+              <span className="text-[11px] font-mono w-8 text-right shrink-0" style={{ color: T.textMuted }}>{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[13px] font-medium truncate" style={{ color: r.views ? T.textPrimary : T.textSecondary }}>{r.title}</span>
+                  <span className="text-[11px] shrink-0" style={{ color: T.textBody }}>
+                    <b style={{ color: T.textPrimary }}>{r.views}</b> {r.views === 1 ? 'view' : 'views'}
+                    <span style={{ color: T.textMuted }}> · {r.visitors} {r.visitors === 1 ? 'person' : 'people'}</span>
+                  </span>
+                </div>
+                <div style={{ height: 5, background: T.bgSurface, borderRadius: 999, marginTop: 4 }}>
+                  <div style={{ width: `${r.views ? Math.max(3, Math.round((r.views / top) * 100)) : 0}%`, height: 5, background: T.primary, borderRadius: 999 }} />
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-[10px]" style={{ color: T.textMuted }}>
+                  {r.mode && <span className="uppercase tracking-wider">{r.mode}</span>}
+                  {r.type && <span>· {r.type}</span>}
+                  {r.neighborhood && <span>· {r.neighborhood}</span>}
+                  {r.city && <span>· {r.city}</span>}
+                  {r.price != null && <span>· {money(r.price)}</span>}
+                  {r.status !== 'live' && <span style={{ color: T.danger }}>· {r.status}</span>}
+                  <a href={`/properties/${r.propertyId}/edit`} className="ml-auto inline-flex items-center gap-1 hover:underline" style={{ color: T.textSecondary }}>Open ↗</a>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// "By user" search: click → the people who listed in this country; typing narrows it at once
+// (name or any part of the email). Picking one shows all their listings and views.
+const UserPicker = ({ value, onPick }) => {
+  const [users, setUsers] = useState(null);
+  const [q, setQ] = useState(value || '');
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+  useEffect(() => { setQ(value || ''); }, [value]);
+  const load = () => {
+    if (users) return;
+    fetch('/api/analytics/posthog?type=propertyUsers').then((r) => r.json()).then((d) => setUsers(d?.users || [])).catch(() => setUsers([]));
+  };
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  const term = q.trim().toLowerCase();
+  const shown = (users || []).filter((u) => !term || u.email.toLowerCase().includes(term) || u.name.toLowerCase().includes(term)).slice(0, 60);
+  return (
+    <div ref={boxRef} className="relative">
+      <input
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); if (!e.target.value) onPick(''); }}
+        onFocus={() => { load(); setOpen(true); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && shown[0]) { e.preventDefault(); onPick(shown[0].email); setQ(shown[0].email); setOpen(false); } if (e.key === 'Escape') setOpen(false); }}
+        placeholder="Search a user (name or email)…"
+        style={{ ...selectStyle, minWidth: 230 }}
+        aria-label="User"
+        data-testid="prop-email"
+      />
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 w-[340px] max-h-[320px] overflow-y-auto bg-white rounded-[12px] shadow-lg" style={{ border: `1px solid ${T.borderLight}` }} data-testid="prop-user-list">
+          {users === null ? <p className="px-3 py-2.5 text-[12px]" style={{ color: T.textMuted }}>Loading users…</p>
+            : shown.length === 0 ? <p className="px-3 py-2.5 text-[12px]" style={{ color: T.textMuted }}>No user with listings matches “{q}”.</p>
+            : shown.map((u) => (
+              <button key={u.id} type="button" onClick={() => { onPick(u.email); setQ(u.email); setOpen(false); }}
+                className="w-full text-left px-3 py-2 hover:bg-black/[.04] flex items-center gap-2" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] font-semibold truncate" style={{ color: T.textPrimary }}>{u.name || u.email}</span>
+                  <span className="block text-[11px] truncate" style={{ color: T.textMuted }}>{u.email}</span>
+                </span>
+                <span className="text-[11px] shrink-0" style={{ color: T.textBody }}>{u.listings} {u.listings === 1 ? 'listing' : 'listings'}</span>
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PropertyAnalytics = ({ master, platform }) => {
   const range = useSectionRange(master);
   const { days } = range;
   const [limit, setLimit] = useState(20);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Most viewed (top N) | By source (a scraper / owner listings) | By user (email)
+  const [sources, setSources] = useState([]);
+  const [source, setSource] = useState('');
+  const [emailIn, setEmailIn] = useState('');
+  const [email, setEmail] = useState('');
+  const view = email ? 'user' : source ? 'source' : 'top';
+  useEffect(() => {
+    fetch('/api/analytics/posthog?type=propertySources').then((r) => r.json()).then((d) => setSources(d?.sources || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -1467,14 +1605,20 @@ const PropertyAnalytics = ({ master, platform }) => {
       <div className="bg-white p-5" style={CARD}>
         <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
           <h2 className="text-sm font-bold" style={{ color: T.textPrimary }}>{isAppPlatform(platform) ? `Most viewed properties in the ${APP_NAME[platform] ? `${APP_NAME[platform]} ` : ''}app` : 'Most viewed properties'}</h2>
-          <div className="flex items-center gap-2">
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={selectStyle}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select value={source} onChange={(e) => { setSource(e.target.value); setEmail(''); setEmailIn(''); }} style={selectStyle} aria-label="Source" data-testid="prop-source">
+              <option value="">All sources (most viewed)</option>
+              <option value="owners">Owner listings (posted on Casa-Libre)</option>
+              {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+            <UserPicker value={email} onPick={(em) => { setEmail(em); setEmailIn(em); if (em) setSource(''); }} />
+            {view === 'top' && <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={selectStyle}>
               <option value={10}>Top 10</option>
               <option value={20}>Top 20</option>
               <option value={30}>Top 30</option>
               <option value={50}>Top 50</option>
               <option value={100}>Top 100</option>
-            </select>
+            </select>}
             <RangeSelect range={range} ariaLabel="Most viewed range" />
           </div>
         </div>
@@ -1482,7 +1626,10 @@ const PropertyAnalytics = ({ master, platform }) => {
           one row per listing · views counts every opening, people counts distinct visitors · {isAppPlatform(platform) ? `${APP_NAME[platform] ? `${APP_NAME[platform]} ` : ''}app only` : 'website + app'}
         </p>
 
-        {data && (
+        {view !== 'top' ? (
+          <PropertyScope days={days} platform={platform} scope={view === 'source' ? { source } : { email }} />
+        ) : null}
+        {view === 'top' && data && (
           <div className="grid grid-cols-3 gap-3 mb-4">
             {[
               ['Views', data.totals.views],
@@ -1497,7 +1644,7 @@ const PropertyAnalytics = ({ master, platform }) => {
           </div>
         )}
 
-        {loading ? (
+        {view !== 'top' ? null : loading ? (
           <p className="text-xs" style={{ color: T.textMuted }}>Loading…</p>
         ) : rows.length === 0 ? (
           <p className="text-xs" style={{ color: T.textMuted }}>

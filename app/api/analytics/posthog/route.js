@@ -19,6 +19,7 @@ import { CAMPAIGN_KEY, campaignOf } from '@/lib/campaignKey';
 import { referralLinkNames } from '@/lib/referralsData';
 import { normPlatform, isAppPlatform, platformClause, ukeyFor, geoEventsClause, summarySql, summaryFromRow, HAS_PHONE_IP } from '@/lib/analyticsPlatform';
 import { growthSql, buildGrowth } from '@/lib/growthSeries';
+import { scopeFilter, shapeRow, summarize, chunks, inList, isEmail, OWNERS, MAX_LISTINGS } from '@/lib/propertyViewsBy';
 
 // Growth chart: visitors / property views / contacts per day since the first day with data
 // (lib/growthSeries.js), in the country's time zone.
@@ -546,6 +547,80 @@ async function propertyViews(days, limit, platform = 'all') {
   });
 }
 
+// Views by source / by user (lib/propertyViewsBy.js): every live listing of a scraper, of the
+// owners, or of one person (by email), each with its views + people in the window, and the
+// scope's combined numbers. type=propertySources lists the scrapers for the picker.
+async function propertySources() {
+  const { select } = dbFor(currentSite() || 'py');
+  const src = await select('scrape_sources', 'select=id,name&order=name.asc&limit=200').catch(() => []);
+  return NextResponse.json({ sources: (src || []).map((s) => ({ id: s.id, name: s.name })) });
+}
+
+// The people who listed in this country (owner listings, any state but drafts), for the
+// "By user" picker: name, email, how many listings — newest-active first. Test/team accounts out.
+async function propertyUsers() {
+  const cc = currentSite() || 'py';
+  const { select } = dbFor(cc);
+  const props = [];
+  for (let off = 0; off < 20000; off += 1000) {
+    const part = await select('properties', `select=created_by,status&created_by=not.is.null&status=neq.draft&limit=1000&offset=${off}`).catch(() => []);
+    props.push(...(part || [])); if (!part || part.length < 1000) break;
+  }
+  const count = new Map();
+  for (const p of props) count.set(String(p.created_by), (count.get(String(p.created_by)) || 0) + 1);
+  const ids = [...count.keys()];
+  const users = ids.length ? await selectIn(select, 'users', 'id,full_name,email,created_at', 'id', ids).catch(() => []) : [];
+  const extra = await internalEmails(cc).catch(() => new Set());
+  const list = (users || [])
+    .filter((u) => u.email && !isInternalEmail(u.email, extra) && !/@deleted\.invalid$/i.test(u.email))
+    .map((u) => ({ id: u.id, name: u.full_name || '', email: u.email, listings: count.get(String(u.id)) || 0 }))
+    .sort((a, b) => b.listings - a.listings || a.email.localeCompare(b.email));
+  return NextResponse.json({ users: list });
+}
+
+async function propertyViewsBy(days, source, email, platform = 'all') {
+  const UKEY = ukeyFor(platform);
+  const d = [7, 30, 90, 180, 365].includes(Number(days)) ? Number(days) : 7;
+  const { select } = dbFor(currentSite() || 'py');
+  let user = null;
+  if (email) {
+    if (!isEmail(email)) return NextResponse.json({ error: 'Enter a full email address.' }, { status: 400 });
+    [user] = await select('users', `select=id,full_name,email&email=ilike.${encodeURIComponent(String(email).trim())}&limit=1`).catch(() => []);
+    if (!user) return NextResponse.json({ error: `No account with ${email} in this country.` }, { status: 404 });
+  }
+  const filter = scopeFilter({ source, userId: user?.id || '' });
+  if (!filter) return NextResponse.json({ error: 'Pick a source or enter an email.' }, { status: 400 });
+  const cols = 'id,address,neighborhood,city,property_type,listing_type,price_usd,status,admin_status,is_delisted,created_at';
+  const listings = [];
+  for (let off = 0; off < MAX_LISTINGS; off += 1000) {
+    const part = await select('properties', `select=${cols}&${filter}&order=created_at.desc&limit=1000&offset=${off}`).catch(() => []);
+    listings.push(...(part || []));
+    if (!part || part.length < 1000) break;
+  }
+  const ids = listings.map((l) => l.id);
+  const byId = new Map();
+  let combined = null;
+  for (const part of chunks(ids)) {
+    const rows = flat(await hogql(`
+      SELECT toString(properties.property_id) AS pid, count() AS views, count(DISTINCT ${UKEY}) AS visitors, max(timestamp) AS last_seen
+      FROM events
+      WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter(platform)}
+        AND toString(properties.property_id) IN (${inList(part)})
+      GROUP BY pid`));
+    for (const r of rows) byId.set(String(r[0]), { views: r[1], visitors: r[2], lastSeen: r[3] });
+  }
+  // people across the whole scope, counted once (one query while the id list stays reasonable)
+  if (ids.length && ids.length <= 1200) {
+    const [t] = flat(await hogql(`
+      SELECT count(DISTINCT ${UKEY}) FROM events
+      WHERE event = 'property_viewed' AND timestamp >= now() - INTERVAL ${d} DAY AND ${geoFilter(platform)}
+        AND toString(properties.property_id) IN (${inList(ids)})`));
+    combined = { visitors: Number(t?.[0] || 0) };
+  }
+  const out = summarize(listings.map((l) => shapeRow(l, byId.get(String(l.id)))), combined);
+  return NextResponse.json({ configured: true, days: d, platform: normPlatform(platform, 'all'), scope: user ? { kind: 'user', name: user.full_name || user.email, email: user.email } : { kind: source === OWNERS ? 'owners' : 'source', id: source }, truncated: listings.length >= MAX_LISTINGS, ...out });
+}
+
 // How much of PostHog's free allowance we are using.
 //
 // PostHog bills on a CYCLE, not a calendar month — this org's runs 18th → 18th,
@@ -648,6 +723,9 @@ export async function GET(request) {
     if (type === 'clicks') return await linkClicks(searchParams.get('days') || '');
     if (type === 'links') return await linksData(searchParams.get('days') || '');
     if (type === 'tech') return await techBreakdown(searchParams.get('days') || '', searchParams.get('site') || '', platform);
+    if (type === 'propertySources') return await propertySources();
+    if (type === 'propertyUsers') return await propertyUsers();
+    if (type === 'propertiesBy') return await propertyViewsBy(searchParams.get('days') || '', searchParams.get('source') || '', searchParams.get('email') || '', normPlatform(searchParams.get('platform'), 'all'));
     if (type === 'properties') return await propertyViews(searchParams.get('days') || '', searchParams.get('limit') || '', normPlatform(searchParams.get('platform'), 'all'));
     if (type === 'whatsapp') return await whatsappData(searchParams.get('days') || '');
     if (type === 'growth') return await growthData(platform);

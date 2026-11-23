@@ -34,8 +34,7 @@ export function CountryTable({ rows = [], active }) {
             <th scope="col" className="font-medium px-3 w-[32%]">Visitors</th>
             <th scope="col" className="font-medium px-3 text-right">Contacts</th>
             <th scope="col" className="font-medium px-3 text-right">New users</th>
-            <th scope="col" className="font-medium px-3 text-right">Owner listings</th>
-            <th scope="col" className="font-medium px-5 text-right">Live listings</th>
+            <th scope="col" className="font-medium px-5 text-right">Owner listings</th>
           </tr>
         </thead>
         <tbody>
@@ -63,8 +62,7 @@ export function CountryTable({ rows = [], active }) {
                 </td>
                 <td className="px-3 text-right tabular-nums whitespace-nowrap">{r.web === undefined ? '—' : fmt(r.web?.w?.contacted || 0)}<Delta w={r.web?.w?.contacted} p={r.web?.p?.contacted} /></td>
                 <td className="px-3 text-right tabular-nums whitespace-nowrap">{fmt(r.users?.w)}<Delta w={r.users?.w} p={r.users?.p} /></td>
-                <td className="px-3 text-right tabular-nums whitespace-nowrap">{fmt(r.listings?.w)}<Delta w={r.listings?.w} p={r.listings?.p} /></td>
-                <td className="px-5 text-right tabular-nums">{fmt(r.live)}</td>
+                <td className="px-5 text-right tabular-nums whitespace-nowrap">{fmt(r.listings?.w)}<Delta w={r.listings?.w} p={r.listings?.p} /></td>
               </tr>
             );
           })}

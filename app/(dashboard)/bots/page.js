@@ -87,13 +87,14 @@ const APPROVAL = { pending: ['warning', 'Waiting for approval'], approved: ['suc
 const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return '—'; } };
 const thisMonth = (iso) => { const d = new Date(iso); const n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth(); };
 
-function ItemList({ items }) {
+function ItemList({ items, tr = null }) {
   if (!items?.length) return <p className="text-[12.5px]" style={{ color: T.textMuted }}>No items in this run.</p>;
   const keys = [...new Set(items.slice(0, 50).flatMap((x) => Object.keys(x)))].slice(0, 8);
   const cell = (v) => {
     if (v == null || v === '') return '—';
     const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
-    return /^https?:\/\//.test(t) ? <a href={t} target="_blank" rel="noreferrer" className="underline decoration-black/20 hover:decoration-black break-all">{t.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}</a> : t.slice(0, 220);
+    if (/^https?:\/\//.test(t)) return <a href={t} target="_blank" rel="noreferrer" className="underline decoration-black/20 hover:decoration-black break-all">{t.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}</a>;
+    return (tr?.get(t) || t).slice(0, 220);
   };
   return (
     <div className="overflow-x-auto rounded-[10px]" style={{ border: `1px solid ${T.borderLight}` }}>
@@ -111,6 +112,26 @@ function ItemList({ items }) {
 function Activity({ bot, info, onRefresh, onRun, busy }) {
   const runs = info?.runs || [];
   const [open, setOpen] = useState(null);
+  // "Translate to English": the bots answer in Spanish; the summary and every text cell of a run
+  // go through the admin's translator (/api/inbox/translate, saved translations reused)
+  const [english, setEnglish] = useState({});   // runId → Map(original → English) | 'busy' | 'error'
+  const [showEn, setShowEn] = useState({});     // runId → true while showing English
+  const translateRun = async (r) => {
+    if (english[r.id] instanceof Map) { setShowEn((s) => ({ ...s, [r.id]: !s[r.id] })); return; }
+    setEnglish((e) => ({ ...e, [r.id]: 'busy' }));
+    const texts = [...new Set([r.summary, ...(r.items || []).slice(0, 200).flatMap((it) => Object.values(it || {}))]
+      .filter((v) => typeof v === 'string' && /[a-záéíóúñ]{3}/i.test(v) && !/^https?:\/\//.test(v)))];
+    const map = new Map();
+    try {
+      for (let i = 0; i < texts.length; i += 40) {
+        const part = texts.slice(i, i + 40);
+        const j = await fetch('/api/inbox/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts: part }) }).then((x) => x.json());
+        part.forEach((t, k) => { if (j?.english?.[k]) map.set(t, j.english[k]); });
+      }
+      setEnglish((e) => ({ ...e, [r.id]: map }));
+      setShowEn((s) => ({ ...s, [r.id]: true }));
+    } catch { setEnglish((e) => ({ ...e, [r.id]: 'error' })); }
+  };
   const decide = async (id, approval) => {
     await fetch(`/api/bots/runs/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approval }) }).catch(() => {});
     onRefresh();
@@ -155,11 +176,19 @@ function Activity({ bot, info, onRefresh, onRun, busy }) {
                 </button>
                 {isOpen ? (
                   <div className="px-3.5 pb-3.5 flex flex-col gap-3" style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                    {r.summary || r.items?.length ? (
+                      <div className="pt-3 flex items-center gap-2">
+                        <button type="button" onClick={() => translateRun(r)} disabled={english[r.id] === 'busy'} className={btnSecondary} style={{ borderColor: T.borderLight, color: T.textBody }} data-testid="bot-translate">
+                          {english[r.id] === 'busy' ? 'Translating…' : showEn[r.id] ? 'Show original' : 'Translate to English'}
+                        </button>
+                        {english[r.id] === 'error' ? <span className="text-[12px]" style={{ color: T.danger }}>Could not translate. Try again.</span> : null}
+                      </div>
+                    ) : null}
                     <div className="pt-3 text-[12.5px]" style={{ color: T.textBody }}>
-                      <b style={{ color: T.textPrimary }}>Summary: </b>{r.summary || (r.status === 'sent' ? 'The bot is working on it.' : r.status === 'no_answer' ? 'The bot never reported back. Check its chat in Grok.' : '—')}
+                      <b style={{ color: T.textPrimary }}>Summary: </b>{(showEn[r.id] && english[r.id] instanceof Map && english[r.id].get(r.summary)) || r.summary || (r.status === 'sent' ? 'The bot is working on it.' : r.status === 'no_answer' ? 'The bot never reported back. Check its chat in Grok.' : '—')}
                       {r.error ? <div className="mt-1" style={{ color: T.danger }}>{r.error}</div> : null}
                     </div>
-                    <ItemList items={r.items} />
+                    <ItemList items={r.items} tr={showEn[r.id] && english[r.id] instanceof Map ? english[r.id] : null} />
                     {r.approval === 'pending' ? (
                       <div className="flex gap-2">
                         <button type="button" className={btnPrimary} onClick={() => decide(r.id, 'approved')}>Approve results</button>

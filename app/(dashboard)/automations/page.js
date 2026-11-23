@@ -6,6 +6,7 @@
 // welcome email → optional second email). Each email step picks which template it sends.
 // The buyer portal's hourly cron (/api/cron/automations) does the sending; this page
 // only configures it.
+import { EmailPreviewButton } from '@/components/automations/TemplatePreview';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, PageHeader, Banner, PendingMigration } from '@/components/automations/ui';
@@ -662,7 +663,7 @@ This also creates the two default emails (Spanish) — edit them in Email templa
                 <div key={r.reason} className="flex items-center justify-between gap-2 text-[12px] px-2.5 py-1.5 rounded-[8px]" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
                   <span style={{ color: T.textBody }}>{r.label}</span>
                   {r.template
-                    ? <Link href={`/email-templates/${r.template.id}`} className="underline underline-offset-2 truncate max-w-[55%]" style={{ color: r.template.is_active === false ? T.textMuted : T.textSecondary }}>{r.template.is_active === false ? 'Off' : 'Edit email'}</Link>
+                    ? <span className="flex items-center gap-3 shrink-0"><EmailPreviewButton templateId={r.template.id} /><Link href={`/email-templates/${r.template.id}`} className="underline underline-offset-2 truncate" style={{ color: r.template.is_active === false ? T.textMuted : T.textSecondary }}>{r.template.is_active === false ? 'Off' : 'Edit email'}</Link></span>
                     : <span style={{ color: T.textMuted }}>{hl.setUp ? 'missing' : 'created on save'}</span>}
                 </div>
               ))}

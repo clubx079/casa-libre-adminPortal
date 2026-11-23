@@ -4,6 +4,7 @@
 // Data: /api/automations/channels (migration 017). The website does the sending
 // (buyer lib/automations/whatsappSend.js); WhatsApp goes only to people with a number
 // (anyone who hasn't opted out); everyone else still gets the email.
+import { WaPreviewButton } from './TemplatePreview';
 import { useEffect, useState } from 'react';
 import { T, Pill, Banner, btnPrimary } from '@/components/automations/ui';
 
@@ -73,6 +74,7 @@ function Row({ a, relay, whatsappHere, note, onSaved }) {
                   <option value="">— email only for this one —</option>
                   {relay.map((r) => <option key={r.name} value={r.name} disabled={r.status !== 'APPROVED'}>{r.name} · {r.category}{r.status !== 'APPROVED' ? ` (${r.status.toLowerCase()})` : ''}{r.name === s.suggested ? ' · made for this email' : ''}</option>)}
                 </select>
+                {wa[s.templateId] ? <WaPreviewButton name={wa[s.templateId]} /> : null}
                 {t && <Pill tone={t.category === 'marketing' ? 'warning' : 'info'}>{t.category}</Pill>}
                 {t && <span className="text-[11px]" style={{ color: T.textMuted }}>{PRICE[t.category] || ''}</span>}
               </div>

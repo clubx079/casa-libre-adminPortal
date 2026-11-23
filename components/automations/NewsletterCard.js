@@ -2,6 +2,7 @@
 // "Weekly newsletter" card on the Automations page (its own API: /api/automations/newsletter,
 // lib/newsletterAdmin.js). The website's hourly cron sends it: on the chosen day and hour, the
 // next newsletter of the rotation to its audience, with that week's measured numbers.
+import { EmailPreviewButton } from './TemplatePreview';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { T, Banner, fmtDate, btnPrimary } from '@/components/automations/ui';
@@ -113,7 +114,7 @@ export default function NewsletterCard() {
                   {i === form.next
                     ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: T.successSurface, color: T.success }}>Next</span>
                     : <button onClick={() => setForm((f) => ({ ...f, next: i }))} className="text-[11px] underline" style={{ color: T.textSecondary }}>Send next</button>}
-                  {t && <Link href={`/email-templates/${t.id}`} className="text-[11px] underline" style={{ color: T.textSecondary }}>Edit / preview</Link>}
+                  {t && <span className="flex items-center gap-3"><EmailPreviewButton templateId={t.id} /><Link href={`/email-templates/${t.id}`} className="text-[11px] underline" style={{ color: T.textSecondary }}>Edit</Link></span>}
                   <button onClick={() => move(i, -1)} className="text-[12px] px-1" aria-label="Move up" style={{ color: T.textSecondary }}>↑</button>
                   <button onClick={() => move(i, 1)} className="text-[12px] px-1" aria-label="Move down" style={{ color: T.textSecondary }}>↓</button>
                   <button onClick={() => remove(i)} className="text-[11px] underline" style={{ color: T.danger }}>Remove</button>

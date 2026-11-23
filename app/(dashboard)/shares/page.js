@@ -108,6 +108,33 @@ function Listings({ rows, cc }) {
   );
 }
 
+const NET_NAME = { wa: 'WhatsApp', ig: 'Instagram', em: 'Gmail', li: 'LinkedIn', x: 'X', fb: 'Facebook', tt: 'TikTok', copy: 'Copied link', qr: 'QR' };
+function SharedBy({ rows }) {
+  if (!rows?.length) return <p className="p-5 text-[13px] text-ink/50">No clicks on links shared by a signed-in person in this period yet.</p>;
+  return (
+    <ul>
+      <li className="flex items-center gap-3 px-5 h-[40px] border-b border-ink/10 text-[12px] font-medium text-ink/50" aria-hidden>
+        <span className="flex-1">Person who shared</span><span className="w-[200px] hidden sm:block">Where</span><span className="w-[70px] text-right">Listings</span><span className="w-[60px] text-right">Clicks</span>
+      </li>
+      {rows.map((s) => (
+        <li key={s.userId} className="flex items-center gap-3 px-5 h-[56px] border-b border-ink/10 last:border-b-0">
+          {s.photo
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={s.photo} alt="" loading="lazy" className="w-9 h-9 shrink-0 rounded-full object-cover bg-[#F1ECE2]" />
+            : <span className="w-9 h-9 shrink-0 rounded-full bg-[#ECE6DA] text-ink/70 flex items-center justify-center text-[13px] font-bold">{(s.name || '?').trim().charAt(0).toUpperCase()}</span>}
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-ink truncate">{s.name}</p>
+            <p className="text-[11.5px] text-ink/50 truncate">{s.email || ''}</p>
+          </div>
+          <span className="w-[200px] hidden sm:block text-[12px] text-ink/70 truncate">{s.channels.map((c) => NET_NAME[c] || c).join(', ')}</span>
+          <span className="w-[70px] text-right tabular-nums text-[13px]">{fmt(s.listings)}</span>
+          <span className="w-[60px] text-right tabular-nums text-[13px] font-semibold">{fmt(s.clicks)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Sellers({ rows }) {
   if (!rows.length) return <p className="p-5 text-[13px] text-ink/50">No seller shared a listing in this period.</p>;
   return (
@@ -218,6 +245,9 @@ export default async function SharesPage({ searchParams }) {
           </Card>
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] gap-5 items-stretch">
+            <Card title="Who shared, and the clicks their links brought" aside={<CardNote>Anyone signed in · owners and visitors</CardNote>} className="h-full xl:col-span-2">
+              <SharedBy rows={d.sharedBy} />
+            </Card>
             <Card title="Sellers who share the most" aside={<CardNote>Shared = shares they made themselves</CardNote>} className="h-full">
               <Sellers rows={d.sellers} />
             </Card>

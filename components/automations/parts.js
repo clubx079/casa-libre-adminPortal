@@ -1,6 +1,7 @@
 'use client';
 // The building blocks of the Automations page cards (moved out of app/(dashboard)/automations/page.js
 // so self-contained cards such as ShareCards.js draw the same steps, pickers and switch).
+import { EmailPreviewButton } from './TemplatePreview';
 import Link from 'next/link';
 import { T, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { DRAFT_STEPS } from '@/lib/automationAdmin';
@@ -137,7 +138,12 @@ export function TemplatePicker({ label, value, templates, onChange, error }) {
     <div className="rounded-[12px] p-3" style={{ background: T.bgSurface, border: `1px solid ${error ? T.danger : T.borderLight}` }}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[10px] font-mono uppercase tracking-label" style={{ color: T.textMuted }}>{label}</span>
-        {chosen && <Link href={`/email-templates/${chosen.id}`} className="text-[11px] underline underline-offset-2" style={{ color: T.textSecondary }}>Edit</Link>}
+        {chosen && (
+          <span className="flex items-center gap-3">
+            <EmailPreviewButton templateId={chosen.id} />
+            <Link href={`/email-templates/${chosen.id}`} className="text-[11px] underline underline-offset-2" style={{ color: T.textSecondary }}>Edit</Link>
+          </span>
+        )}
       </div>
       <select value={value || ''} onChange={(e) => onChange(e.target.value)}
         className="w-full px-3 py-2 rounded-[10px] border text-[13px] font-medium outline-none focus:border-ink/60"

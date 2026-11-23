@@ -227,6 +227,10 @@ const SOURCE_LABELS = {
   'whatsapp campaign': 'WhatsApp campaign',   // a batch from WhatsApp campaigns (/r/wa?b=…)
   'referral link': 'Referral link · a user shared their link (/ref/…)',
   gbp: 'Google Business Profile · the website link on Google Maps (/r/gbp)',
+  // a listing shared from the share sheet (/l/<code>?c=<network>, utm_medium=share)
+  'shared · whatsapp': 'Shared · WhatsApp', 'shared · instagram': 'Shared · Instagram', 'shared · gmail': 'Shared · Gmail',
+  'shared · linkedin': 'Shared · LinkedIn', 'shared · x': 'Shared · X', 'shared · facebook': 'Shared · Facebook',
+  'shared · tiktok': 'Shared · TikTok', 'shared · copy': 'Shared · copied link', 'shared · qr': 'Shared · QR code',
 };
 const sourceLabel = (s) => SOURCE_LABELS[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Direct');
 const fmtMoney = (price, currency) => (price == null ? '' : `${({ USD: 'US$', PYG: '₲', BOB: 'Bs', UYU: '$U' })[currency] || currency || ''} ${Number(price).toLocaleString('es-PY')}`.trim());
@@ -652,7 +656,7 @@ function SourcesCard({ master }) {
           {byChannel.map((r) => (
             <div key={r.source}>
               <div className="flex items-center justify-between text-xs mb-1" data-testid={`source-${r.source}`}>
-                <span className="font-medium" style={{ color: T.textPrimary }}>{r.source}</span>
+                <span className="font-medium" style={{ color: T.textPrimary }}>{String(r.source).startsWith('shared · ') ? sourceLabel(r.source) : r.source}</span>
                 <span style={{ color: T.textBody }}>
                   {r.visitors} {r.visitors === 1 ? 'visitor' : 'visitors'}
                   {r.anon ? ` · ${r.anon} anon` : ''}

@@ -8,12 +8,12 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { relay, modeOf, phoneParam } from '@/lib/relayInbox';
 import { forgetConversations, withSites } from '@/lib/inboxData';
-import { UNREAD_TAG, visibleTags, isUnread, isMarkedUnread, isUnresponded, dncOf, dncTagPatch, isInternalTag } from '@/lib/inboxRules';
+import { UNREAD_TAG, visibleTags, isUnread, isMarkedUnread, isUnresponded, dncOf, dncTagPatch, isInternalTag, BOT_OFF_TAG, botOff } from '@/lib/inboxRules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const shape = async (c) => { const x = await withSites(c); return { ...x, tags: visibleTags(c.tags), unread: isUnread(c), marked_unread: isMarkedUnread(c), unresponded: isUnresponded(c), dnc: dncOf(c) }; };
+const shape = async (c) => { const x = await withSites(c); return { ...x, tags: visibleTags(c.tags), unread: isUnread(c), marked_unread: isMarkedUnread(c), unresponded: isUnresponded(c), dnc: dncOf(c), botOff: botOff(c) }; };
 
 export async function GET(req, { params }) {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -33,6 +33,8 @@ export async function PATCH(req, { params }) {
   for (const [k, into] of [['add_tags', add], ['remove_tags', remove]]) {
     if (Array.isArray(b[k])) into.push(...b[k].map((t) => String(t).trim().slice(0, 40)).filter((t) => t && !isInternalTag(t)));
   }
+  // Bot: On / Off (lib/inboxRules.js BOT_OFF_TAG)
+  if (b.bot && typeof b.bot === 'object') (b.bot.on ? remove : add).push(BOT_OFF_TAG);
   if (b.unread === true) add.push(UNREAD_TAG);
   if (b.unread === false) remove.push(UNREAD_TAG);
   if (b.dnc && typeof b.dnc === 'object') {

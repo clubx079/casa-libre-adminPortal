@@ -75,6 +75,12 @@ describe('weekly edition — when', () => {
     expect(editionDue({ settings: sunday, now: at('2026-12-05T15:00:00Z') }).reason).toBe('not_yet');   // Saturday < Sunday (end of ISO week)
     expect(editionDue({ settings: sunday, now: at('2026-12-06T09:30:00Z') }).due).toBe(true);           // Sunday 06:30
   });
+  it('anyTime (the one weekly cron): skips the time window, still needs auto-generate on and a free week', () => {
+    expect(editionDue({ settings: SETTINGS, now: at('2026-11-30T11:00:00Z'), anyTime: true })).toMatchObject({ due: true, week: '2026-W49' });   // Monday
+    const off = newsletterSettings({ id: 'weekly_newsletter', free_tiers: [{ day: 2, hour: 10 }] });
+    expect(editionDue({ settings: off, now: at('2026-11-30T11:00:00Z'), anyTime: true }).reason).toBe('off');
+    expect(editionDue({ settings: SETTINGS, now: at('2026-11-30T11:00:00Z'), anyTime: true, rows: [{ week: '2026-W49', status: 'published' }] }).reason).toBe('exists');
+  });
   it('idempotent: one edition per ISO week per country', () => {
     const now = at('2026-12-01T12:00:00Z');
     expect(editionDue({ settings: SETTINGS, now, rows: [{ week: '2026-W49', status: 'published', created_at: '2026-12-01T10:00:00Z' }] }).reason).toBe('exists');

@@ -131,7 +131,7 @@ export default function NewsletterCard() {
           <p className="text-[11px] mt-1.5 leading-snug" style={{ color: T.textMuted }}>
             {data.editions === null
               ? 'Not available yet in this country: run the newsletter_editions SQL (website migrations/026_newsletter_editions.sql) first.'
-              : `When on: 3 hours before the email (${DAYS[s.day]} ${s.hour}:00 country time) Claude writes a new edition — this week's numbers, 2 to 3 articles and 12 new success stories — checked against the content rules before it is published on /newsletter. That week's email is its lead article and links to it. If it can't be written (3 tries), the email goes with the rotation below.`}
+              : `When on: every Monday (one weekly cron for all countries, Monday 11:00 UTC) Claude writes a new edition — this week's numbers, 2 to 3 articles and 12 new success stories — checked against the content rules before it is published on /newsletter. That week's email is its lead article and links to it. If it can't be written (3 tries), the email goes with the rotation below.`}
           </p>
           {last ? (
             <p className="text-[12px] mt-2 leading-snug" style={{ color: last.status === 'failed' ? T.danger : T.textBody }}>

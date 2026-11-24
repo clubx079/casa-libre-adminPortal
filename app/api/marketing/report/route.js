@@ -28,7 +28,17 @@ const TTL = 10 * 60 * 1000;
 // (the page shows "no Google Ads for this country") instead of Paraguay's spend.
 const ADS_COUNTRIES = ['py'];
 const cache = new Map();
-const settle = async (fn) => { try { return { ok: true, data: await fn() } } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; } };
+// a network blip ("fetch failed", reset, timeout) gets one more try; real errors (auth, quota) don't
+const settle = async (fn) => {
+  for (let i = 0; i < 2; i++) {
+    try { return { ok: true, data: await fn() }; } catch (e) {
+      const msg = String(e?.message || e);
+      if (i === 0 && /fetch failed|ECONNRESET|ETIMEDOUT|socket|network|timeout/i.test(msg)) continue;
+      return { ok: false, error: msg.slice(0, 300) };
+    }
+  }
+  return { ok: false, error: 'unreachable' };
+};
 
 async function ga4All(range, host) {
   const base = {
@@ -98,6 +108,7 @@ export async function GET(req) {
     ads, ga4, gsc,
     own: own.ok ? { ok: true, data: outcomes(own.data, ads.ok ? ads.data.total : null) } : own,
   };
-  cache.set(key, { at: Date.now(), body });
+  // only a complete answer is kept: a failed part is tried again on the next load
+  if ([ads, ga4, gsc].every((x) => x.ok || x === skipped || x.noAds || x === notConnected)) cache.set(key, { at: Date.now(), body });
   return NextResponse.json(body);
 }

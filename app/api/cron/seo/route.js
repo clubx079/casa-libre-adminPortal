@@ -28,6 +28,9 @@ async function handle(req) {
   const countries = c === 'all' ? SEO_COUNTRIES : SEO_COUNTRIES.includes(c) ? [c] : null;
   if (!countries) return NextResponse.json({ error: 'bad country' }, { status: 400 });
   const deadline = Date.now() + 120000;
+  // AI visibility (lib/aiVisibility): every 24 h, in the background (it takes a few minutes); today's
+  // Decide uses the answers of the last 7 days, so it never waits for it.
+  if (job === 'all') import('@/lib/aiVisibility/run').then(async (m) => { if (await m.isDue()) await m.runCycle({ by: 'daily cycle' }); }).catch((e) => console.error('[ai-visibility]', e?.message || e));
   const out = {};
   const work = Promise.all(countries.map(async (cc) => {
     try {

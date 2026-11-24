@@ -190,7 +190,55 @@ function Changes({ data, busy, run }) {
   );
 }
 
-function Signals({ data, site }) {
+// AI assistants (lib/aiVisibility): asked every 24 h with web search; a GAP = competitors named, Casa-Libre
+// not (last 7 days) → becomes an answer-guide keyword in this pipeline. Never a keyword with a competitor's name.
+function VisibilityCard({ v, run, busy }) {
+  if (!v) return null;
+  if (v.error) return <Banner tone="warning"><b>AI assistants:</b> {v.error}</Banner>;
+  const pctTxt = (x) => `${Math.round((Number(x) || 0) * 100)}%`;
+  const gaps = (v.questions || []).filter((q) => q.gap);
+  return (
+    <div className="rounded-[14px] p-4" style={CARD}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[15px] font-bold" style={{ color: T.textPrimary }}>AI assistants — do they recommend Casa-Libre?</div>
+          <div className="text-[12px]" style={{ color: T.textMuted }}>
+            Asked every 24 h with web search on · last 7 days: {num(v.answers)} answers, Casa-Libre named in <b style={{ color: T.textPrimary }}>{v.mentionRate}%</b>
+            {v.lastAnswerAt ? ` · last answer ${fmtDate(v.lastAnswerAt, true)}` : ' · no answers yet'}{v.running ? ' · a check is running now' : ''}
+          </div>
+        </div>
+        <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy || v.running} onClick={() => run({ action: 'visibility_run' }, 'AI check started — answers arrive over the next minutes')}>
+          {busy === 'visibility_run' ? 'Starting…' : 'Run AI check now'}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {(v.providers || []).map((p) => (
+          <Pill key={p.key} tone={p.on ? 'success' : 'neutral'}>{p.name}{p.on ? (v.byAssistant?.[p.key] ? ` · ${Math.round((v.byAssistant[p.key].ours / Math.max(1, v.byAssistant[p.key].answers)) * 100)}% named us` : ' · on') : ` · add ${p.env}`}</Pill>
+        ))}
+        {Object.keys(v.byAssistant || {}).filter((k) => !(v.providers || []).some((p) => p.key === k)).map((k) => (
+          <Pill key={k} tone="info">{k} (Grok bot) · {Math.round((v.byAssistant[k].ours / Math.max(1, v.byAssistant[k].answers)) * 100)}% named us</Pill>
+        ))}
+      </div>
+      <p className="text-[12px] mt-3" style={{ color: T.textBody }}>
+        <b>{gaps.length} gaps</b> in this country: questions where the assistants name competitors and not Casa-Libre. Each becomes an answer-guide keyword (source &quot;AI assistants&quot;). Questions that name a competitor are tracked but never used as keywords, and our pages never name competitors or link to other sites.
+      </p>
+      <div className="overflow-x-auto mt-2"><table className="w-full text-[12px] min-w-[640px]">
+        <thead><tr><Th>Question asked</Th><Th right>Answers</Th><Th right>Casa-Libre named</Th><Th right>Competitors named</Th><Th>Who they name</Th><Th>Keyword</Th></tr></thead>
+        <tbody>{(v.questions || []).slice(0, 40).map((q) => (
+          <tr key={q.question} className="border-t" style={{ borderColor: T.borderLight }}>
+            <Td>{q.question} {q.gap ? <Pill tone="warning">gap</Pill> : null}</Td>
+            <Td right>{num(q.answers)}</Td><Td right>{pctTxt(q.ourRate)}</Td><Td right>{pctTxt(q.compRate)}</Td>
+            <Td>{(q.topCompetitors || []).map((c) => c.name).join(', ') || '—'}</Td>
+            <Td>{q.keyword ? <span className="font-mono text-[11px]">{q.keyword}</span> : <span style={{ color: T.textMuted }}>not used (names a competitor / English)</span>}</Td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      {!(v.questions || []).length ? <p className="text-[12.5px] py-3" style={{ color: T.textMuted }}>No answers for this country yet — the first check runs with the next daily SEO run, or press &quot;Run AI check now&quot;.</p> : null}
+    </div>
+  );
+}
+
+function Signals({ data, site, run, busy }) {
   if (!data) return null;
   const card = (title, sub, head, rows, cells) => (
     <div className="rounded-[14px] p-4" style={CARD}>
@@ -204,6 +252,7 @@ function Signals({ data, site }) {
   const c = data.counts || {};
   return (
     <div className="space-y-4">
+    {site ? null : <VisibilityCard v={data.visibility} run={run} busy={busy} />}
     {site ? null : card('Google Keyword Planner — monthly searches', data.kpDate
       ? `${num(c.keyword_planner)} property searches in this country with their real Google volume · read ${data.kpDate} (weekly) · includes searches we don't rank or advertise for yet`
       : "Weekly reading of real Google search volumes for this country, including searches we don't rank for yet. Not read yet: it runs with the next Collect (needs Google connected and migration 017).",
@@ -351,7 +400,7 @@ export default function SeoPipeline({ site = null }) {
       {tab === 'opportunities' ? <Opportunities data={data} reload={reload} busy={busy} run={run} site={site} /> : null}
       {tab === 'drafts' ? <Drafts data={data} busy={busy} run={run} site={site} /> : null}
       {tab === 'changes' ? <Changes data={data} busy={busy} run={run} /> : null}
-      {tab === 'signals' ? <Signals data={data} site={site} /> : null}
+      {tab === 'signals' ? <Signals data={data} site={site} run={run} busy={busy} /> : null}
       {tab === 'watch' ? <Watch data={data} site={site} /> : null}
       {tab === 'settings' ? <Settings data={data} busy={busy} run={run} site={site} /> : null}
     </div>

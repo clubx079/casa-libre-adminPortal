@@ -52,7 +52,15 @@ async function tabData(cc, tab, sp) {
     // latest reading per trend title
     const seen = new Set();
     const trendLatest = trends.filter((t) => (seen.has(t.title) ? false : seen.add(t.title)));
-    return { date, counts: { ...Object.fromEntries(counts), keyword_planner: kpCount }, kpDate, kp: kp.sort(by('avg_monthly_searches')).slice(0, 50), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), site: site.sort(by('searches')).slice(0, 40), trends: trendLatest.slice(0, 40) };
+    // AI assistants (lib/aiVisibility): the last 7 days, and which assistants are switched on
+    let visibility = null;
+    try {
+      const m = await import('@/lib/aiVisibility/run');
+      const p = await import('@/lib/aiVisibility/providers');
+      const v = await m.overview(7);
+      visibility = { ...v, questions: v.questions.filter((q) => q.country === cc), providers: p.providerStatus() };
+    } catch (e) { visibility = { error: /does not exist|PGRST205|42P01|schema cache/i.test(String(e?.message || e)) ? 'run migrations/control/004_ai_visibility.sql in the control DB' : String(e?.message || e).slice(0, 200) }; }
+    return { visibility, date, counts: { ...Object.fromEntries(counts), keyword_planner: kpCount }, kpDate, kp: kp.sort(by('avg_monthly_searches')).slice(0, 50), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), site: site.sort(by('searches')).slice(0, 40), trends: trendLatest.slice(0, 40) };
   }
   if (tab === 'watch') return watch(cc);
   if (tab === 'settings') return { settings: await loadSettings(cc), website: websiteUrl(cc), devDb: !!process.env.SEO_DB_URL };

@@ -54,6 +54,13 @@ export async function POST(req) {
       case 'retire_variant': result = await A.retireVariant(cc, path, { by }); break;
       case 'add_links': result = await A.addLinks(cc, path, { by, reason: body.reason || 'strengthen by hand' }); break;
       case 'settings': result = { settings: await saveSettings(cc, body.settings, by) }; break;
+      case 'visibility_run': {
+        // the AI-visibility cycle takes minutes: start it and answer at once
+        const m = await import('@/lib/aiVisibility/run');
+        m.runCycle({ force: true, by }).catch((e) => console.error('[ai-visibility]', e?.message || e));
+        result = { started: true };
+        break;
+      }
       case 'run':
         if (body.job === 'collect') result = { collect: await runCollect(cc, body.only || null) };
         else if (body.job === 'decide') result = { decide: await runDecide(cc) };

@@ -120,6 +120,35 @@ function RunDetail({ id, onBack, siteKey }) {
         )}
       </Section>
 
+      <Section title="Keywords added in this run — and why" sub="Every keyword the pipeline acted on, where it came from (Keyword Planner, Google Ads, Search Console, site search, AI assistants via the Grok bot pipeline) and the numbers behind it. Keywords naming a competitor are never used.">
+        {!(snap.keywordsAdded || []).length ? <p className="text-[13px]" style={{ color: T.textMuted }}>No new keywords acted on in this run.</p> : (
+          <div className="overflow-x-auto"><table className="w-full text-[12px] min-w-[760px]">
+            <thead><tr><Th>Keyword</Th><Th>Page</Th><Th>Came from</Th><Th>Why it was added</Th></tr></thead>
+            <tbody>{snap.keywordsAdded.map((k, i) => (
+              <tr key={i} className="border-t align-top" style={{ borderColor: T.borderLight }}>
+                <Td>{k.keyword}</Td><Td mono>{k.page}</Td>
+                <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{(k.sourceNames || []).map((s) => <Pill key={s} tone={/AI assistants/.test(s) ? 'warning' : /Keyword Planner/.test(s) ? 'success' : 'info'}>{s}</Pill>)}</div></td>
+                <Td>{k.reason}</Td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </Section>
+
+      {snap.aiVisibility ? (
+        <Section title="AI assistants this week" sub="Asked every 24 h with web search on. A gap = assistants name competitors for a question and not Casa-Libre; the pipeline answers it with a guide.">
+          <div className="text-[13px]" style={{ color: T.textBody }}>
+            Casa-Libre named in <b>{snap.aiVisibility.mentionRate}%</b> of {num(snap.aiVisibility.answers)} answers (all countries, 7 days) ·{' '}
+            {Object.entries(snap.aiVisibility.byAssistant || {}).map(([k, a]) => `${k} ${Math.round((a.ours / Math.max(1, a.answers)) * 100)}%`).join(' · ')}
+          </div>
+          {(snap.aiVisibility.gaps || []).length ? (
+            <ul className="mt-2 space-y-1 text-[12.5px]" style={{ color: T.textBody }}>
+              {snap.aiVisibility.gaps.map((g) => <li key={g.question}>• &quot;{g.question}&quot; — competitors {Math.round(g.compRate * 100)}%, Casa-Libre {Math.round(g.ourRate * 100)}%{g.keyword ? '' : ' (not used as a keyword: names a competitor)'}</li>)}
+            </ul>
+          ) : <p className="text-[12.5px] mt-2" style={{ color: T.textMuted }}>No open gaps in this country.</p>}
+        </Section>
+      ) : null}
+
       <div className="grid lg:grid-cols-2 gap-4">
         <Section title="Wins"><List items={r.wins} empty="Nothing stood out this run." /></Section>
         <Section title="Problems"><List items={r.problems} empty="No problems found." /></Section>

@@ -48,3 +48,17 @@ describe('info@ email sorting', () => {
     expect(parseAddress('a@b.com')).toEqual({ name: 'a@b.com', email: 'a@b.com' });
   });
 });
+
+import { normalizeBadge, badgeFilter, DEFAULT_BADGE } from '../lib/emailTriageCore.js';
+describe('info@ sidebar badge', () => {
+  it('keeps known types in order, Important by default', () => {
+    expect(normalizeBadge(undefined)).toEqual(DEFAULT_BADGE);
+    expect(normalizeBadge(['marketing', 'x', 'important'])).toEqual(['important', 'marketing']);
+    expect(normalizeBadge([])).toEqual([]);
+  });
+  it('counts unread conversations of the chosen types', () => {
+    expect(badgeFilter(['important', 'marketing'])).toBe('unread=eq.true&in_trash=eq.false&category=in.(important,marketing)&in_spam=eq.false');
+    expect(badgeFilter(['spam'])).toBe('unread=eq.true&in_trash=eq.false&category=in.(spam)');
+    expect(badgeFilter([])).toBeNull();
+  });
+});

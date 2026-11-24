@@ -15,6 +15,8 @@ import { conversationsWithCountry } from '@/lib/inboxData';
 import { isRealUnread, inSite } from '@/lib/inboxRules';
 import { withPending } from '@/lib/inboxPending';
 import { openAlertCount } from '@/lib/alertsData';
+import { readForwarding } from '@/lib/emailForwarding';
+import { badgeCount } from '@/lib/emailStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,16 +30,23 @@ async function inboxUnread(cc) {
   } catch { return 0; }
 }
 
+// Unread info@ conversations of the types chosen in Email → Settings → Sidebar badge (one mailbox for
+// every country). 0 before the mailbox tables exist or when no type is chosen.
+async function emailUnread() {
+  try { return await badgeCount((await readForwarding()).badge); } catch { return 0; }
+}
+
 export async function GET() {
   const key = adminKey(getSession());
   if (!key) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const inbox = inboxUnread(activeCountry());
   // open Alerts (lib/alertsData.js, cached 15 s; inboxMode()) — 0 when Relay / the DB can't be read
   const alerts = openAlertCount(activeCountry());
+  const email = emailUnread();
   try {
-    return NextResponse.json({ ...(await unreadCounts(dbFor(activeCountry()), key)), inbox: await inbox, alerts: await alerts });
+    return NextResponse.json({ ...(await unreadCounts(dbFor(activeCountry()), key)), inbox: await inbox, alerts: await alerts, email: await email });
   } catch (e) {
-    if (isMissingTable(e)) return NextResponse.json({ reports: 0, feedbacks: 0, inbox: await inbox, alerts: await alerts, pending: true });
+    if (isMissingTable(e)) return NextResponse.json({ reports: 0, feedbacks: 0, inbox: await inbox, alerts: await alerts, email: await email, pending: true });
     return NextResponse.json({ error: String(e?.message || e).slice(0, 200) }, { status: 500 });
   }
 }

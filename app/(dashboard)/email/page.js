@@ -8,7 +8,8 @@
 // stays unread until someone handles it (Roland's rule).
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { CATEGORIES, parseAddress } from '@/lib/emailTriageCore';
+import { CATEGORIES, CATEGORY_KEYS as CATEGORY_KEYS_UI, parseAddress } from '@/lib/emailTriageCore';
+import { refreshUnread } from '@/components/unread';
 
 // Gmail's own palette for this one page
 const C = {
@@ -379,68 +380,201 @@ function Compose({ onClose, onSent }) {
   );
 }
 
-// ── Forwarding settings (gear): which email types go to which addresses ──
-function Forwarding({ onClose }) {
+// ── Mail settings (gear): Forwarding + Sidebar badge ──
+const SETTINGS_TABS = [
+  { key: 'forwarding', name: 'Forwarding', icon: 'forward', sub: 'Who gets which emails' },
+  { key: 'badge', name: 'Sidebar badge', icon: 'markUnread', sub: 'What the unread number counts' },
+];
+
+// A type as an on/off pill: filled in the type's colour when on.
+function TypeToggle({ cat, on, onClick, count }) {
+  const c = CATEGORIES[cat]; const col = CAT_COLORS[cat];
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onClick}
+      className="inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-full text-[13px] font-medium transition-colors"
+      style={on ? { background: col.bg, color: col.fg, border: `1px solid ${col.bg}` } : { background: C.card, color: C.muted, border: `1px solid ${C.line}` }}>
+      <span className="h-4 w-4 rounded-full inline-flex items-center justify-center" style={{ background: on ? col.fg : 'transparent', border: on ? 'none' : `1.5px solid ${C.faint}` }}>
+        {on && <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" /></svg>}
+      </span>
+      {c.name}{count != null ? <span className="opacity-70">· {count}</span> : null}
+    </button>
+  );
+}
+
+function MailSettings({ onClose, counts = {}, onSaved }) {
+  const [tab, setTab] = useState('forwarding');
   const [rules, setRules] = useState(null);
+  const [badge, setBadge] = useState(['important']);
   const [meta, setMeta] = useState({});
+  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   useEffect(() => {
-    fetch('/api/email/settings').then((r) => r.json()).then((d) => { setRules(d.rules || []); setMeta(d); }).catch(() => setErr('Could not load the settings.'));
+    fetch('/api/email/settings').then((r) => r.json()).then((d) => { setRules(d.rules || []); setBadge(d.badge || ['important']); setMeta(d); }).catch(() => setErr('Could not load the settings.'));
   }, []);
-  const set = (i, patch) => { setOk(''); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r))); };
-  const toggle = (i, c) => set(i, { categories: rules[i].categories.includes(c) ? rules[i].categories.filter((x) => x !== c) : [...rules[i].categories, c] });
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const touch = () => { setDirty(true); setOk(''); setErr(''); };
+  const setRule = (i, patch) => { touch(); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r))); };
+  const toggleRule = (i, k) => setRule(i, { categories: rules[i].categories.includes(k) ? rules[i].categories.filter((x) => x !== k) : [...rules[i].categories, k] });
+  const toggleBadge = (k) => { touch(); setBadge((b) => (b.includes(k) ? b.filter((x) => x !== k) : [...b, k])); };
+  const badgeTotal = badge.reduce((n, k) => n + (Number(counts[k]) || 0), 0);
+  const bad = (rules || []).filter((r) => r.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email.trim()));
+
   const save = async () => {
+    if (bad.length) { setErr(`Check this address: ${bad[0].email}`); setTab('forwarding'); return; }
     setBusy(true); setErr(''); setOk('');
-    const r = await fetch('/api/email/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules: rules.filter((x) => x.email.trim()) }) }).then((x) => x.json()).catch(() => ({ error: 'Could not save. Try again.' }));
+    const r = await fetch('/api/email/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules: rules.filter((x) => x.email.trim()), badge }) }).then((x) => x.json()).catch(() => ({ error: 'Could not save. Try again.' }));
     setBusy(false);
     if (r.error) { setErr(r.error); return; }
-    setRules(r.rules); setMeta(r); setOk('Saved. New emails are forwarded with these settings from now on.');
+    setRules(r.rules); setBadge(r.badge); setMeta(r); setDirty(false); setOk('Settings saved.');
+    onSaved?.();
   };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto" style={{ background: 'rgba(0,0,0,.32)' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-[760px] rounded-2xl p-6" style={{ background: C.card }}>
-        <div className="flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto" style={{ background: 'rgba(32,33,36,.45)' }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="mail-settings-title" className="w-full max-w-[880px] rounded-2xl overflow-hidden flex flex-col shadow-[0_24px_38px_3px_rgba(0,0,0,.14),0_9px_46px_8px_rgba(0,0,0,.12)]" style={{ background: C.card, maxHeight: 'calc(100vh - 48px)' }}>
+        {/* header */}
+        <div className="flex items-center justify-between pl-6 pr-3 h-16 shrink-0" style={{ borderBottom: `1px solid ${C.line}` }}>
           <div>
-            <h2 className="text-[20px]" style={{ color: C.text }}>Forwarding</h2>
-            <p className="text-[13px] mt-1" style={{ color: C.muted }}>Choose which types of email go to which addresses. Each new email is forwarded once, when it arrives, with a link to answer it from info@. Older emails are never forwarded.</p>
+            <h2 id="mail-settings-title" className="text-[18px] font-medium" style={{ color: C.text }}>Mail settings</h2>
+            <p className="text-[12px]" style={{ color: C.muted }}>info@casa-libre.com · shared by the whole team</p>
           </div>
           <IconBtn icon="close" title="Close" onClick={onClose} />
         </div>
-        <div className="grid sm:grid-cols-2 gap-2 mt-4">
-          {Object.entries(CATEGORIES).map(([k, c]) => (
-            <div key={k} className="text-[12.5px] p-3 rounded-lg" style={{ background: C.page, color: C.sub }}>
-              <Chip cat={k} /> <span className="block mt-1.5">{c.help}</span>
-            </div>
-          ))}
-        </div>
-        {rules === null ? <p className="text-[13px] mt-4" style={{ color: C.muted }}>Loading…</p> : (
-          <div className="mt-5 space-y-2">
-            {rules.length === 0 && <p className="text-[13px]" style={{ color: C.muted }}>Nothing is forwarded. Add an address below.</p>}
-            {rules.map((r, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-3 p-3 rounded-lg" style={{ border: `1px solid ${C.line}` }}>
-                <input className="flex-1 min-w-[220px] px-3 py-2 rounded-md outline-none text-[14px]" style={{ border: `1px solid ${C.faint}`, color: C.text }} placeholder="name@example.com" value={r.email} onChange={(e) => set(i, { email: e.target.value })} aria-label="Email address" />
-                <div className="flex flex-wrap items-center gap-3">
-                  {Object.entries(CATEGORIES).map(([k, c]) => (
-                    <label key={k} className="flex items-center gap-1.5 text-[13px]" style={{ color: C.sub }}>
-                      <input type="checkbox" checked={r.categories.includes(k)} onChange={() => toggle(i, k)} /> {c.name}
-                    </label>
+
+        <div className="flex flex-col sm:flex-row min-h-0 flex-1">
+          {/* left: sections */}
+          <nav className="sm:w-[220px] shrink-0 p-2 sm:p-3 flex sm:flex-col gap-1 overflow-x-auto" style={{ background: C.page, borderRight: `1px solid ${C.line}` }}>
+            {SETTINGS_TABS.map((t) => {
+              const on = tab === t.key;
+              return (
+                <button key={t.key} type="button" onClick={() => setTab(t.key)} className="text-left flex items-start gap-3 px-3 py-2.5 rounded-xl shrink-0 transition-colors"
+                  style={{ background: on ? C.sel : 'transparent', color: on ? C.selText : C.text }}>
+                  <span className="mt-0.5"><Icon d={t.icon} size={18} color={on ? C.selText : C.sub} /></span>
+                  <span>
+                    <span className="block text-[14px] font-medium">{t.name}</span>
+                    <span className="hidden sm:block text-[11.5px]" style={{ color: on ? C.selText : C.muted, opacity: 0.85 }}>{t.sub}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* right: the section */}
+          <div className="flex-1 min-w-0 overflow-y-auto p-6">
+            {rules === null ? (
+              <div className="animate-pulse space-y-3" role="status" aria-label="Loading settings">
+                {[70, 95, 95, 60].map((w, i) => <div key={i} className="h-4 rounded" style={{ background: C.hover, width: `${w}%` }} />)}
+              </div>
+            ) : tab === 'forwarding' ? (
+              <section>
+                <h3 className="text-[15px] font-medium" style={{ color: C.text }}>Forward new emails to the team</h3>
+                <p className="text-[13px] mt-1 mb-5" style={{ color: C.muted }}>Each new email is sent on once, when it arrives, to every address whose types match, with a link to answer it from info@. Older emails are never forwarded.</p>
+
+                <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+                  <div className="hidden md:grid grid-cols-[minmax(0,1fr)_auto_40px] gap-4 px-4 py-2 text-[11.5px] font-medium" style={{ background: C.page, color: C.muted, borderBottom: `1px solid ${C.line}` }}>
+                    <span>Recipient</span><span>Gets these types</span><span />
+                  </div>
+                  {rules.length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-[14px]" style={{ color: C.text }}>Nobody gets forwarded emails yet.</p>
+                      <p className="text-[12.5px] mt-1" style={{ color: C.muted }}>Add a recipient to send important emails to the team as they arrive.</p>
+                    </div>
+                  )}
+                  {rules.map((r, i) => {
+                    const invalid = r.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email.trim());
+                    return (
+                      <div key={i} className="grid md:grid-cols-[minmax(0,1fr)_auto_40px] gap-3 md:gap-4 items-center px-4 py-3" style={{ borderTop: i ? `1px solid ${C.line}` : 'none' }}>
+                        <div>
+                          <div className="flex items-center gap-2 h-10 px-3 rounded-lg" style={{ border: `1px solid ${invalid ? C.red : C.faint}` }}>
+                            <Icon d="other" size={16} color={C.muted} />
+                            <input className="flex-1 min-w-0 outline-none text-[14px] bg-transparent" style={{ color: C.text }} placeholder="name@example.com" value={r.email}
+                              onChange={(e) => setRule(i, { email: e.target.value })} aria-label="Recipient email address" aria-invalid={!!invalid} />
+                          </div>
+                          {invalid && <p className="text-[11.5px] mt-1" style={{ color: C.red }}>This doesn&apos;t look like an email address.</p>}
+                          {r.categories.length === 0 && !invalid && <p className="text-[11.5px] mt-1" style={{ color: C.muted }}>No type chosen: this address gets nothing.</p>}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {CATEGORY_KEYS_UI.map((k) => <TypeToggle key={k} cat={k} on={r.categories.includes(k)} onClick={() => toggleRule(i, k)} />)}
+                        </div>
+                        <IconBtn icon="trash" title="Remove recipient" size={18} onClick={() => { touch(); setRules((rs) => rs.filter((_, j) => j !== i)); }} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <button type="button" onClick={() => { touch(); setRules((rs) => [...rs, { email: '', categories: ['important'] }]); }}
+                  className="mt-3 inline-flex items-center gap-2 h-9 px-4 rounded-full text-[14px] font-medium hover:bg-black/[.04]" style={{ color: C.blue, border: `1px solid ${C.line}` }}>
+                  <span className="text-[18px] leading-none">+</span> Add recipient
+                </button>
+
+                <h4 className="text-[13px] font-medium mt-7 mb-2" style={{ color: C.text }}>What goes in each type</h4>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {CATEGORY_KEYS_UI.map((k) => (
+                    <div key={k} className="flex gap-2.5 p-3 rounded-xl" style={{ background: C.page }}>
+                      <span className="h-2.5 w-2.5 rounded-full mt-1.5 shrink-0" style={{ background: CAT_COLORS[k].fg }} />
+                      <span className="text-[12.5px]" style={{ color: C.sub }}><b style={{ color: C.text }}>{CATEGORIES[k].name}.</b> {CATEGORIES[k].help}</span>
+                    </div>
                   ))}
                 </div>
-                <IconBtn icon="trash" title="Remove" onClick={() => { setOk(''); setRules((rs) => rs.filter((_, j) => j !== i)); }} size={18} />
-              </div>
-            ))}
-            <button type="button" className="text-[14px] font-medium px-4 h-9 rounded-full hover:bg-black/[.04]" style={{ color: C.blue }} onClick={() => { setOk(''); setRules((rs) => [...rs, { email: '', categories: ['important'] }]); }}>+ Add an email address</button>
+              </section>
+            ) : (
+              <section>
+                <h3 className="text-[15px] font-medium" style={{ color: C.text }}>Unread number in the sidebar</h3>
+                <p className="text-[13px] mt-1 mb-5" style={{ color: C.muted }}>Choose which types count in the number next to <b style={{ color: C.text }}>Email (info@)</b> in the admin sidebar, like the WhatsApp Inbox badge. An email counts until it&apos;s marked as read (handled).</p>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {CATEGORY_KEYS_UI.map((k) => {
+                    const on = badge.includes(k);
+                    const col = CAT_COLORS[k];
+                    return (
+                      <button key={k} type="button" role="switch" aria-checked={on} onClick={() => toggleBadge(k)}
+                        className="text-left flex items-start gap-3 p-4 rounded-xl transition-colors"
+                        style={{ border: `1.5px solid ${on ? col.fg : C.line}`, background: on ? col.bg : C.card }}>
+                        <span className="mt-0.5 h-5 w-9 rounded-full relative shrink-0 transition-colors" style={{ background: on ? col.fg : '#C4C7C5' }}>
+                          <span className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all" style={{ left: on ? 18 : 2 }} />
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-[14px] font-medium" style={{ color: on ? col.fg : C.text }}>{CATEGORIES[k].name}</span>
+                            <span className="text-[12px]" style={{ color: on ? col.fg : C.muted }}>{Number(counts[k]) || 0} unread</span>
+                          </span>
+                          <span className="block text-[12px] mt-0.5" style={{ color: C.muted }}>{CATEGORIES[k].help}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <h4 className="text-[13px] font-medium mt-7 mb-2" style={{ color: C.text }}>Preview</h4>
+                <div className="inline-flex items-center gap-3 pl-3.5 pr-3 py-2.5 rounded-[10px] min-w-[240px]" style={{ background: '#111111', color: '#FAF7F1' }}>
+                  <Icon d="other" size={18} color="#FAF7F1" />
+                  <span className="text-[14px] font-medium flex-1">Email (info@)</span>
+                  {badge.length && badgeTotal ? <span className="text-[11px] font-bold min-w-[20px] h-5 px-1.5 rounded-full inline-flex items-center justify-center" style={{ background: '#E5484D', color: '#fff' }}>{badgeTotal}</span> : null}
+                </div>
+                <p className="text-[12px] mt-2" style={{ color: C.muted }}>
+                  {badge.length === 0 ? 'No type chosen: the sidebar shows no number for Email.' : `Counts unread ${badge.map((k) => CATEGORIES[k].name).join(', ')} emails.`}
+                </p>
+              </section>
+            )}
           </div>
-        )}
-        {err && <p className="mt-3 text-[13px]" style={{ color: C.red }}>{err}</p>}
-        {ok && <p className="mt-3 text-[13px]" style={{ color: '#146C2E' }}>{ok}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-2 mt-5">
-          <span className="text-[12px]" style={{ color: C.muted }}>
-            {meta.saved ? `Last saved ${new Date(meta.updatedAt).toLocaleString('en-US')}${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}.` : 'Not saved yet: important emails go to the default address.'}
+        </div>
+
+        {/* footer */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 shrink-0" style={{ borderTop: `1px solid ${C.line}`, background: C.card }}>
+          <span className="text-[12px]" style={{ color: err ? C.red : ok ? '#146C2E' : C.muted }} role="status">
+            {err || ok || (dirty ? 'Unsaved changes' : meta.saved ? `Last saved ${new Date(meta.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}` : 'Not saved yet: important emails go to the default address, and the badge counts Important.')}
           </span>
-          <button type="button" className="px-6 h-9 rounded-full text-[14px] font-medium text-white disabled:opacity-50" style={{ background: C.blue }} onClick={save} disabled={busy || rules === null}>{busy ? 'Saving…' : 'Save'}</button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} className="h-9 px-5 rounded-full text-[14px] font-medium hover:bg-black/[.04]" style={{ color: C.blue }}>{dirty ? 'Cancel' : 'Close'}</button>
+            <button type="button" onClick={save} disabled={busy || rules === null || !dirty}
+              className="h-9 px-6 rounded-full text-[14px] font-medium text-white disabled:opacity-40" style={{ background: C.blue }}>{busy ? 'Saving…' : 'Save changes'}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -546,6 +680,7 @@ function Mailbox() {
 
   const leaves = (op) => ({ archive: folder === 'inbox', spam: folder !== 'spam', trash: folder !== 'trash', notspam: folder === 'spam', inbox: folder === 'trash' || folder === 'spam' }[op]);
   const onChanged = (id, patch, op) => {
+    if (['read', 'unread', 'spam', 'notspam', 'trash', 'inbox', 'archive'].includes(op)) refreshUnread();
     setThreads((cur) => (cur || []).flatMap((t) => (t.id !== id ? [t] : leaves(op) ? [] : [{ ...t, ...patch, category: t.category }])));
     if (leaves(op)) setTotal((n) => Math.max(0, n - 1));
     load({ quiet: true });
@@ -589,7 +724,7 @@ function Mailbox() {
         </form>
         <div className="ml-auto flex items-center gap-1">
           <span className="hidden sm:inline text-[12px] mr-1" style={{ color: C.muted }}>{syncing ? 'Checking Gmail…' : syncedAt ? `Up to date · ${syncedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>
-          <IconBtn icon="gear" title="Forwarding settings" onClick={() => setFwd(true)} />
+          <IconBtn icon="gear" title="Mail settings" onClick={() => setFwd(true)} />
         </div>
       </div>
 
@@ -703,7 +838,7 @@ function Mailbox() {
 
       {flash && <div className="fixed bottom-6 left-6 z-50 px-6 py-3.5 rounded text-[14px] text-white shadow-lg" style={{ background: '#323232' }}>{flash}</div>}
       {compose && <Compose onClose={() => setCompose(false)} onSent={() => { setCompose(false); showFlash('Message sent.'); if (folder === 'sent') sync(); }} />}
-      {fwd && <Forwarding onClose={() => setFwd(false)} />}
+      {fwd && <MailSettings onClose={() => setFwd(false)} counts={counts} onSaved={() => refreshUnread()} />}
     </div>
   );
 }

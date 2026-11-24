@@ -38,16 +38,21 @@ async function tabData(cc, tab, sp) {
     const [latest] = await db.select('seo_signals', `select=date&country=eq.${cc}&order=date.desc&limit=1`);
     const date = latest?.date;
     const pick = (source, order) => (date ? db.select('seo_signals', `select=term,page,date,metrics&country=eq.${cc}&source=eq.${source}&date=eq.${date}&order=${order}&limit=60`) : []);
-    const [ads, gsc, site, trends, counts] = await Promise.all([
+    // Keyword Planner is weekly: its own newest date (not the daily one)
+    const [kpLatest] = await db.select('seo_signals', `select=date&country=eq.${cc}&source=eq.keyword_planner&order=date.desc&limit=1`).catch(() => []);
+    const kpDate = kpLatest?.date || null;
+    const [ads, gsc, site, trends, counts, kp, kpCount] = await Promise.all([
       pick('ads', 'id.asc'), pick('gsc', 'id.asc'), pick('site_search', 'id.asc'),
       db.select('seo_trends', `select=title,traffic,traffic_label,topic,news,seen_at,pub_date&geo=eq.${TREND_GEOS[cc]}&order=seen_at.desc&limit=80`),
       Promise.all(['ads', 'gsc', 'site_search'].map((s) => (date ? db.selectWithCount('seo_signals', `select=id&country=eq.${cc}&source=eq.${s}&date=eq.${date}&limit=1`).then((r) => [s, r.count]) : [s, 0]))),
+      kpDate ? db.select('seo_signals', `select=term,date,metrics&country=eq.${cc}&source=eq.keyword_planner&date=eq.${kpDate}&order=metrics->avg_monthly_searches.desc&limit=60`).catch(() => []) : [],
+      kpDate ? db.selectWithCount('seo_signals', `select=id&country=eq.${cc}&source=eq.keyword_planner&date=eq.${kpDate}&limit=1`).then((r) => r.count).catch(() => 0) : 0,
     ]);
     const by = (k) => (a, b) => (b.metrics?.[k] || 0) - (a.metrics?.[k] || 0);
     // latest reading per trend title
     const seen = new Set();
     const trendLatest = trends.filter((t) => (seen.has(t.title) ? false : seen.add(t.title)));
-    return { date, counts: Object.fromEntries(counts), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), site: site.sort(by('searches')).slice(0, 40), trends: trendLatest.slice(0, 40) };
+    return { date, counts: { ...Object.fromEntries(counts), keyword_planner: kpCount }, kpDate, kp: kp.sort(by('avg_monthly_searches')).slice(0, 50), ads: ads.sort(by('clicks')).slice(0, 40), gsc: gsc.sort(by('impressions')).slice(0, 40), site: site.sort(by('searches')).slice(0, 40), trends: trendLatest.slice(0, 40) };
   }
   if (tab === 'watch') return watch(cc);
   if (tab === 'settings') return { settings: await loadSettings(cc), website: websiteUrl(cc), devDb: !!process.env.SEO_DB_URL };

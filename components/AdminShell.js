@@ -209,7 +209,8 @@ export default function AdminShell({ admin, pages = null, lang = 'es', countries
   // Per-admin unread badges (each team member has their own — lib/unread.js).
   const unread = useUnreadCounts(path);
   // '/alerts' = OPEN alerts (lib/alerts.js): clears only when a team member answers or marks it handled.
-  const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox, '/alerts': unread.alerts };
+  // '/email' = unread info@ conversations of the types chosen in Email → Settings → Sidebar badge.
+  const BADGE = { '/reports': unread.reports, '/feedbacks': unread.feedbacks, '/inbox': unread.inbox, '/alerts': unread.alerts, '/email': unread.email };
 
   const isActive = (href) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
   const activeGroup = groups.find((g) => g.items.some(([href]) => isActive(href)))?.key || null;

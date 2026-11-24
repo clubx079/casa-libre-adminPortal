@@ -204,7 +204,11 @@ function Signals({ data, site }) {
   const c = data.counts || {};
   return (
     <div className="space-y-4">
-    <Banner tone="warning"><b>Keyword Planner: waiting for Basic access.</b> Real search volumes for all of the country (including searches we don&apos;t rank for yet) need Google Ads API Basic access; until then demand comes from our own Ads terms, Search Console and the site search box.</Banner>
+    {site ? null : card('Google Keyword Planner — monthly searches', data.kpDate
+      ? `${num(c.keyword_planner)} property searches in this country with their real Google volume · read ${data.kpDate} (weekly) · includes searches we don't rank or advertise for yet`
+      : "Weekly reading of real Google search volumes for this country, including searches we don't rank for yet. Not read yet: it runs with the next Collect (needs Google connected and migration 017).",
+      ['Search', 'Per month', 'Competition', 'Top-of-page bid'], data.kp || [],
+      (r) => [r.term, num(r.metrics.avg_monthly_searches), r.metrics.competition ? String(r.metrics.competition).toLowerCase() : '—', r.metrics.high_bid != null ? `$${Number(r.metrics.low_bid || 0).toFixed(2)}–${Number(r.metrics.high_bid).toFixed(2)}` : '—'])}
     <div className="grid gap-4 lg:grid-cols-2">
       {card('Google Ads search terms', `${num(c.ads)} terms · last 30 days · collected ${data.date || '—'}`, ['Search', 'Clicks', 'Conv.', 'Cost'], data.ads || [], (r) => [r.term, num(r.metrics.clicks), Number(r.metrics.conversions || 0).toFixed(1), `$${Number(r.metrics.cost || 0).toFixed(2)}`])}
       {card('Search Console queries', `${num(c.gsc)} query × page rows · last 28 days`, ['Search · page', 'Impr.', 'CTR', 'Pos.'], data.gsc || [], (r) => [<span key="q">{r.term}<div className="text-[11px] font-mono" style={{ color: T.textMuted }}>{r.page}</div></span>, num(r.metrics.impressions), pct(r.metrics.ctr), Number(r.metrics.position).toFixed(1)])}
@@ -244,20 +248,20 @@ function Watch({ data, site }) {
 }
 
 const SWITCHES = [
-  ['collect', 'ads', 'Collect Google Ads search terms'], ['collect', 'gsc', 'Collect Search Console'], ['collect', 'site_search', 'Collect site searches (PostHog)'], ['collect', 'trends', 'Collect Google Trends'],
+  ['collect', 'ads', 'Collect Google Ads search terms'], ['collect', 'gsc', 'Collect Search Console'], ['collect', 'site_search', 'Collect site searches (PostHog)'], ['collect', 'trends', 'Collect Google Trends'], ['collect', 'keyword_planner', 'Collect Keyword Planner volumes (weekly)'],
   [null, 'decide', 'Decide (build opportunities)'], ['auto', 'variants', 'Autopilot: add new filter pages by itself'], ['auto', 'guides', 'Autopilot: publish guides by itself'], ['auto', 'trendPosts', 'Autopilot: publish trend posts by itself'], ['improve', 'enabled', 'Daily Improve check'], ['improve', 'autoTitles', 'Improve: change low-CTR titles by itself'],
   ['improve', 'autoRetire', 'Improve: hide variants with no traffic by itself'], ['improve', 'autoLinks', 'Improve: add links to slipping pages by itself'],
   ['drafts', 'claude', 'Draft guides with Claude (else the data template)'], ['publish', 'indexNow', 'Ping Bing IndexNow on publish'],
 ];
 const LIMITS = [
   ['minListings', 'Listings a page needs (gate)'], ['provenAdsClicks', 'Proven search: Ads clicks'], ['provenAdsConversions', 'Proven search: Ads conversions'], ['provenSiteSearches', 'Proven search: site searches'],
-  ['provenGscImpressions', 'Proven search: Google impressions'], ['strengthenMinPos', 'Strengthen from position'], ['strengthenMaxPos', 'Strengthen to position'], ['strengthenMinImpressions', 'Strengthen: min impressions'],
+  ['provenGscImpressions', 'Proven search: Google impressions'], ['provenKpVolume', 'Proven search: Google searches a month (Keyword Planner)'], ['strengthenMinPos', 'Strengthen from position'], ['strengthenMaxPos', 'Strengthen to position'], ['strengthenMinImpressions', 'Strengthen: min impressions'],
   ['guideMinDemand', 'Guide: min demand score'], ['trendHours', 'Trend posts: max age (hours)'], ['lowCtrImpressions', 'Low CTR: min impressions'], ['lowCtr', 'Low CTR below (0.02 = 2%)'],
   ['maxNewPagesPerDay', 'Autopilot: new pages per day'], ['maxGuidesPerDay', 'Autopilot: guides per day'], ['titleDays', 'Title change: min days between'], ['zeroTrafficWeeks', 'Hide variant after N weeks with no impressions'], ['slipPositions', 'Slipping: positions lost week on week'],
 ];
 
 // Settings that do nothing on a guide site (no listings, filter pages, variants or site search box).
-const SITE_HIDDEN = new Set(['collect.site_search', 'auto.variants', 'improve.autoRetire', 'minListings', 'provenSiteSearches', 'maxNewPagesPerDay', 'zeroTrafficWeeks']);
+const SITE_HIDDEN = new Set(['collect.site_search', 'collect.keyword_planner', 'provenKpVolume', 'auto.variants', 'improve.autoRetire', 'minListings', 'provenSiteSearches', 'maxNewPagesPerDay', 'zeroTrafficWeeks']);
 
 function Settings({ data, busy, run, site }) {
   const [s, setS] = useState(data?.settings || null);

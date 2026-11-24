@@ -1,54 +1,138 @@
 'use client';
-// Email (info@) — the info@casa-libre.com Gmail mailbox inside the admin, through the Apps Script
-// bridge (lib/gmailBridge.js). Read every thread, reply in the same Gmail thread, write new
-// emails from info@, and mark read / archive / spam / trash (Gmail stays in sync). The AI sorts
-// each email (Enquiry / Business / Notification / Marketing / Spam) and alerts the team about the
-// important ones. Opening an email does not mark it read: it stays unread until it's handled.
+// Email (info@) — the info@casa-libre.com mailbox, laid out like Gmail: folders on the left
+// (Inbox, Important, Marketing, Other, Sent, Spam, Trash, All mail), the list with checkboxes,
+// stars and hover actions, and the conversation view with Reply / Reply all / Forward.
+// Everything shows at once from the saved copy (control DB, lib/emailStore.js); the newest mail is
+// fetched from Gmail in the background and the page updates itself. The AI sorts each email
+// (Important = real enquiries, Marketing, Other, Spam). Opening an email never marks it read: it
+// stays unread until someone handles it (Roland's rule).
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { T, CARD, PageHeader, Pill, Banner, inputCls, btnPrimary, btnSecondary } from '@/components/automations/ui';
-import { CATEGORIES, VIEWS, parseAddress } from '@/lib/emailTriageCore';
+import { CATEGORIES, parseAddress } from '@/lib/emailTriageCore';
 
-const VIEW_KEYS = Object.keys(VIEWS);
+// Gmail's own palette for this one page
+const C = {
+  page: '#F6F8FC', card: '#FFFFFF', text: '#1F1F1F', sub: '#444746', muted: '#5E5E5E', faint: '#747775',
+  line: '#E0E3E7', readRow: '#F2F6FC', hover: '#E8EAED', sel: '#D3E3FD', selText: '#041E49',
+  compose: '#C2E7FF', blue: '#0B57D0', search: '#EAF1FB', star: '#F4B400', red: '#B3261E',
+};
+const CAT_COLORS = {
+  important: { bg: '#DDF3E4', fg: '#146C2E' },
+  marketing: { bg: '#FEEFC3', fg: '#7A4F01' },
+  other: { bg: '#E8EAED', fg: '#444746' },
+  spam: { bg: '#FCE8E6', fg: '#A50E0E' },
+};
+const AVATAR = ['#1A73E8', '#D93025', '#188038', '#E37400', '#9334E6', '#007B83', '#C5221F', '#1967D2'];
 
-// A calm note (Banner only has error / warning looks).
-function Note({ tone = 'info', children }) {
-  const c = tone === 'success' ? [T.successSurface, T.success] : [T.infoSurface, T.info];
-  return <div className="text-xs px-4 py-3 rounded-[14px]" style={{ background: c[0], color: c[1] }}>{children}</div>;
+// ── small icons (Material-style) ──
+const P = {
+  inbox: 'M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 12h-4a3 3 0 0 1-6 0H5V5h14v10z',
+  important: 'M12 2 4 5v6c0 5.5 3.4 10.6 8 12 4.6-1.4 8-6.5 8-12V5l-8-3zm-1 15-4-4 1.4-1.4L11 14.2l5.6-5.6L18 10l-7 7z',
+  marketing: 'M21 7 12 2 3 7v2h18V7zM5 11v6h3v-6H5zm5.5 0v6h3v-6h-3zM16 11v6h3v-6h-3zM3 19v2h18v-2H3z',
+  other: 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z',
+  sent: 'M2.01 21 23 12 2.01 3 2 10l15 2-15 2z',
+  spam: 'M15.73 3H8.27L3 8.27v7.46L8.27 21h7.46L21 15.73V8.27L15.73 3zM13 17h-2v-2h2v2zm0-4h-2V7h2v6z',
+  trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  all: 'M20 6h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z',
+  pencil: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+  search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  gear: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.49.42h3.84c.24 0 .45-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z',
+  refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
+  back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
+  archive: 'M20.54 5.23 19.15 3.55A1.45 1.45 0 0 0 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23A1.98 1.98 0 0 0 3 6.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5 6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
+  unarchive: 'M20.55 5.22 19.16 3.54A1.45 1.45 0 0 0 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.22A2 2 0 0 0 3 6.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5c0-.48-.17-.93-.45-1.28zM12 9.5l5.5 5.5H14v2h-4v-2H6.5L12 9.5zM5.12 5l.82-1h12l.93 1H5.12z',
+  markRead: 'M21.99 8c0-.72-.37-1.35-.94-1.7L12 1 2.95 6.3C2.38 6.65 2 7.28 2 8v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2l-.01-10zM12 13 3.74 7.84 12 3l8.26 4.84L12 13z',
+  markUnread: 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z',
+  star: 'M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+  starOutline: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
+  reply: 'M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z',
+  replyAll: 'M7 8V5l-7 7 7 7v-3l-4-4 4-4zm6 1V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z',
+  forward: 'M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z',
+  clip: 'M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z',
+  left: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
+  right: 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  translate: 'm12.87 15.07-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7 1.62-4.33L19.12 17h-3.24z',
+};
+function Icon({ d, size = 20, color = 'currentColor' }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true"><path d={P[d] || d} /></svg>;
+}
+function IconBtn({ icon, title, onClick, disabled, size = 20, color }) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled}
+      className="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-black/[.06] disabled:opacity-40 shrink-0" style={{ color: color || C.sub }}>
+      <Icon d={icon} size={size} />
+    </button>
+  );
 }
 
-function when(iso) {
+const FOLDERS = [
+  { key: 'inbox', name: 'Inbox', icon: 'inbox' },
+  { key: 'important', name: 'Important', icon: 'important' },
+  { key: 'marketing', name: 'Marketing', icon: 'marketing' },
+  { key: 'other', name: 'Other', icon: 'other' },
+  { key: 'sent', name: 'Sent', icon: 'sent' },
+  { key: 'spam', name: 'Spam', icon: 'spam' },
+  { key: 'trash', name: 'Trash', icon: 'trash' },
+  { key: 'all', name: 'All mail', icon: 'all' },
+];
+
+function listDate(iso) {
   if (!iso) return '';
   const d = new Date(iso); const now = new Date();
   if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString('en-US', sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' });
 }
-const fullWhen = (iso) => (iso ? new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+function longDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const ms = Date.now() - d.getTime();
+  const days = Math.floor(ms / 86400000);
+  const base = d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (days < 1) return `${base} (${Math.max(1, Math.round(ms / 3600000))} hours ago)`;
+  return days < 30 ? `${base} (${days} day${days === 1 ? '' : 's'} ago)` : base;
+}
 const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const isUs = (from) => /info@casa-libre\.com/i.test(String(from || ''));
+const shortName = (from) => {
+  if (isUs(from)) return 'me';
+  const a = parseAddress(from);
+  return a.name && a.name !== a.email ? a.name : a.email.split('@')[0];
+};
+const colorFor = (s) => AVATAR[[...String(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
 
-function CategoryPill({ cat }) {
-  const c = CATEGORIES[cat];
+function Chip({ cat }) {
+  const c = CATEGORIES[cat]; const col = CAT_COLORS[cat];
   if (!c) return null;
-  return <Pill tone={c.tone}>{c.name}</Pill>;
+  return <span className="text-[11px] leading-none px-1.5 py-[3px] rounded mr-1.5 shrink-0 font-medium" style={{ background: col.bg, color: col.fg }}>{c.name}</span>;
 }
 
-// The email's own HTML, isolated: no scripts run; links open in a new tab.
+function Avatar({ from, size = 40 }) {
+  const who = parseAddress(from);
+  const label = isUs(from) ? 'C' : (who.name || who.email || '?').trim().charAt(0).toUpperCase();
+  return <span className="rounded-full inline-flex items-center justify-center text-white font-medium shrink-0" style={{ width: size, height: size, background: isUs(from) ? C.blue : colorFor(who.email), fontSize: size * 0.45 }}>{label}</span>;
+}
+
+async function post(body) {
+  return fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ error: 'Could not reach the server.' }));
+}
+
+// ── the email's own HTML, isolated: no scripts; links open in a new tab ──
 function HtmlBody({ html }) {
   const ref = useRef(null);
-  const [h, setH] = useState(120);
-  const doc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:0;font-family:Arial,sans-serif;font-size:14px;color:#111;word-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>${html}</body></html>`, [html]);
-  const fit = () => {
-    try { const b = ref.current?.contentDocument?.documentElement; if (b) setH(Math.min(4000, b.scrollHeight + 8)); } catch { /* cross-origin */ }
-  };
-  return <iframe ref={ref} title="Email" srcDoc={doc} onLoad={() => { fit(); setTimeout(fit, 400); }} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" className="w-full border-0" style={{ height: h }} />;
+  const [h, setH] = useState(80);
+  const doc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;word-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>${html}</body></html>`, [html]);
+  const fit = () => { try { const b = ref.current?.contentDocument?.documentElement; if (b) setH(Math.min(6000, b.scrollHeight + 4)); } catch { /* ignore */ } };
+  return <iframe ref={ref} title="Email" srcDoc={doc} onLoad={() => { fit(); setTimeout(fit, 500); }} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" className="w-full border-0 block" style={{ height: h }} />;
 }
 
-function Message({ m, open, onToggle }) {
+// ── one email inside a conversation ──
+function Message({ m, open, onToggle, onReply }) {
   const who = parseAddress(m.from);
   const [en, setEn] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [showHtml, setShowHtml] = useState(true);
+  const [showTo, setShowTo] = useState(false);
   const translate = async () => {
     if (en) { setEn(null); return; }
     setBusy(true);
@@ -56,85 +140,246 @@ function Message({ m, open, onToggle }) {
     setBusy(false);
     setEn(r?.text || 'Could not translate this email.');
   };
-  return (
-    <div className="py-3" style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-      <button type="button" onClick={onToggle} className="w-full text-left flex items-start gap-3">
-        <span className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[13px] font-semibold" style={{ background: m.sentByUs ? T.infoSurface : T.bgSurface, color: m.sentByUs ? T.info : T.textBody }}>
-          {(who.name || '?').trim().charAt(0).toUpperCase()}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline justify-between gap-3">
-            <span className="text-[13.5px] font-semibold truncate" style={{ color: T.textPrimary }}>{m.sentByUs ? `Casa-Libre (info@)` : who.name}</span>
-            <span className="text-[11.5px] shrink-0" style={{ color: T.textMuted }}>{fullWhen(m.date)}</span>
-          </span>
-          <span className="block text-[11.5px] truncate" style={{ color: T.textMuted }}>
-            {m.sentByUs ? `to ${m.to}` : who.email}{m.cc ? ` · cc ${m.cc}` : ''}
-          </span>
-          {!open && <span className="block text-[12.5px] truncate mt-0.5" style={{ color: T.textSecondary }}>{String(m.text || '').replace(/\s+/g, ' ').slice(0, 160)}</span>}
-        </span>
+  if (!open) {
+    return (
+      <button type="button" onClick={onToggle} className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-black/[.02]" style={{ borderTop: `1px solid ${C.line}` }}>
+        <Avatar from={m.from} size={36} />
+        <span className="w-[180px] shrink-0 truncate text-[14px] font-semibold" style={{ color: C.text }}>{isUs(m.from) ? 'Casa-Libre' : who.name}</span>
+        <span className="flex-1 truncate text-[14px]" style={{ color: C.muted }}>{String(m.text || '').replace(/\s+/g, ' ').slice(0, 200)}</span>
+        <span className="text-[12px] shrink-0" style={{ color: C.muted }}>{listDate(m.date)}</span>
       </button>
-      {open && (
-        <div className="mt-3 pl-11">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={translate} disabled={busy}>{busy ? 'Translating…' : en ? 'Show original' : 'English'}</button>
-            {m.html && !en && <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => setShowHtml(!showHtml)}>{showHtml ? 'Plain text' : 'Formatted'}</button>}
+    );
+  }
+  return (
+    <div className="px-4 pt-4 pb-2" style={{ borderTop: `1px solid ${C.line}` }}>
+      <div className="flex items-start gap-3">
+        <Avatar from={m.from} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <button type="button" onClick={onToggle} className="text-left min-w-0">
+              <span className="text-[14px] font-semibold" style={{ color: C.text }}>{isUs(m.from) ? 'Casa-Libre' : who.name}</span>
+              <span className="text-[12px] ml-1" style={{ color: C.muted }}>&lt;{who.email}&gt;</span>
+            </button>
+            <div className="flex items-center shrink-0">
+              <span className="text-[12px] mr-1 hidden sm:inline" style={{ color: C.muted }}>{longDate(m.date)}</span>
+              <IconBtn icon="reply" title="Reply" onClick={() => onReply('reply', m)} size={18} />
+            </div>
           </div>
-          {en ? (
-            <pre className="whitespace-pre-wrap text-[13.5px] leading-relaxed p-3 rounded-[10px]" style={{ fontFamily: 'inherit', background: T.infoSurface, color: T.textPrimary }}>{en}</pre>
-          ) : m.html && showHtml ? (
-            <HtmlBody html={m.html} />
-          ) : (
-            <pre className="whitespace-pre-wrap text-[13.5px] leading-relaxed" style={{ fontFamily: 'inherit', color: T.textBody }}>{m.text}</pre>
+          <button type="button" onClick={() => setShowTo((v) => !v)} className="text-[12px] -mt-1" style={{ color: C.muted }}>
+            to {isUs(m.to) ? 'me' : (parseAddress(m.to).name || m.to)}{m.cc ? `, cc ${m.cc}` : ''} ▾
+          </button>
+          {showTo && (
+            <div className="text-[12px] mt-1 p-2 rounded" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+              <div>from: {m.from}</div><div>to: {m.to}</div>{m.cc ? <div>cc: {m.cc}</div> : null}<div>date: {new Date(m.date).toLocaleString('en-US')}</div><div>subject: {m.subject}</div>
+            </div>
           )}
-          {m.attachments?.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
+        </div>
+      </div>
+      <div className="sm:pl-[52px] mt-3">
+        <button type="button" onClick={translate} disabled={busy} className="inline-flex items-center gap-1 text-[12px] mb-2 hover:underline" style={{ color: C.blue }}>
+          <Icon d="translate" size={14} color={C.blue} /> {busy ? 'Translating…' : en ? 'Show original' : 'Translate to English'}
+        </button>
+        {en ? <div className="whitespace-pre-wrap text-[14px] leading-relaxed" style={{ color: C.text }}>{en}</div>
+          : m.html ? <HtmlBody html={m.html} />
+            : <div className="whitespace-pre-wrap text-[14px] leading-relaxed" style={{ color: C.text }}>{m.text}</div>}
+        {m.attachments?.length > 0 && (
+          <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${C.line}` }}>
+            <p className="text-[13px] font-medium mb-2" style={{ color: C.sub }}>{m.attachments.length} attachment{m.attachments.length === 1 ? '' : 's'}</p>
+            <div className="flex flex-wrap gap-2">
               {m.attachments.map((a) => (
-                <a key={a.index} href={`/api/email/attachment?messageId=${encodeURIComponent(m.id)}&index=${a.index}`} className="text-[12px] px-3 py-1.5 rounded-full hover:bg-black/[.04]" style={{ border: `1px solid ${T.borderLight}`, color: T.textBody }}>
-                  {a.name} · {kb(a.size)}
+                <a key={a.index} href={`/api/email/attachment?messageId=${encodeURIComponent(m.id)}&index=${a.index}`}
+                  className="w-[180px] rounded-lg px-3 py-2.5 hover:shadow" style={{ border: `1px solid ${C.line}` }}>
+                  <span className="flex items-center gap-1.5 text-[13px]" style={{ color: C.text }}><Icon d="clip" size={16} color={C.muted} /> <span className="truncate">{a.name}</span></span>
+                  <span className="block text-[11px] mt-0.5" style={{ color: C.muted }}>{kb(a.size)}</span>
                 </a>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── inline reply / reply all / forward box under the conversation ──
+function ReplyBox({ mode, msg, thread, onClose, onSent }) {
+  const fwd = mode === 'forward';
+  const who = parseAddress(msg.from);
+  const [to, setTo] = useState(fwd ? '' : who.email);
+  const [text, setText] = useState(fwd ? `\n\n---------- Forwarded message ---------\nFrom: ${msg.from}\nDate: ${new Date(msg.date).toLocaleString('en-US')}\nSubject: ${msg.subject}\nTo: ${msg.to}\n\n${msg.text || ''}` : '');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const ref = useRef(null);
+  useEffect(() => { ref.current?.focus(); if (fwd && ref.current) ref.current.setSelectionRange(0, 0); }, [fwd]);
+  const send = async () => {
+    setBusy(true); setErr('');
+    const r = fwd
+      ? await post({ action: 'send', to, subject: /^fwd?:/i.test(thread.subject) ? thread.subject : `Fwd: ${thread.subject}`, text })
+      : await post({ action: 'reply', messageId: msg.id, text, all: mode === 'replyAll' });
+    setBusy(false);
+    if (r.error) { setErr(r.error); return; }
+    onSent(fwd ? 'Message forwarded.' : 'Reply sent.');
+  };
+  return (
+    <div className="mx-4 mb-4 rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,.2),0_4px_8px_rgba(0,0,0,.1)]" style={{ background: C.card }}>
+      <div className="flex items-center gap-2 px-4 pt-3 text-[13px]" style={{ color: C.muted }}>
+        <Icon d={fwd ? 'forward' : mode === 'replyAll' ? 'replyAll' : 'reply'} size={18} color={C.muted} />
+        {fwd
+          ? <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="To" className="flex-1 outline-none text-[14px] py-1" style={{ color: C.text }} />
+          : <span className="truncate" style={{ color: C.text }}>{mode === 'replyAll' ? `${who.name} and others` : `${who.name} <${who.email}>`}</span>}
+      </div>
+      <textarea ref={ref} value={text} onChange={(e) => setText(e.target.value)} rows={fwd ? 10 : 6} className="w-full px-4 py-3 outline-none text-[14px] resize-y" style={{ color: C.text }} />
+      {err && <p className="px-4 pb-2 text-[12.5px]" style={{ color: C.red }}>{err}</p>}
+      <div className="flex items-center justify-between px-3 pb-3">
+        <button type="button" onClick={send} disabled={busy || !text.trim() || (fwd && !to.trim())}
+          className="px-6 h-9 rounded-full text-[14px] font-medium text-white disabled:opacity-50" style={{ background: C.blue }}>{busy ? 'Sending…' : 'Send'}</button>
+        <IconBtn icon="trash" title="Discard" onClick={onClose} size={18} />
+      </div>
+    </div>
+  );
+}
+
+// ── the conversation view ──
+function Conversation({ id, folder, onBack, onChanged, onFlash }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState({});
+  const [reply, setReply] = useState(null);   // { mode, msg }
+  const [busy, setBusy] = useState(false);
+
+  const apply = (d) => {
+    setData(d);
+    setOpen((o) => {
+      const next = { ...o };
+      const last = d.messages[d.messages.length - 1];
+      if (last) next[last.id] = true;
+      d.messages.filter((m) => m.unread).forEach((m) => { next[m.id] = true; });
+      return next;
+    });
+  };
+  const fresh = (base) => fetch(`/api/email/thread?id=${encodeURIComponent(id)}&fresh=1`).then((r) => r.json()).then((f) => {
+    if (!f.error) apply({ ...f, thread: { ...f.thread, category: f.thread.category || base?.thread?.category } });
+  }).catch(() => {});
+  useEffect(() => {
+    let alive = true;
+    setData(null); setErr(''); setReply(null); setOpen({});
+    fetch(`/api/email/thread?id=${encodeURIComponent(id)}`).then((r) => r.json()).then((d) => {
+      if (!alive) return;
+      if (d.error) { setErr(d.error); return; }
+      apply(d);
+      // the saved copy is on screen; check Gmail for anything newer
+      if (d.saved) {
+        fetch(`/api/email/thread?id=${encodeURIComponent(id)}&fresh=1`).then((r) => r.json()).then((f) => {
+          if (alive && !f.error && (f.messages.length !== d.messages.length || f.thread.unread !== d.thread.unread)) apply({ ...f, thread: { ...f.thread, category: f.thread.category || d.thread.category } });
+        }).catch(() => {});
+      }
+    }).catch(() => alive && setErr('Could not load this conversation.'));
+    return () => { alive = false; };
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (op, msg, leave) => {
+    setBusy(true);
+    const r = await post({ action: 'modify', threadId: id, op });
+    setBusy(false);
+    if (r.error) { onFlash(`Could not do that: ${r.error}`); return; }
+    setData((d) => (d ? { ...d, thread: { ...d.thread, ...r.thread, category: d.thread.category } } : d));
+    onChanged(id, r.thread, op);
+    onFlash(msg);
+    if (leave) onBack();
+  };
+
+  if (err) return <div className="p-6 text-[14px]" style={{ color: C.red }}>{err}</div>;
+  if (!data) return <ConversationSkeleton onBack={onBack} />;
+  const t = data.thread;
+  const lastMsg = data.messages[data.messages.length - 1];
+  const lastIn = [...data.messages].reverse().find((m) => !m.sentByUs) || lastMsg;
+  return (
+    <div>
+      <div className="flex items-center gap-1 px-2 h-12" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <IconBtn icon="back" title="Back" onClick={onBack} />
+        {t.inInbox
+          ? <IconBtn icon="archive" title="Archive" disabled={busy} onClick={() => act('archive', 'Conversation archived.', folder === 'inbox')} />
+          : <IconBtn icon="unarchive" title="Move to Inbox" disabled={busy} onClick={() => act('inbox', 'Conversation moved to Inbox.')} />}
+        <IconBtn icon="spam" title="Report spam" disabled={busy} onClick={() => act('spam', 'Conversation marked as spam.', true)} />
+        <IconBtn icon="trash" title="Delete" disabled={busy} onClick={() => act('trash', 'Conversation moved to Trash.', true)} />
+        <span className="w-px h-5 mx-1" style={{ background: C.line }} />
+        {t.unread
+          ? <IconBtn icon="markRead" title="Mark as read (handled)" disabled={busy} onClick={() => act('read', 'Marked as read.')} />
+          : <IconBtn icon="markUnread" title="Mark as unread" disabled={busy} onClick={() => act('unread', 'Marked as unread.', true)} />}
+      </div>
+      <div className="flex items-start gap-3 sm:pl-[68px] pl-4 pr-4 pt-5 pb-3">
+        <h1 className="text-[22px] leading-snug flex-1" style={{ color: C.text }}>
+          {t.subject || '(no subject)'}
+          {t.category && <span className="align-middle ml-2"><Chip cat={t.category} /></span>}
+          {t.inInbox && <span className="align-middle text-[12px] px-1.5 py-[3px] rounded ml-0.5" style={{ background: C.hover, color: C.sub }}>Inbox</span>}
+        </h1>
+        <IconBtn icon={t.starred ? 'star' : 'starOutline'} title={t.starred ? 'Starred' : 'Not starred'} color={t.starred ? C.star : C.sub} onClick={() => act(t.starred ? 'unstar' : 'star', t.starred ? 'Star removed.' : 'Starred.')} />
+      </div>
+      <div>
+        {data.messages.map((m) => (
+          <Message key={m.id} m={m} open={!!open[m.id]} onToggle={() => setOpen((o) => ({ ...o, [m.id]: !o[m.id] }))} onReply={(mode, msg) => setReply({ mode, msg })} />
+        ))}
+      </div>
+      <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        {reply
+          ? <ReplyBox key={`${reply.mode}-${reply.msg.id}`} mode={reply.mode} msg={reply.msg} thread={t} onClose={() => setReply(null)}
+              onSent={(msg) => {
+                const wasReply = reply.mode !== 'forward';
+                setReply(null); onFlash(msg); fresh(data);
+                if (wasReply) onChanged(id, { unread: false }, 'read');
+              }} />
+          : (
+            <div className="flex flex-wrap gap-2 sm:pl-[68px] pl-4 pr-4 pb-6 pt-2">
+              {[['reply', 'Reply'], ['replyAll', 'Reply all'], ['forward', 'Forward']].map(([mode, label]) => (
+                <button key={mode} type="button" onClick={() => setReply({ mode, msg: mode === 'forward' ? lastMsg : lastIn })}
+                  className="inline-flex items-center gap-2 h-9 px-5 rounded-full text-[14px] font-medium hover:bg-black/[.04]" style={{ border: `1px solid ${C.faint}`, color: C.sub }}>
+                  <Icon d={mode} size={18} /> {label}
+                </button>
+              ))}
+            </div>
           )}
+      </div>
+    </div>
+  );
+}
+
+// ── "New Message" window, bottom right ──
+function Compose({ onClose, onSent }) {
+  const [to, setTo] = useState(''); const [subject, setSubject] = useState(''); const [text, setText] = useState('');
+  const [min, setMin] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const send = async () => {
+    setBusy(true); setErr('');
+    const r = await post({ action: 'send', to, subject, text });
+    setBusy(false);
+    if (r.error) { setErr(r.error); return; }
+    onSent();
+  };
+  return (
+    <div className="fixed bottom-0 right-4 sm:right-16 z-50 w-[calc(100%-2rem)] sm:w-[540px] rounded-t-xl overflow-hidden shadow-[0_8px_10px_1px_rgba(0,0,0,.14),0_3px_14px_2px_rgba(0,0,0,.12)]" style={{ background: C.card }}>
+      <div className="flex items-center justify-between px-4 h-10 cursor-pointer" style={{ background: C.readRow }} onClick={() => setMin((v) => !v)}>
+        <span className="text-[14px] font-medium" style={{ color: C.text }}>New Message</span>
+        <button type="button" aria-label="Close" onClick={(e) => { e.stopPropagation(); onClose(); }} style={{ color: C.sub }}><Icon d="close" size={18} /></button>
+      </div>
+      {!min && (
+        <div>
+          <div className="px-4 text-[14px] flex items-center" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <span style={{ color: C.muted }}>From</span><span className="ml-3 py-2" style={{ color: C.text }}>Casa-Libre &lt;info@casa-libre.com&gt;</span>
+          </div>
+          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="To" autoFocus className="w-full px-4 py-2 outline-none text-[14px]" style={{ borderBottom: `1px solid ${C.line}`, color: C.text }} />
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="w-full px-4 py-2 outline-none text-[14px]" style={{ borderBottom: `1px solid ${C.line}`, color: C.text }} />
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14} className="w-full px-4 py-3 outline-none text-[14px] resize-none" style={{ color: C.text }} />
+          {err && <p className="px-4 pb-2 text-[12.5px]" style={{ color: C.red }}>{err}</p>}
+          <div className="flex items-center justify-between px-4 pb-3">
+            <button type="button" onClick={send} disabled={busy || !to || !subject || !text}
+              className="px-6 h-9 rounded-full text-[14px] font-medium text-white disabled:opacity-50" style={{ background: C.blue }}>{busy ? 'Sending…' : 'Send'}</button>
+            <IconBtn icon="trash" title="Discard draft" onClick={onClose} size={18} />
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function Compose({ onClose, onSent }) {
-  const [to, setTo] = useState(''); const [subject, setSubject] = useState(''); const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
-  const send = async () => {
-    setBusy(true); setErr('');
-    const r = await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', to, subject, text }) }).then((x) => x.json()).catch(() => ({ error: 'Could not send. Try again.' }));
-    setBusy(false);
-    if (r.error) { setErr(r.error); return; }
-    onSent();
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(17,17,17,.35)' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-[620px] p-5" style={{ ...CARD }}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[16px] font-semibold" style={{ color: T.textPrimary }}>New email from info@casa-libre.com</h2>
-          <button type="button" onClick={onClose} className="text-[13px]" style={{ color: T.textSecondary }}>Close</button>
-        </div>
-        <div className="space-y-3">
-          <input className={inputCls} placeholder="To (email address)" value={to} onChange={(e) => setTo(e.target.value)} autoFocus />
-          <input className={inputCls} placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
-          <textarea className={inputCls} rows={10} placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} />
-        </div>
-        {err && <div className="mt-3"><Banner>{err}</Banner></div>}
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={onClose}>Cancel</button>
-          <button type="button" className={btnPrimary} onClick={send} disabled={busy || !to || !subject || !text}>{busy ? 'Sending…' : 'Send email'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Forwarding settings: which email types (Important / Marketing / Other / Spam) go to which
-// addresses. Each new email is forwarded once, as it arrives (old emails never are).
+// ── Forwarding settings (gear): which email types go to which addresses ──
 function Forwarding({ onClose }) {
   const [rules, setRules] = useState(null);
   const [meta, setMeta] = useState({});
@@ -154,278 +399,315 @@ function Forwarding({ onClose }) {
     setRules(r.rules); setMeta(r); setOk('Saved. New emails are forwarded with these settings from now on.');
   };
   return (
-    <div className="p-5 mb-4" style={{ ...CARD }}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold" style={{ color: T.textPrimary }}>Forwarding</h2>
-          <p className="text-[12.5px] mt-0.5" style={{ color: T.textSecondary }}>Choose which types of email go to which addresses. Each new email is forwarded once, when it arrives, with the AI&apos;s summary and a link to answer it from info@. Older emails are never forwarded.</p>
-        </div>
-        <button type="button" onClick={onClose} className="text-[13px] shrink-0" style={{ color: T.textSecondary }}>Close</button>
-      </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-3">
-        {Object.entries(CATEGORIES).map(([k, c]) => (
-          <div key={k} className="text-[12px] p-2.5 rounded-[10px]" style={{ background: T.bgSurface, color: T.textBody }}>
-            <CategoryPill cat={k} /> <span className="block mt-1.5">{c.help}</span>
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto" style={{ background: 'rgba(0,0,0,.32)' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-[760px] rounded-2xl p-6" style={{ background: C.card }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[20px]" style={{ color: C.text }}>Forwarding</h2>
+            <p className="text-[13px] mt-1" style={{ color: C.muted }}>Choose which types of email go to which addresses. Each new email is forwarded once, when it arrives, with a link to answer it from info@. Older emails are never forwarded.</p>
           </div>
-        ))}
-      </div>
-      {rules === null ? <p className="text-[13px] mt-4" style={{ color: T.textMuted }}>Loading…</p> : (
-        <div className="mt-4 space-y-2">
-          {rules.length === 0 && <p className="text-[13px]" style={{ color: T.textMuted }}>Nothing is forwarded. Add an address below.</p>}
-          {rules.map((r, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-3 p-2.5 rounded-[10px]" style={{ border: `1px solid ${T.borderLight}` }}>
-              <input className={inputCls} style={{ maxWidth: 300, paddingTop: 7, paddingBottom: 7 }} placeholder="name@example.com" value={r.email} onChange={(e) => set(i, { email: e.target.value })} aria-label="Email address" />
-              <div className="flex flex-wrap items-center gap-3">
-                {Object.entries(CATEGORIES).map(([k, c]) => (
-                  <label key={k} className="flex items-center gap-1.5 text-[12.5px]" style={{ color: T.textBody }}>
-                    <input type="checkbox" checked={r.categories.includes(k)} onChange={() => toggle(i, k)} /> {c.name}
-                  </label>
-                ))}
-              </div>
-              <button type="button" className="ml-auto text-[12.5px]" style={{ color: T.danger }} onClick={() => { setOk(''); setRules((rs) => rs.filter((_, j) => j !== i)); }}>Remove</button>
+          <IconBtn icon="close" title="Close" onClick={onClose} />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-2 mt-4">
+          {Object.entries(CATEGORIES).map(([k, c]) => (
+            <div key={k} className="text-[12.5px] p-3 rounded-lg" style={{ background: C.page, color: C.sub }}>
+              <Chip cat={k} /> <span className="block mt-1.5">{c.help}</span>
             </div>
           ))}
-          <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => { setOk(''); setRules((rs) => [...rs, { email: '', categories: ['important'] }]); }}>Add an email address</button>
         </div>
-      )}
-      {err && <div className="mt-3"><Banner>{err}</Banner></div>}
-      {ok && <div className="mt-3"><Note tone="success">{ok}</Note></div>}
-      <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
-        <span className="text-[11.5px]" style={{ color: T.textMuted }}>
-          {meta.saved ? `Last saved ${fullWhen(meta.updatedAt)}${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}.` : 'Not saved yet: important emails go to the default address.'}
-        </span>
-        <button type="button" className={btnPrimary} onClick={save} disabled={busy || rules === null}>{busy ? 'Saving…' : 'Save forwarding'}</button>
-      </div>
-    </div>
-  );
-}
-
-function Reader({ id, onChanged, onClose }) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState('');
-  const [open, setOpen] = useState({});
-  const [reply, setReply] = useState('');
-  const [all, setAll] = useState(false);
-  const [busy, setBusy] = useState('');
-  const [note, setNote] = useState('');
-
-  const load = useCallback(() => {
-    setErr('');
-    fetch(`/api/email/thread?id=${encodeURIComponent(id)}`).then((r) => r.json()).then((d) => {
-      if (d.error) { setErr(d.error); return; }
-      setData(d);
-      const last = d.messages[d.messages.length - 1];
-      setOpen(last ? { [last.id]: true } : {});
-    }).catch(() => setErr('Could not load this email. Try again.'));
-  }, [id]);
-  useEffect(() => { setData(null); setReply(''); setNote(''); load(); }, [load]);
-
-  const modify = async (op, label) => {
-    setBusy(op); setNote('');
-    const r = await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'modify', threadId: id, op }) }).then((x) => x.json()).catch(() => ({ error: 'failed' }));
-    setBusy('');
-    if (r.error) { setNote(`Could not ${label.toLowerCase()}: ${r.error}`); return; }
-    setData((d) => (d ? { ...d, thread: { ...d.thread, ...r.thread } } : d));
-    onChanged(id, r.thread, op);
-    setNote(`${label}.`);
-  };
-
-  const sendReply = async () => {
-    const lastIn = [...(data?.messages || [])].reverse().find((m) => !m.sentByUs) || data?.messages?.[data.messages.length - 1];
-    if (!lastIn) return;
-    setBusy('reply'); setNote('');
-    const r = await fetch('/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reply', messageId: lastIn.id, text: reply, all }) }).then((x) => x.json()).catch(() => ({ error: 'Could not send. Try again.' }));
-    setBusy('');
-    if (r.error) { setNote(r.error); return; }
-    setReply(''); setNote('Reply sent from info@casa-libre.com. The email is marked read.');
-    onChanged(id, { unread: false }, 'read');
-    setTimeout(load, 1500);
-  };
-
-  if (err) return <div className="p-5"><Banner>{err}</Banner></div>;
-  if (!data) return <p className="p-5 text-[13px]" style={{ color: T.textMuted }}>Loading the email…</p>;
-  const t = data.thread;
-  return (
-    <div className="p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <button type="button" onClick={onClose} className="lg:hidden text-[12px] mb-2" style={{ color: T.textSecondary }}>Back to the list</button>
-          <h2 className="text-[17px] font-semibold leading-snug" style={{ color: T.textPrimary }}>{t.subject || '(no subject)'}</h2>
-          <div className="flex flex-wrap items-center gap-2 mt-1.5">
-            <CategoryPill cat={t.category} />
-            {data.triage?.urgent && <Pill tone="danger">Reply today</Pill>}
-            {t.unread ? <Pill tone="warning">Unread</Pill> : <Pill tone="neutral">Read</Pill>}
-            {!t.inInbox && <Pill tone="neutral">Archived</Pill>}
+        {rules === null ? <p className="text-[13px] mt-4" style={{ color: C.muted }}>Loading…</p> : (
+          <div className="mt-5 space-y-2">
+            {rules.length === 0 && <p className="text-[13px]" style={{ color: C.muted }}>Nothing is forwarded. Add an address below.</p>}
+            {rules.map((r, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-3 p-3 rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+                <input className="flex-1 min-w-[220px] px-3 py-2 rounded-md outline-none text-[14px]" style={{ border: `1px solid ${C.faint}`, color: C.text }} placeholder="name@example.com" value={r.email} onChange={(e) => set(i, { email: e.target.value })} aria-label="Email address" />
+                <div className="flex flex-wrap items-center gap-3">
+                  {Object.entries(CATEGORIES).map(([k, c]) => (
+                    <label key={k} className="flex items-center gap-1.5 text-[13px]" style={{ color: C.sub }}>
+                      <input type="checkbox" checked={r.categories.includes(k)} onChange={() => toggle(i, k)} /> {c.name}
+                    </label>
+                  ))}
+                </div>
+                <IconBtn icon="trash" title="Remove" onClick={() => { setOk(''); setRules((rs) => rs.filter((_, j) => j !== i)); }} size={18} />
+              </div>
+            ))}
+            <button type="button" className="text-[14px] font-medium px-4 h-9 rounded-full hover:bg-black/[.04]" style={{ color: C.blue }} onClick={() => { setOk(''); setRules((rs) => [...rs, { email: '', categories: ['important'] }]); }}>+ Add an email address</button>
           </div>
-        </div>
-      </div>
-      {data.triage?.summary && (
-        <p className="mt-3 text-[13px] p-3 rounded-[10px]" style={{ background: T.bgSurface, color: T.textBody }}>
-          <span className="font-semibold" style={{ color: T.textPrimary }}>In short: </span>{data.triage.summary}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2 mt-3">
-        {t.unread
-          ? <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy} onClick={() => modify('read', 'Marked as handled (read)')}>Mark handled (read)</button>
-          : <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy} onClick={() => modify('unread', 'Marked unread')}>Mark unread</button>}
-        {t.inInbox
-          ? <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy} onClick={() => modify('archive', 'Archived')}>Archive</button>
-          : <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy} onClick={() => modify('inbox', 'Moved to the inbox')}>Move to inbox</button>}
-        <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} disabled={!!busy} onClick={() => modify('spam', 'Reported as spam')}>Report spam</button>
-        <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight, color: T.danger }} disabled={!!busy} onClick={() => { if (window.confirm('Move this email to the trash in Gmail?')) modify('trash', 'Moved to the trash'); }}>Delete</button>
-      </div>
-      {note && <p className="text-[12.5px] mt-2" style={{ color: T.textSecondary }}>{note}</p>}
-
-      <div className="mt-4" style={{ borderTop: `1px solid ${T.borderLight}` }}>
-        {data.messages.map((m) => (
-          <Message key={m.id} m={m} open={!!open[m.id]} onToggle={() => setOpen((o) => ({ ...o, [m.id]: !o[m.id] }))} />
-        ))}
-      </div>
-
-      <div className="mt-4">
-        <label htmlFor="email-reply" className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>Reply from info@casa-libre.com</label>
-        <textarea id="email-reply" className={`${inputCls} mt-1.5`} rows={6} placeholder="Write your reply…" value={reply} onChange={(e) => setReply(e.target.value)} />
-        <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
-          <label className="flex items-center gap-2 text-[12.5px]" style={{ color: T.textBody }}>
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Reply to everyone on the email
-          </label>
-          <button type="button" className={btnPrimary} disabled={!reply.trim() || busy === 'reply'} onClick={sendReply}>{busy === 'reply' ? 'Sending…' : 'Send reply'}</button>
+        )}
+        {err && <p className="mt-3 text-[13px]" style={{ color: C.red }}>{err}</p>}
+        {ok && <p className="mt-3 text-[13px]" style={{ color: '#146C2E' }}>{ok}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-5">
+          <span className="text-[12px]" style={{ color: C.muted }}>
+            {meta.saved ? `Last saved ${new Date(meta.updatedAt).toLocaleString('en-US')}${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}.` : 'Not saved yet: important emails go to the default address.'}
+          </span>
+          <button type="button" className="px-6 h-9 rounded-full text-[14px] font-medium text-white disabled:opacity-50" style={{ background: C.blue }} onClick={save} disabled={busy || rules === null}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function EmailInner() {
+// A thin moving bar under the toolbar while a folder loads or Gmail is checked.
+function ProgressBar({ on }) {
+  return (
+    <div className="relative h-[3px] overflow-hidden" style={{ background: on ? '#D3E3FD' : 'transparent' }} aria-hidden="true">
+      {on && <div className="absolute inset-y-0 w-1/3 rounded-full" style={{ background: C.blue, animation: 'clMailBar 1.1s ease-in-out infinite' }} />}
+      <style>{'@keyframes clMailBar{0%{left:-35%}100%{left:100%}}@media (prefers-reduced-motion: reduce){[style*="clMailBar"]{animation:none!important;left:0!important;width:100%!important;opacity:.5}}'}</style>
+    </div>
+  );
+}
+
+// Grey placeholder rows in the shape of the list while it loads.
+function SkeletonRows({ n = 9 }) {
+  return (
+    <div aria-label="Loading conversations" role="status" style={{ borderTop: `1px solid ${C.line}` }}>
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="flex items-center h-10 pl-4 pr-4 gap-4 animate-pulse" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <span className="h-4 w-4 rounded-sm" style={{ background: C.hover }} />
+          <span className="h-4 w-4 rounded-full" style={{ background: C.hover }} />
+          <span className="h-3 rounded" style={{ background: C.hover, width: 140 }} />
+          <span className="h-3 rounded flex-1" style={{ background: C.hover, maxWidth: `${55 + ((i * 17) % 35)}%` }} />
+          <span className="h-3 w-12 rounded ml-auto" style={{ background: C.hover }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConversationSkeleton({ onBack }) {
+  return (
+    <div role="status" aria-label="Loading the conversation">
+      <div className="flex items-center gap-1 px-2 h-12" style={{ borderBottom: `1px solid ${C.line}` }}><IconBtn icon="back" title="Back" onClick={onBack} /></div>
+      <ProgressBar on />
+      <div className="animate-pulse sm:pl-[68px] pl-4 pr-6 pt-6">
+        <div className="h-6 rounded w-2/3 mb-6" style={{ background: C.hover }} />
+        <div className="flex items-center gap-3 mb-5">
+          <span className="h-10 w-10 rounded-full" style={{ background: C.hover }} />
+          <div className="flex-1"><div className="h-3 rounded w-48 mb-2" style={{ background: C.hover }} /><div className="h-3 rounded w-24" style={{ background: C.hover }} /></div>
+        </div>
+        {[92, 85, 88, 60].map((w, i) => <div key={i} className="h-3 rounded mb-3" style={{ background: C.hover, width: `${w}%` }} />)}
+      </div>
+    </div>
+  );
+}
+
+const PAGE = 50;
+
+function Mailbox() {
   const sp = useSearchParams();
-  const [view, setView] = useState('inbox');
-  const [hideJunk, setHideJunk] = useState(true);
+  const [folder, setFolder] = useState('important');   // Important opens first
   const [qIn, setQIn] = useState('');
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(0);
   const [threads, setThreads] = useState(null);
-  const [more, setMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({});
   const [err, setErr] = useState('');
-  const [sel, setSel] = useState(sp.get('thread') || null);
-  const [status, setStatus] = useState(null);
+  const [openId, setOpenId] = useState(sp.get('thread') || null);
+  const [checked, setChecked] = useState(new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [syncedAt, setSyncedAt] = useState(null);
   const [compose, setCompose] = useState(false);
-  const [fwdOpen, setFwdOpen] = useState(false);
+  const [fwd, setFwd] = useState(false);
   const [flash, setFlash] = useState('');
-  const sorting = useRef(new Set());
+  const flashT = useRef(null);
+  const showFlash = (m) => { setFlash(m); clearTimeout(flashT.current); flashT.current = setTimeout(() => setFlash(''), 4000); };
 
-  useEffect(() => { fetch('/api/email/status').then((r) => r.json()).then(setStatus).catch(() => setStatus({ connected: false })); }, []);
+  // the saved copy (instant)
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) { setErr(''); setLoading(true); }
+    const qs = new URLSearchParams({ view: folder, q, page: String(page) });
+    const d = await fetch(`/api/email?${qs}`).then((r) => r.json()).catch(() => ({ error: 'Could not load the mailbox.' }));
+    if (!quiet) setLoading(false);
+    if (d.error) { if (!quiet) { setErr(d.error === 'not_connected' ? 'The info@ mailbox is not connected.' : d.error); setThreads((t) => t || []); } return null; }
+    setThreads(d.threads); setTotal(d.total || 0); setCounts(d.counts || {});
+    return d;
+  }, [folder, q, page]);
 
-  const load = useCallback((start = 0) => {
-    setErr('');
-    if (start === 0) setThreads(null);
-    const qs = new URLSearchParams({ view, q, start: String(start), hideJunk: hideJunk ? '1' : '0' });
-    fetch(`/api/email?${qs}`).then((r) => r.json()).then((d) => {
-      if (d.error) { setErr(d.error === 'not_connected' ? 'The info@ mailbox is not connected (GMAIL_BRIDGE_URL / GMAIL_BRIDGE_SECRET).' : `Could not load the mailbox: ${d.error}`); setThreads([]); return; }
-      setThreads((cur) => (start === 0 ? d.threads : [...(cur || []), ...d.threads]));
-      setMore(!!d.more);
-    }).catch(() => { setErr('Could not load the mailbox. Try again.'); setThreads([]); });
-  }, [view, q, hideJunk]);
-  useEffect(() => { load(0); }, [load]);
+  // Gmail → saved copy (background), then show the update
+  const sync = useCallback(async () => {
+    setSyncing(true);
+    await fetch('/api/email/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ view: folder, q }) }).catch(() => {});
+    setSyncing(false); setSyncedAt(new Date());
+    await load({ quiet: true });
+  }, [folder, q, load]);
 
-  // threads the AI hasn't sorted yet → sort them in the background (a few at a time)
+  useEffect(() => { setChecked(new Set()); load().then(() => { if (page === 0) sync(); }); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  // new mail: the saved copy every 30 s (the Gmail script pushes each minute), Gmail itself every 3 min
   useEffect(() => {
-    if (!threads?.length) return;
-    const todo = threads.filter((t) => !t.category && !sorting.current.has(t.id) && view !== 'sent').slice(0, 8).map((t) => t.id);
-    if (!todo.length) return;
-    todo.forEach((id) => sorting.current.add(id));
-    fetch('/api/email/triage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadIds: todo }) })
-      .then((r) => r.json())
-      .then((d) => setThreads((cur) => (cur || []).map((t) => (d.results?.[t.id] ? { ...t, category: d.results[t.id] } : t))))
-      .catch(() => {});
-  }, [threads, view]);
+    const a = setInterval(() => { if (document.visibilityState === 'visible') load({ quiet: true }); }, 30_000);
+    const b = setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 180_000);
+    return () => { clearInterval(a); clearInterval(b); };
+  }, [load, sync]);
 
+  const goFolder = (k) => { if (k === folder && !openId) return; setFolder(k); setPage(0); setOpenId(null); setQ(''); setQIn(''); setThreads(null); setChecked(new Set()); setLoading(true); };
+  const runSearch = () => { setPage(0); setOpenId(null); setQ(qIn.trim()); };
+
+  const leaves = (op) => ({ archive: folder === 'inbox', spam: folder !== 'spam', trash: folder !== 'trash', notspam: folder === 'spam', inbox: folder === 'trash' || folder === 'spam' }[op]);
   const onChanged = (id, patch, op) => {
-    setThreads((cur) => {
-      const list = (cur || []).map((t) => (t.id === id ? { ...t, ...patch } : t));
-      // leaving the current view (archived from the inbox, spam, trash) → drop it from the list
-      if ((op === 'archive' && view !== 'all') || op === 'spam' || op === 'trash') return list.filter((t) => t.id !== id);
-      return list;
-    });
-    if (op === 'spam' || op === 'trash') setSel(null);
+    setThreads((cur) => (cur || []).flatMap((t) => (t.id !== id ? [t] : leaves(op) ? [] : [{ ...t, ...patch, category: t.category }])));
+    if (leaves(op)) setTotal((n) => Math.max(0, n - 1));
+    load({ quiet: true });
   };
 
-  const unreadCount = (threads || []).filter((t) => t.unread).length;
-  const stale = status?.connected && status.lastPush && Date.now() - new Date(status.lastPush).getTime() > 10 * 60 * 1000;
+  const bulk = async (op, msg) => {
+    const ids = [...checked];
+    setChecked(new Set());
+    for (const id of ids) {
+      const r = await post({ action: 'modify', threadId: id, op });
+      if (!r.error) onChanged(id, r.thread, op);
+    }
+    showFlash(`${ids.length} conversation${ids.length === 1 ? '' : 's'} ${msg}.`);
+  };
+  const rowAct = async (e, t, op, msg) => {
+    e.stopPropagation();
+    const r = await post({ action: 'modify', threadId: t.id, op });
+    if (r.error) { showFlash(`Could not do that: ${r.error}`); return; }
+    onChanged(t.id, r.thread, op);
+    if (msg) showFlash(msg);
+  };
+
+  const list = threads || [];
+  const allChecked = list.length > 0 && list.every((t) => checked.has(t.id));
+  const from = total ? page * PAGE + 1 : 0;
+  const to = Math.min(total, page * PAGE + list.length);
+  const someChecked = checked.size > 0;
+  const checkedUnread = list.filter((t) => checked.has(t.id)).some((t) => t.unread);
 
   return (
-    <div className="max-w-[1400px]">
-      <PageHeader
-        title="Email (info@)"
-        sub="The info@casa-libre.com mailbox. The AI sorts every email into Important, Marketing, Other or Spam, and forwards the types you choose. An email stays unread until it's handled."
-        action={<div className="flex gap-2"><button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => setFwdOpen((v) => !v)}>Forwarding settings</button><button type="button" className={btnPrimary} onClick={() => setCompose(true)}>New email</button></div>}
-      />
-      {status && !status.connected && <div className="mb-3"><Banner>The info@ mailbox is not connected{status.reason ? ` (${status.reason})` : ''}.</Banner></div>}
-      {stale && <div className="mb-3"><Banner tone="warning">No new-email check from Gmail since {fullWhen(status.lastPush)}. New emails may be late; the list below is still live.</Banner></div>}
-      {status?.connected && !status.lastPush && <div className="mb-3"><Note>Connected to {status.account}. The list below is live; the every-minute push and alerts start once the admin's address is set in the Gmail script.</Note></div>}
-      {flash && <div className="mb-3"><Note tone="success">{flash}</Note></div>}
-      {fwdOpen && <Forwarding onClose={() => setFwdOpen(false)} />}
-
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {VIEW_KEYS.map((k) => (
-          <button key={k} type="button" onClick={() => { setView(k); setSel(null); }}
-            className="text-[13px] px-3.5 py-1.5 rounded-full transition-colors"
-            style={view === k ? { background: T.primary, color: '#fff' } : { border: `1px solid ${T.borderLight}`, color: T.textBody }}>
-            {VIEWS[k].name}
-          </button>
-        ))}
-        <form onSubmit={(e) => { e.preventDefault(); setQ(qIn.trim()); setSel(null); }} className="flex-1 min-w-[220px] flex gap-2">
-          <input className={inputCls} style={{ paddingTop: 7, paddingBottom: 7 }} placeholder="Search (name, email, words, or Gmail search like from:tomas)…" value={qIn} onChange={(e) => { setQIn(e.target.value); if (!e.target.value) setQ(''); }} />
+    <div className="-mx-5 md:-mx-8 -my-8 min-h-screen p-2 sm:p-3" style={{ background: C.page }}>
+      {/* top bar: search + settings */}
+      <div className="flex items-center gap-3 mb-2">
+        <div className="hidden md:flex items-center w-[244px] pl-4">
+          <span className="text-[22px]" style={{ color: C.sub }}>info@ mail</span>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); runSearch(); }} className="flex-1 max-w-[720px] flex items-center h-12 rounded-full px-2" style={{ background: C.search }}>
+          <IconBtn icon="search" title="Search" onClick={runSearch} />
+          <input value={qIn} onChange={(e) => { setQIn(e.target.value); if (!e.target.value && q) { setQ(''); setPage(0); } }} placeholder="Search mail" className="flex-1 bg-transparent outline-none text-[16px]" style={{ color: C.text }} />
+          {qIn && <IconBtn icon="close" title="Clear search" onClick={() => { setQIn(''); setQ(''); setPage(0); }} />}
         </form>
-        {(view === 'inbox' || view === 'unread') && (
-          <label className="flex items-center gap-2 text-[12.5px]" style={{ color: T.textBody }}>
-            <input type="checkbox" checked={!hideJunk} onChange={(e) => setHideJunk(!e.target.checked)} /> Show marketing and spam
-          </label>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          <span className="hidden sm:inline text-[12px] mr-1" style={{ color: C.muted }}>{syncing ? 'Checking Gmail…' : syncedAt ? `Up to date · ${syncedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}</span>
+          <IconBtn icon="gear" title="Forwarding settings" onClick={() => setFwd(true)} />
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-[400px_1fr] gap-4 items-start">
-        <div className={`${sel ? 'hidden lg:block' : ''}`} style={{ ...CARD, overflow: 'hidden' }}>
-          <div className="px-4 py-2.5 text-[12px]" style={{ borderBottom: `1px solid ${T.borderLight}`, color: T.textMuted }}>
-            {threads === null ? 'Loading…' : `${threads.length}${more ? '+' : ''} conversations${unreadCount ? ` · ${unreadCount} unread` : ''}`}
-          </div>
-          {err && <div className="p-3"><Banner>{err}</Banner></div>}
-          {threads?.length === 0 && !err && <p className="p-4 text-[13px]" style={{ color: T.textMuted }}>No emails here.</p>}
-          <div className="max-h-[75vh] overflow-y-auto">
-            {(threads || []).map((t) => {
-              const who = parseAddress(t.lastFrom);
-              const on = sel === t.id;
+      <div className="flex gap-2">
+        {/* left: compose + folders */}
+        <aside className="hidden md:block w-[244px] shrink-0">
+          <button type="button" onClick={() => setCompose(true)} className="flex items-center gap-3 h-14 pl-4 pr-6 rounded-2xl mb-3 hover:shadow-[0_1px_3px_rgba(0,0,0,.3)] transition-shadow" style={{ background: C.compose, color: C.text }}>
+            <Icon d="pencil" size={22} /> <span className="text-[14px] font-medium">Compose</span>
+          </button>
+          <nav>
+            {FOLDERS.map((f) => {
+              const on = folder === f.key;
+              const n = counts[f.key];
               return (
-                <button key={t.id} type="button" onClick={() => setSel(t.id)} className="w-full text-left px-4 py-3 block"
-                  style={{ borderBottom: `1px solid ${T.borderLight}`, background: on ? T.bgSurface : 'transparent', boxShadow: on ? `inset 3px 0 0 ${T.primary}` : 'none' }}>
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className={`text-[13px] truncate ${t.unread ? 'font-bold' : 'font-medium'}`} style={{ color: T.textPrimary }}>
-                      {/info@casa-libre\.com/i.test(who.email) ? 'Casa-Libre (info@)' : who.name}{t.count > 1 ? <span style={{ color: T.textMuted, fontWeight: 400 }}> ({t.count})</span> : null}
-                    </span>
-                    <span className="text-[11px] shrink-0" style={{ color: t.unread ? T.textPrimary : T.textMuted }}>{when(t.lastDate)}</span>
-                  </span>
-                  <span className={`block text-[12.5px] truncate ${t.unread ? 'font-semibold' : ''}`} style={{ color: T.textBody }}>{t.subject || '(no subject)'}</span>
-                  <span className="flex items-center gap-2 mt-1">
-                    {t.category ? <CategoryPill cat={t.category} /> : view !== 'sent' ? <span className="text-[10.5px]" style={{ color: T.textMuted }}>Sorting…</span> : null}
-                    <span className="text-[11.5px] truncate" style={{ color: T.textMuted }}>{t.snippet}</span>
-                  </span>
+                <button key={f.key} type="button" onClick={() => goFolder(f.key)} className="w-full flex items-center gap-4 h-8 pl-6 pr-4 rounded-r-full text-[14px] hover:bg-black/[.04]"
+                  style={{ background: on ? C.sel : undefined, color: on ? C.selText : C.text, fontWeight: on || n ? 700 : 400 }}>
+                  <Icon d={f.icon} size={18} color={on ? C.selText : C.sub} />
+                  <span className="flex-1 text-left">{f.name}</span>
+                  {n ? <span className="text-[12px]">{n}</span> : null}
                 </button>
               );
             })}
-            {more && <button type="button" className="w-full py-3 text-[12.5px]" style={{ color: T.textSecondary }} onClick={() => load((threads || []).length)}>Load more</button>}
-          </div>
-        </div>
+          </nav>
+        </aside>
 
-        <div className={`${sel ? '' : 'hidden lg:block'}`} style={{ ...CARD, minHeight: 300 }}>
-          {sel
-            ? <Reader key={sel} id={sel} onChanged={onChanged} onClose={() => setSel(null)} />
-            : <p className="p-5 text-[13px]" style={{ color: T.textMuted }}>Pick an email on the left to read and answer it.</p>}
-        </div>
+        {/* right: the list, or one conversation */}
+        <main className="flex-1 min-w-0 rounded-2xl overflow-hidden" style={{ background: C.card, minHeight: 'calc(100vh - 90px)' }}>
+          <div className="md:hidden flex items-center gap-2 p-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <select value={folder} onChange={(e) => goFolder(e.target.value)} className="flex-1 h-9 px-2 rounded-md text-[14px]" style={{ border: `1px solid ${C.line}` }}>
+              {FOLDERS.map((f) => <option key={f.key} value={f.key}>{f.name}{counts[f.key] ? ` (${counts[f.key]})` : ''}</option>)}
+            </select>
+            <button type="button" onClick={() => setCompose(true)} className="h-9 px-4 rounded-xl text-[14px] font-medium" style={{ background: C.compose }}>Compose</button>
+          </div>
+
+          {openId ? (
+            <Conversation key={openId} id={openId} folder={folder} onBack={() => setOpenId(null)} onChanged={onChanged} onFlash={showFlash} />
+          ) : (
+            <>
+              <div className="flex items-center gap-1 px-2 h-12">
+                <label className="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-black/[.06] cursor-pointer" title="Select">
+                  <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(list.map((t) => t.id)))} className="h-4 w-4" />
+                </label>
+                {someChecked ? (
+                  <>
+                    {folder === 'trash' || folder === 'spam'
+                      ? <IconBtn icon="unarchive" title="Move to Inbox" onClick={() => bulk(folder === 'spam' ? 'notspam' : 'inbox', 'moved to Inbox')} />
+                      : <IconBtn icon="archive" title="Archive" onClick={() => bulk('archive', 'archived')} />}
+                    {folder !== 'spam' && <IconBtn icon="spam" title="Report spam" onClick={() => bulk('spam', 'marked as spam')} />}
+                    {folder !== 'trash' && <IconBtn icon="trash" title="Delete" onClick={() => bulk('trash', 'moved to Trash')} />}
+                    <span className="w-px h-5 mx-1" style={{ background: C.line }} />
+                    {checkedUnread
+                      ? <IconBtn icon="markRead" title="Mark as read" onClick={() => bulk('read', 'marked as read')} />
+                      : <IconBtn icon="markUnread" title="Mark as unread" onClick={() => bulk('unread', 'marked as unread')} />}
+                  </>
+                ) : (
+                  <IconBtn icon="refresh" title="Refresh" onClick={() => { load(); sync(); }} />
+                )}
+                <div className="ml-auto flex items-center text-[12px]" style={{ color: C.muted }}>
+                  <span className="mr-2">{total ? `${from}–${to} of ${total.toLocaleString('en-US')}` : ''}</span>
+                  <IconBtn icon="left" title="Newer" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} size={18} />
+                  <IconBtn icon="right" title="Older" disabled={to >= total} onClick={() => setPage((p) => p + 1)} size={18} />
+                </div>
+              </div>
+
+              <ProgressBar on={loading || syncing} />
+              {err && <p className="px-6 py-3 text-[14px]" style={{ color: C.red }}>{err}</p>}
+              {(threads === null || (loading && !list.length)) && <SkeletonRows />}
+              {threads && !loading && list.length === 0 && !err && (
+                <p className="px-6 py-10 text-center text-[14px]" style={{ color: C.muted }}>{q ? 'No messages matched your search.' : syncing ? 'Checking Gmail…' : 'No conversations here.'}</p>
+              )}
+
+              <div style={{ borderTop: list.length ? `1px solid ${C.line}` : 'none', opacity: loading && list.length ? 0.5 : 1, transition: 'opacity .15s' }}>
+                {list.map((t) => {
+                  const on = checked.has(t.id);
+                  const bold = t.unread ? 700 : 400;
+                  return (
+                    <div key={t.id} role="button" tabIndex={0} onClick={() => setOpenId(t.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(t.id); }}
+                      className="group relative flex items-center h-10 pl-2 pr-4 cursor-pointer hover:z-10 hover:shadow-[inset_1px_0_0_#dadce0,inset_-1px_0_0_#dadce0,0_1px_2px_0_rgba(60,64,67,.3),0_1px_3px_1px_rgba(60,64,67,.15)]"
+                      style={{ background: on ? '#C2DBFF' : t.unread ? C.card : C.readRow, borderBottom: `1px solid ${C.line}` }}>
+                      <label className="h-10 w-9 inline-flex items-center justify-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={on} onChange={() => setChecked((s) => { const n = new Set(s); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })} className="h-4 w-4" />
+                      </label>
+                      <button type="button" className="h-10 w-8 inline-flex items-center justify-center shrink-0" title={t.starred ? 'Starred' : 'Not starred'} onClick={(e) => rowAct(e, t, t.starred ? 'unstar' : 'star')}>
+                        <Icon d={t.starred ? 'star' : 'starOutline'} size={20} color={t.starred ? C.star : '#BDC1C6'} />
+                      </button>
+                      <span className="w-[110px] sm:w-[200px] shrink-0 truncate pl-2 pr-4 text-[14px]" style={{ color: C.text, fontWeight: bold }}>
+                        {shortName(t.lastFrom)}{t.count > 1 ? <span className="font-normal" style={{ color: C.muted }}> {t.count}</span> : null}
+                      </span>
+                      <span className="flex-1 min-w-0 flex items-center text-[14px]">
+                        {t.category && folder !== t.category && <Chip cat={t.category} />}
+                        <span className="truncate">
+                          <span style={{ color: C.text, fontWeight: bold }}>{t.subject || '(no subject)'}</span>
+                          {t.snippet ? <span style={{ color: C.muted }}> - {t.snippet}</span> : null}
+                        </span>
+                      </span>
+                      {t.hasAttachments && <span className="ml-2 shrink-0"><Icon d="clip" size={16} color={C.muted} /></span>}
+                      <span className="w-[72px] text-right shrink-0 text-[12px] group-hover:hidden" style={{ color: t.unread ? C.text : C.muted, fontWeight: bold }}>{listDate(t.lastDate)}</span>
+                      <span className="hidden group-hover:flex items-center shrink-0 -mr-2">
+                        {folder !== 'trash' && <IconBtn icon={t.inInbox ? 'archive' : 'unarchive'} title={t.inInbox ? 'Archive' : 'Move to Inbox'} size={18} onClick={(e) => rowAct(e, t, t.inInbox ? 'archive' : 'inbox', t.inInbox ? 'Conversation archived.' : 'Moved to Inbox.')} />}
+                        {folder !== 'trash' && <IconBtn icon="trash" title="Delete" size={18} onClick={(e) => rowAct(e, t, 'trash', 'Conversation moved to Trash.')} />}
+                        <IconBtn icon={t.unread ? 'markRead' : 'markUnread'} title={t.unread ? 'Mark as read' : 'Mark as unread'} size={18} onClick={(e) => rowAct(e, t, t.unread ? 'read' : 'unread')} />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </main>
       </div>
 
-      {compose && <Compose onClose={() => setCompose(false)} onSent={() => { setCompose(false); setFlash('Email sent from info@casa-libre.com.'); if (view === 'sent') load(0); }} />}
+      {flash && <div className="fixed bottom-6 left-6 z-50 px-6 py-3.5 rounded text-[14px] text-white shadow-lg" style={{ background: '#323232' }}>{flash}</div>}
+      {compose && <Compose onClose={() => setCompose(false)} onSent={() => { setCompose(false); showFlash('Message sent.'); if (folder === 'sent') sync(); }} />}
+      {fwd && <Forwarding onClose={() => setFwd(false)} />}
     </div>
   );
 }
 
 export default function EmailPage() {
-  return <Suspense fallback={null}><EmailInner /></Suspense>;
+  return <Suspense fallback={null}><Mailbox /></Suspense>;
 }

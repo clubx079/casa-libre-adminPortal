@@ -227,6 +227,7 @@ const SOURCE_LABELS = {
   'whatsapp campaign': 'WhatsApp campaign',   // a batch from WhatsApp campaigns (/r/wa?b=…)
   'referral link': 'Referral link · a user shared their link (/ref/…)',
   gbp: 'Google Business Profile · the website link on Google Maps (/r/gbp)',
+  'bing places': 'Bing Places · the website link on Bing Maps (/r/bing, or Google\'s link + utm_source=bing_places)',
   // a listing shared from the share sheet (/l/<code>?c=<network>, utm_medium=share)
   'shared · whatsapp': 'Shared · WhatsApp', 'shared · instagram': 'Shared · Instagram', 'shared · gmail': 'Shared · Gmail',
   'shared · linkedin': 'Shared · LinkedIn', 'shared · x': 'Shared · X', 'shared · facebook': 'Shared · Facebook',

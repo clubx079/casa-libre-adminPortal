@@ -133,6 +133,73 @@ function Compose({ onClose, onSent }) {
   );
 }
 
+// Forwarding settings: which email types (Important / Marketing / Other / Spam) go to which
+// addresses. Each new email is forwarded once, as it arrives (old emails never are).
+function Forwarding({ onClose }) {
+  const [rules, setRules] = useState(null);
+  const [meta, setMeta] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  useEffect(() => {
+    fetch('/api/email/settings').then((r) => r.json()).then((d) => { setRules(d.rules || []); setMeta(d); }).catch(() => setErr('Could not load the settings.'));
+  }, []);
+  const set = (i, patch) => { setOk(''); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r))); };
+  const toggle = (i, c) => set(i, { categories: rules[i].categories.includes(c) ? rules[i].categories.filter((x) => x !== c) : [...rules[i].categories, c] });
+  const save = async () => {
+    setBusy(true); setErr(''); setOk('');
+    const r = await fetch('/api/email/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules: rules.filter((x) => x.email.trim()) }) }).then((x) => x.json()).catch(() => ({ error: 'Could not save. Try again.' }));
+    setBusy(false);
+    if (r.error) { setErr(r.error); return; }
+    setRules(r.rules); setMeta(r); setOk('Saved. New emails are forwarded with these settings from now on.');
+  };
+  return (
+    <div className="p-5 mb-4" style={{ ...CARD }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-semibold" style={{ color: T.textPrimary }}>Forwarding</h2>
+          <p className="text-[12.5px] mt-0.5" style={{ color: T.textSecondary }}>Choose which types of email go to which addresses. Each new email is forwarded once, when it arrives, with the AI&apos;s summary and a link to answer it from info@. Older emails are never forwarded.</p>
+        </div>
+        <button type="button" onClick={onClose} className="text-[13px] shrink-0" style={{ color: T.textSecondary }}>Close</button>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-3">
+        {Object.entries(CATEGORIES).map(([k, c]) => (
+          <div key={k} className="text-[12px] p-2.5 rounded-[10px]" style={{ background: T.bgSurface, color: T.textBody }}>
+            <CategoryPill cat={k} /> <span className="block mt-1.5">{c.help}</span>
+          </div>
+        ))}
+      </div>
+      {rules === null ? <p className="text-[13px] mt-4" style={{ color: T.textMuted }}>Loading…</p> : (
+        <div className="mt-4 space-y-2">
+          {rules.length === 0 && <p className="text-[13px]" style={{ color: T.textMuted }}>Nothing is forwarded. Add an address below.</p>}
+          {rules.map((r, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-3 p-2.5 rounded-[10px]" style={{ border: `1px solid ${T.borderLight}` }}>
+              <input className={inputCls} style={{ maxWidth: 300, paddingTop: 7, paddingBottom: 7 }} placeholder="name@example.com" value={r.email} onChange={(e) => set(i, { email: e.target.value })} aria-label="Email address" />
+              <div className="flex flex-wrap items-center gap-3">
+                {Object.entries(CATEGORIES).map(([k, c]) => (
+                  <label key={k} className="flex items-center gap-1.5 text-[12.5px]" style={{ color: T.textBody }}>
+                    <input type="checkbox" checked={r.categories.includes(k)} onChange={() => toggle(i, k)} /> {c.name}
+                  </label>
+                ))}
+              </div>
+              <button type="button" className="ml-auto text-[12.5px]" style={{ color: T.danger }} onClick={() => { setOk(''); setRules((rs) => rs.filter((_, j) => j !== i)); }}>Remove</button>
+            </div>
+          ))}
+          <button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => { setOk(''); setRules((rs) => [...rs, { email: '', categories: ['important'] }]); }}>Add an email address</button>
+        </div>
+      )}
+      {err && <div className="mt-3"><Banner>{err}</Banner></div>}
+      {ok && <div className="mt-3"><Note tone="success">{ok}</Note></div>}
+      <div className="flex flex-wrap items-center justify-between gap-2 mt-4">
+        <span className="text-[11.5px]" style={{ color: T.textMuted }}>
+          {meta.saved ? `Last saved ${fullWhen(meta.updatedAt)}${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}.` : 'Not saved yet: important emails go to the default address.'}
+        </span>
+        <button type="button" className={btnPrimary} onClick={save} disabled={busy || rules === null}>{busy ? 'Saving…' : 'Save forwarding'}</button>
+      </div>
+    </div>
+  );
+}
+
 function Reader({ id, onChanged, onClose }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
@@ -241,6 +308,7 @@ function EmailInner() {
   const [sel, setSel] = useState(sp.get('thread') || null);
   const [status, setStatus] = useState(null);
   const [compose, setCompose] = useState(false);
+  const [fwdOpen, setFwdOpen] = useState(false);
   const [flash, setFlash] = useState('');
   const sorting = useRef(new Set());
 
@@ -287,13 +355,14 @@ function EmailInner() {
     <div className="max-w-[1400px]">
       <PageHeader
         title="Email (info@)"
-        sub="The info@casa-libre.com mailbox. The AI sorts every email; important ones alert the team. An email stays unread until it's handled."
-        action={<button type="button" className={btnPrimary} onClick={() => setCompose(true)}>New email</button>}
+        sub="The info@casa-libre.com mailbox. The AI sorts every email into Important, Marketing, Other or Spam, and forwards the types you choose. An email stays unread until it's handled."
+        action={<div className="flex gap-2"><button type="button" className={btnSecondary} style={{ borderColor: T.borderLight }} onClick={() => setFwdOpen((v) => !v)}>Forwarding settings</button><button type="button" className={btnPrimary} onClick={() => setCompose(true)}>New email</button></div>}
       />
       {status && !status.connected && <div className="mb-3"><Banner>The info@ mailbox is not connected{status.reason ? ` (${status.reason})` : ''}.</Banner></div>}
       {stale && <div className="mb-3"><Banner tone="warning">No new-email check from Gmail since {fullWhen(status.lastPush)}. New emails may be late; the list below is still live.</Banner></div>}
       {status?.connected && !status.lastPush && <div className="mb-3"><Note>Connected to {status.account}. The list below is live; the every-minute push and alerts start once the admin's address is set in the Gmail script.</Note></div>}
       {flash && <div className="mb-3"><Note tone="success">{flash}</Note></div>}
+      {fwdOpen && <Forwarding onClose={() => setFwdOpen(false)} />}
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {VIEW_KEYS.map((k) => (

@@ -1,31 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { parseTriage, categoryFromLabels, shouldAlert, viewQuery, parseAddress, ALERTED_LABEL } from '../lib/emailTriageCore.js';
+import { parseTriage, categoryFromLabels, forwardTargets, viewQuery, parseAddress, ALERTED_LABEL, normalizeRules, invalidEmails, defaultRules, recipientsFor } from '../lib/emailTriageCore.js';
 
 describe('info@ email sorting', () => {
   it('reads the model answer', () => {
-    expect(parseTriage('{"category":"business","summary":"A cleaning firm offers a service","urgent":false}')).toEqual({ category: 'business', summary: 'A cleaning firm offers a service', urgent: false });
-    expect(parseTriage('sure: {"category":"Enquiry","summary":"x","urgent":"true"}')).toMatchObject({ category: 'enquiry', urgent: true });
-    expect(parseTriage('{"category":"other"}')).toBeNull();
+    expect(parseTriage('{"category":"marketing","summary":"A cleaning firm offers a service","urgent":true}')).toEqual({ category: 'marketing', summary: 'A cleaning firm offers a service', urgent: false });
+    expect(parseTriage('sure: {"category":"Important","summary":"x","urgent":"true"}')).toMatchObject({ category: 'important', urgent: true });
+    expect(parseTriage('{"category":"enquiry"}')).toMatchObject({ category: 'important' });
+    expect(parseTriage('{"category":"notification"}')).toMatchObject({ category: 'other' });
+    expect(parseTriage('{"category":"business"}')).toBeNull();
     expect(parseTriage('no json')).toBeNull();
   });
-  it('category from Gmail labels', () => {
+  it('type from Gmail labels (old labels too)', () => {
     expect(categoryFromLabels(['AI-Spam'])).toBe('spam');
-    expect(categoryFromLabels(['Work'])).toBeNull();
+    expect(categoryFromLabels(['AI-Enquiry'])).toBe('important');
+    expect(categoryFromLabels(['AI-Notification'])).toBe('other');
+    expect(categoryFromLabels(['AI-Business'])).toBeNull();
+    expect(categoryFromLabels(['AI-Business', 'AI-Marketing'])).toBe('marketing');
   });
-  it('alerts only fresh, incoming, important, not-yet-alerted emails', () => {
+  it('forwarding rules', () => {
+    expect(normalizeRules([{ email: ' Omar@AiroSofts.com ', categories: ['important', 'x'] }, { email: 'omar@airosofts.com', categories: ['spam'] }, { email: 'bad', categories: ['important'] }]))
+      .toEqual([{ email: 'omar@airosofts.com', categories: ['important', 'spam'] }]);
+    expect(invalidEmails([{ email: 'a@b.com' }, { email: 'nope' }, { email: '' }])).toEqual(['nope']);
+    expect(defaultRules('a@b.com, c@d.com')).toEqual([{ email: 'a@b.com', categories: ['important'] }, { email: 'c@d.com', categories: ['important'] }]);
+    const rules = [{ email: 'a@b.com', categories: ['important'] }, { email: 'm@b.com', categories: ['marketing', 'important'] }];
+    expect(recipientsFor('important', rules)).toEqual(['a@b.com', 'm@b.com']);
+    expect(recipientsFor('spam', rules)).toEqual([]);
+  });
+  it('forwards only fresh, incoming, not-yet-forwarded emails, to the right people', () => {
     const now = Date.parse('2026-11-24T20:00:00Z');
     const msg = { date: '2026-11-24T19:30:00Z', sentByUs: false };
-    const enq = { category: 'enquiry' };
-    expect(shouldAlert({ msg, triage: enq, now })).toBe(true);
-    expect(shouldAlert({ msg, triage: { category: 'marketing' }, now })).toBe(false);
-    expect(shouldAlert({ msg, triage: enq, labels: [ALERTED_LABEL], now })).toBe(false);
-    expect(shouldAlert({ msg: { ...msg, sentByUs: true }, triage: enq, now })).toBe(false);
-    expect(shouldAlert({ msg: { ...msg, date: '2026-11-20T10:00:00Z' }, triage: enq, now })).toBe(false);
+    const rules = [{ email: 'a@b.com', categories: ['important'] }, { email: 'm@b.com', categories: ['marketing'] }];
+    expect(forwardTargets({ msg, triage: { category: 'important' }, rules, now })).toEqual(['a@b.com']);
+    expect(forwardTargets({ msg, triage: { category: 'marketing' }, rules, now })).toEqual(['m@b.com']);
+    expect(forwardTargets({ msg, triage: { category: 'other' }, rules, now })).toEqual([]);
+    expect(forwardTargets({ msg, triage: { category: 'important' }, labels: [ALERTED_LABEL], rules, now })).toEqual([]);
+    expect(forwardTargets({ msg: { ...msg, sentByUs: true }, triage: { category: 'important' }, rules, now })).toEqual([]);
+    expect(forwardTargets({ msg: { ...msg, date: '2026-11-20T10:00:00Z' }, triage: { category: 'important' }, rules, now })).toEqual([]);
   });
   it('view queries', () => {
     expect(viewQuery('inbox', { hideJunk: true })).toBe('in:inbox -label:ai-marketing -label:ai-spam');
     expect(viewQuery('sent', { hideJunk: true, search: 'from:x' })).toBe('in:sent from:x');
-    expect(viewQuery('important')).toBe('(label:ai-enquiry OR label:ai-business)');
+    expect(viewQuery('important')).toBe('(label:ai-important OR label:ai-enquiry)');
+    expect(viewQuery('marketing')).toBe('label:ai-marketing');
   });
   it('addresses', () => {
     expect(parseAddress('Tomas <tomas@casa-limpia.com.py>')).toEqual({ name: 'Tomas', email: 'tomas@casa-limpia.com.py' });

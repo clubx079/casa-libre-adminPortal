@@ -19,7 +19,8 @@ const PUBLIC = [
   '/api/cron',
   '/api/seo-sites/feed',   // the six SEO sites read their AI SEO feed (Bearer SEO_PUBLISH_SECRET)
   '/api/relay/webhook',
-  '/api/bot-report',       // Grok Bots send their results (one-time Bearer token per run)
+  '/api/bot-report',
+  '/api/email-bridge',     // the info@ Gmail script pushes new emails (X-Bridge-Secret)       // Grok Bots send their results (one-time Bearer token per run)
   // Pre-login account flows (pages + their token-validated APIs):
   '/aceptar-invitacion',
   '/recuperar-clave',

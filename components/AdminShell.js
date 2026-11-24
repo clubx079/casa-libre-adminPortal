@@ -19,6 +19,7 @@ const GROUPS = [
   ] },
   { key: 'inbox', label: 'Inbox & support', icon: 'chat', items: [
     ['/inbox', 'Inbox', 'chat'],
+    ['/email', 'Email (info@)', 'mail'],
     ['/alerts', 'Alerts', 'bell'],
     ['/reports', 'Reports', 'runs'],
     ['/feedbacks', 'Feedback', 'shield'],

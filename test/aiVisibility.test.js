@@ -71,3 +71,16 @@ describe('AI SEO report: where each keyword came from and why', () => {
     expect(list[0].sourceNames).toEqual(['Keyword Planner', 'Search Console', 'Site search']);
   });
 });
+
+describe('Rule: no business other than Casa-Libre, general keywords only', () => {
+  it('skips competitor, agency and web-address keywords; keeps general ones', () => {
+    expect(namesCompetitor('infocasas')).toBe(true);
+    expect(namesCompetitor('habitamia inmobiliaria')).toBe(true);
+    expect(namesCompetitor('plusterra encarnacion')).toBe(true);
+    expect(namesCompetitor('casas en venta clasipar.com.py')).toBe(true);
+    expect(namesCompetitor('casa-libre.com.py')).toBe(false);
+    expect(namesCompetitor('casas en venta asuncion')).toBe(false);
+    expect(namesCompetitor('inmobiliaria cerca de mi')).toBe(false);
+    expect(namesCompetitor('alquiler de departamentos amoblados')).toBe(false);
+  });
+});

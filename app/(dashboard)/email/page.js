@@ -129,7 +129,7 @@ function HtmlBody({ html }) {
 }
 
 // ── one email inside a conversation ──
-function Message({ m, open, onToggle, onReply }) {
+function Message({ m, open, onToggle, onReply, unread, onReadToggle, onSender }) {
   const who = parseAddress(m.from);
   const [en, setEn] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -157,12 +157,18 @@ function Message({ m, open, onToggle, onReply }) {
         <Avatar from={m.from} />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3">
-            <button type="button" onClick={onToggle} className="text-left min-w-0">
-              <span className="text-[14px] font-semibold" style={{ color: C.text }}>{isUs(m.from) ? 'Casa-Libre' : who.name}</span>
+            <div className="text-left min-w-0">
+              <button type="button" onClick={onToggle} className="text-[14px] font-semibold" style={{ color: C.text }}>{isUs(m.from) ? 'Casa-Libre' : who.name}</button>
               <span className="text-[12px] ml-1" style={{ color: C.muted }}>&lt;{who.email}&gt;</span>
-            </button>
+              {!isUs(m.from) && who.email && (
+                <button type="button" onClick={() => onSender(who.email)} className="ml-2 text-[12px] hover:underline" style={{ color: C.blue }} title={`Every email from ${who.email}`}>
+                  All emails from {who.name.split(/\s+/)[0] || who.email}
+                </button>
+              )}
+            </div>
             <div className="flex items-center shrink-0">
               <span className="text-[12px] mr-1 hidden sm:inline" style={{ color: C.muted }}>{longDate(m.date)}</span>
+              <IconBtn icon={unread ? 'markRead' : 'markUnread'} title={unread ? 'Mark as read (handled)' : 'Mark as unread'} onClick={onReadToggle} size={18} />
               <IconBtn icon="reply" title="Reply" onClick={() => onReply('reply', m)} size={18} />
             </div>
           </div>
@@ -240,7 +246,7 @@ function ReplyBox({ mode, msg, thread, onClose, onSent }) {
 }
 
 // ── the conversation view ──
-function Conversation({ id, folder, onBack, onChanged, onFlash }) {
+function Conversation({ id, folder, onBack, onChanged, onFlash, onSender }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState({});
@@ -303,9 +309,14 @@ function Conversation({ id, folder, onBack, onChanged, onFlash }) {
         <IconBtn icon="spam" title="Report spam" disabled={busy} onClick={() => act('spam', 'Conversation marked as spam.', true)} />
         <IconBtn icon="trash" title="Delete" disabled={busy} onClick={() => act('trash', 'Conversation moved to Trash.', true)} />
         <span className="w-px h-5 mx-1" style={{ background: C.line }} />
-        {t.unread
-          ? <IconBtn icon="markRead" title="Mark as read (handled)" disabled={busy} onClick={() => act('read', 'Marked as read.')} />
-          : <IconBtn icon="markUnread" title="Mark as unread" disabled={busy} onClick={() => act('unread', 'Marked as unread.', true)} />}
+        <button type="button" disabled={busy} onClick={() => (t.unread ? act('read', 'Marked as read.') : act('unread', 'Marked as unread.'))}
+          className="inline-flex items-center gap-2 h-8 pl-2.5 pr-3.5 rounded-full text-[13px] font-medium hover:bg-black/[.05] disabled:opacity-40"
+          style={{ border: `1px solid ${C.line}`, color: C.sub }} title={t.unread ? 'Mark as read once it is handled' : 'Keep it as still to do'}>
+          <Icon d={t.unread ? 'markRead' : 'markUnread'} size={17} /> {t.unread ? 'Mark as read' : 'Mark as unread'}
+        </button>
+        <span className="ml-auto mr-2 text-[12px] font-medium px-2.5 py-1 rounded-full" style={t.unread ? { background: '#FEEFC3', color: '#7A4F01' } : { background: C.hover, color: C.sub }}>
+          {t.unread ? 'Unread' : 'Read'}
+        </span>
       </div>
       <div className="flex items-start gap-3 sm:pl-[68px] pl-4 pr-4 pt-5 pb-3">
         <h1 className="text-[22px] leading-snug flex-1" style={{ color: C.text }}>
@@ -317,7 +328,8 @@ function Conversation({ id, folder, onBack, onChanged, onFlash }) {
       </div>
       <div>
         {data.messages.map((m) => (
-          <Message key={m.id} m={m} open={!!open[m.id]} onToggle={() => setOpen((o) => ({ ...o, [m.id]: !o[m.id] }))} onReply={(mode, msg) => setReply({ mode, msg })} />
+          <Message key={m.id} m={m} open={!!open[m.id]} onToggle={() => setOpen((o) => ({ ...o, [m.id]: !o[m.id] }))} onReply={(mode, msg) => setReply({ mode, msg })}
+            unread={t.unread} onReadToggle={() => (t.unread ? act('read', 'Marked as read.') : act('unread', 'Marked as unread.'))} onSender={onSender} />
         ))}
       </div>
       <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
@@ -355,7 +367,7 @@ function Compose({ onClose, onSent }) {
     onSent();
   };
   return (
-    <div className="fixed bottom-0 right-4 sm:right-16 z-50 w-[calc(100%-2rem)] sm:w-[540px] rounded-t-xl overflow-hidden shadow-[0_8px_10px_1px_rgba(0,0,0,.14),0_3px_14px_2px_rgba(0,0,0,.12)]" style={{ background: C.card }}>
+    <div className="fixed bottom-0 right-4 sm:right-16 z-[250] w-[calc(100%-2rem)] sm:w-[540px] rounded-t-xl overflow-hidden shadow-[0_8px_10px_1px_rgba(0,0,0,.14),0_3px_14px_2px_rgba(0,0,0,.12)]" style={{ background: C.card }}>
       <div className="flex items-center justify-between px-4 h-10 cursor-pointer" style={{ background: C.readRow }} onClick={() => setMin((v) => !v)}>
         <span className="text-[14px] font-medium" style={{ color: C.text }}>New Message</span>
         <button type="button" aria-label="Close" onClick={(e) => { e.stopPropagation(); onClose(); }} style={{ color: C.sub }}><Icon d="close" size={18} /></button>
@@ -436,7 +448,7 @@ function MailSettings({ onClose, counts = {}, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto" style={{ background: 'rgba(32,33,36,.45)' }}
+    <div className="fixed inset-0 z-[300] flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto" style={{ background: 'rgba(32,33,36,.45)' }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="mail-settings-title" className="w-full max-w-[880px] rounded-2xl overflow-hidden flex flex-col shadow-[0_24px_38px_3px_rgba(0,0,0,.14),0_9px_46px_8px_rgba(0,0,0,.12)]" style={{ background: C.card, maxHeight: 'calc(100vh - 48px)' }}>
         {/* header */}
@@ -675,6 +687,7 @@ function Mailbox() {
     return () => { clearInterval(a); clearInterval(b); };
   }, [load, sync]);
 
+  const showSender = (email) => { setFolder('all'); setPage(0); setOpenId(null); setQ(email); setQIn(email); setThreads(null); setChecked(new Set()); setLoading(true); };
   const goFolder = (k) => { if (k === folder && !openId) return; setFolder(k); setPage(0); setOpenId(null); setQ(''); setQIn(''); setThreads(null); setChecked(new Set()); setLoading(true); };
   const runSearch = () => { setPage(0); setOpenId(null); setQ(qIn.trim()); };
 
@@ -760,7 +773,7 @@ function Mailbox() {
           </div>
 
           {openId ? (
-            <Conversation key={openId} id={openId} folder={folder} onBack={() => setOpenId(null)} onChanged={onChanged} onFlash={showFlash} />
+            <Conversation key={openId} id={openId} folder={folder} onBack={() => setOpenId(null)} onChanged={onChanged} onFlash={showFlash} onSender={showSender} />
           ) : (
             <>
               <div className="flex items-center gap-1 px-2 h-12">
@@ -836,7 +849,7 @@ function Mailbox() {
         </main>
       </div>
 
-      {flash && <div className="fixed bottom-6 left-6 z-50 px-6 py-3.5 rounded text-[14px] text-white shadow-lg" style={{ background: '#323232' }}>{flash}</div>}
+      {flash && <div className="fixed bottom-6 left-6 z-[260] px-6 py-3.5 rounded text-[14px] text-white shadow-lg" style={{ background: '#323232' }}>{flash}</div>}
       {compose && <Compose onClose={() => setCompose(false)} onSent={() => { setCompose(false); showFlash('Message sent.'); if (folder === 'sent') sync(); }} />}
       {fwd && <MailSettings onClose={() => setFwd(false)} counts={counts} onSaved={() => refreshUnread()} />}
     </div>

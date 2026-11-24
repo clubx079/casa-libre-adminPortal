@@ -62,3 +62,25 @@ describe('info@ sidebar badge', () => {
     expect(badgeFilter([])).toBeNull();
   });
 });
+
+import { nextCategory } from '../lib/emailTriageCore.js';
+describe('info@ type when a new email arrives', () => {
+  it('moves up to Important on a real enquiry, never down', () => {
+    expect(nextCategory(null, 'marketing')).toBe('marketing');
+    expect(nextCategory('marketing', 'important')).toBe('important');
+    expect(nextCategory('other', 'important')).toBe('important');
+    expect(nextCategory('important', 'marketing')).toBe('important');
+    expect(nextCategory('marketing', 'other')).toBe('marketing');
+    expect(nextCategory('spam', null)).toBe('spam');
+  });
+});
+
+import { stripQuoted } from '../lib/emailTriageCore.js';
+describe('info@ replies: only the new words are sorted', () => {
+  it('cuts the quoted older emails', () => {
+    expect(stripQuoted('Gracias, nos interesa.\n\nEl lun, 23 nov 2026 a las 14:00, Casa-Libre <info@casa-libre.com> escribió:\n> Hola Tomas')).toBe('Gracias, nos interesa.');
+    expect(stripQuoted('Yes please\nOn Mon, Nov 23, 2026 at 2:00 PM Casa-Libre wrote:\n> hi')).toBe('Yes please');
+    expect(stripQuoted('Hola\n> citado')).toBe('Hola');
+    expect(stripQuoted('Solo texto')).toBe('Solo texto');
+  });
+});

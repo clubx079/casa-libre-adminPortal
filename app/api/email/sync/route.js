@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { bridgeReady } from '@/lib/gmailBridge';
-import { syncFolder } from '@/lib/emailSync';
+import { syncFolder, resortAll } from '@/lib/emailSync';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +15,7 @@ export async function POST(req) {
   if (!bridgeReady()) return NextResponse.json({ error: 'not_connected' }, { status: 503 });
   const b = await req.json().catch(() => ({}));
   try {
+    if (b.resort) return NextResponse.json({ ok: true, ...(await resortAll()) });   // sort every conversation again
     const r = await syncFolder(String(b.view || 'inbox'), { q: String(b.q || '').slice(0, 200), pages: b.deep ? 10 : 1 });
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {

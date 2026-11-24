@@ -16,6 +16,7 @@ import { photoFaceStepFromHours, photoFaceStepLabel, photoWrongStepLabel, PHOTO_
 import { useDialog } from '@/components/Dialog';
 import NewsletterCard from '@/components/automations/NewsletterCard';
 import ShareCards from '@/components/automations/ShareCards';
+import ShareFeatureCard from '@/components/automations/ShareFeatureCard';
 
 import { StepCard, Connector, TierList, DayField, DraftSteps, TemplatePicker, AutomationCard } from '@/components/automations/parts';
 
@@ -683,6 +684,9 @@ This also creates the two default emails (Spanish) — edit them in Email templa
 
       {/* Share your listing: nudges + reward (its own API + state: components/automations/ShareCards.js) */}
       <ShareCards />
+
+      {/* "New: share your listing" announcement every N hours (its own API + state: components/automations/ShareFeatureCard.js) */}
+      <ShareFeatureCard />
 
       {pfs && pform ? (
         <AutomationCard

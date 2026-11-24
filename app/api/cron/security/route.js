@@ -4,11 +4,15 @@
 // emails them; the admin keeps or lifts each one in Open issues.
 // Also emails the team every NEW alert of the Alerts page once (lib/alertNotifyRun.js) — so new
 // needs-a-person / CARTERA / PROYECTO alerts reach the team even when nobody has the admin open.
+// And, when due, starts writing this week's newsletter edition (lib/newsletterEditionRun.js: only
+// with Automations -> Weekly newsletter -> Auto-generate on, a few hours before the weekly email;
+// once per week; runs in the background).
 import { NextResponse } from 'next/server';
 import { runSecurityWatch } from '@/lib/securityWatchRun';
 import { forgetIssues } from '@/lib/openIssuesStore';
 import { loadAlerts } from '@/lib/alertsData';
 import { notifyNewAlerts } from '@/lib/alertNotifyRun';
+import { startEditionIfDue } from '@/lib/newsletterEditionRun';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +33,8 @@ async function handle(req) {
       .then((d) => notifyNewAlerts(country, d.alerts, { dryRun: dry }))
       .catch((e) => ({ error: String(e?.message || e).slice(0, 200) }))
       .finally(() => { if (dry) globalThis.__clAlertNotifyDry = false; });
-    return NextResponse.json({ ok: true, ...r, alertEmails });
+    const newsletterEdition = dry ? { skipped: 'dry' } : await startEditionIfDue(country).catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
+    return NextResponse.json({ ok: true, ...r, alertEmails, newsletterEdition });
   } catch (e) {
     return NextResponse.json({ error: String(e?.message || e).slice(0, 300) }, { status: 500 });
   }

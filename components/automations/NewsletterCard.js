@@ -3,7 +3,7 @@
 // lib/newsletterAdmin.js). The website's hourly cron sends it: on the chosen day and hour, the
 // next newsletter of the rotation to its audience, with that week's measured numbers.
 import { EmailPreviewButton } from './TemplatePreview';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { T, Banner, fmtDate, btnPrimary } from '@/components/automations/ui';
 import { AUDIENCES, DAYS, HOURS } from '@/lib/newsletterAdmin';
@@ -24,9 +24,27 @@ export default function NewsletterCard() {
     const s = j.settings;
     setForm({ day: s.day, hour: s.hour, next: s.next, rotation: s.rotation.map((r) => ({ ...r })) });
   };
+  const load = () => fetch('/api/automations/newsletter', { cache: 'no-store' }).then((r) => r.json()).then((j) => (j.error ? setError(j.error) : apply(j))).catch((e) => setError(String(e.message || e)));
+  useEffect(() => { load(); }, []);
+  // while an edition is being written, look again every 15 s (it takes a few minutes)
+  const poll = useRef(null);
+  const writing = data?.editions?.[0]?.status === 'generating';
   useEffect(() => {
-    fetch('/api/automations/newsletter', { cache: 'no-store' }).then((r) => r.json()).then((j) => (j.error ? setError(j.error) : apply(j))).catch((e) => setError(String(e.message || e)));
-  }, []);
+    if (!writing) return undefined;
+    poll.current = setInterval(load, 15000);
+    return () => clearInterval(poll.current);
+  }, [writing]);
+  async function generateNow() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm("Write this week's newsletter edition now?\n\nClaude writes 12 new success stories and the articles from this week's numbers (a few minutes). Nothing is emailed by this button: the weekly email uses the edition on its day and hour, when the newsletter is on.")) return;
+    setBusy('generate'); setError(''); setNotice('');
+    const res = await fetch('/api/automations/newsletter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate' }) });
+    const j = await res.json().catch(() => ({}));
+    setBusy('');
+    if (!res.ok) { setError(j.message || j.error || `HTTP ${res.status}`); return; }
+    apply(j);
+    setNotice('Writing the edition: it appears here in a few minutes.');
+  }
 
   async function save(patch, ok) {
     setErrors({}); setError(''); setNotice('');
@@ -59,6 +77,8 @@ export default function NewsletterCard() {
     await save(dirty ? { ...form, enabled: on } : { enabled: on }, on ? 'Weekly newsletter is on.' : 'Weekly newsletter is off.');
     setBusy('');
   };
+  const last = (data.editions || [])[0] || null;
+  const lastPublished = (data.editions || []).find((e) => e.status === 'published') || null;
   const weeks = Object.entries(data.perWeek || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 4);
 
   return (
@@ -95,6 +115,34 @@ export default function NewsletterCard() {
           </select>
           <span style={{ color: T.textMuted }}>country time</span>
           {errors.hour && <span style={{ color: T.danger }}>{errors.hour}</span>}
+        </div>
+
+        <div className="px-3 py-3 rounded-[12px]" style={{ background: T.bgWhite, border: `1px solid ${T.borderLight}` }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-[13px] font-semibold cursor-pointer" style={{ color: T.textBody }}>
+              <input type="checkbox" checked={!!s.autogen} disabled={!!busy || data.editions === null}
+                onChange={async (e) => { setBusy('autogen'); await save({ autogen: e.target.checked }, e.target.checked ? 'Auto-generate is on.' : 'Auto-generate is off.'); setBusy(''); }} />
+              Auto-generate a new edition every week
+            </label>
+            <button onClick={generateNow} disabled={!!busy || writing || data.editions === null} className="text-[12px] font-semibold px-3 py-1.5 rounded-full border disabled:opacity-50" style={{ borderColor: 'rgba(17,17,17,.25)', color: T.textBody }}>
+              {busy === 'generate' ? 'Starting…' : writing ? 'Writing…' : 'Generate now'}
+            </button>
+          </div>
+          <p className="text-[11px] mt-1.5 leading-snug" style={{ color: T.textMuted }}>
+            {data.editions === null
+              ? 'Not available yet in this country: run the newsletter_editions SQL (website migrations/026_newsletter_editions.sql) first.'
+              : `When on: 3 hours before the email (${DAYS[s.day]} ${s.hour}:00 country time) Claude writes a new edition — this week's numbers, 2 to 3 articles and 12 new success stories — checked against the content rules before it is published on /newsletter. That week's email is its lead article and links to it. If it can't be written (3 tries), the email goes with the rotation below.`}
+          </p>
+          {last ? (
+            <p className="text-[12px] mt-2 leading-snug" style={{ color: last.status === 'failed' ? T.danger : T.textBody }}>
+              Last edition: <strong>{last.week}</strong> ({last.date}) — {last.status === 'published' ? 'published' : last.status === 'generating' ? 'being written…' : 'failed'}
+              {last.status === 'published' ? <>: {last.issues.join(' · ')} · {last.stories.length} stories · <a href={`${data.site}/newsletter/${last.date}`} target="_blank" rel="noreferrer" className="underline">open</a></> : null}
+              {last.status === 'failed' && last.error ? <span className="block text-[11px] mt-0.5" style={{ color: T.textMuted }}>{String(last.error).slice(0, 300)}</span> : null}
+            </p>
+          ) : data.editions ? <p className="text-[12px] mt-2" style={{ color: T.textMuted }}>No edition generated yet.</p> : null}
+          {last && last !== lastPublished && lastPublished ? (
+            <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Last published: {lastPublished.week} ({lastPublished.date}) · <a href={`${data.site}/newsletter/${lastPublished.date}`} target="_blank" rel="noreferrer" className="underline">open</a></p>
+          ) : null}
         </div>
 
         <div>

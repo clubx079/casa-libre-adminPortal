@@ -3,12 +3,12 @@
 // (data/agencySiteChecks.json, written by the site checker) and whether each one is already
 // on Casa-Libre (an account or a listing with the same phone / email / email domain).
 import { NextResponse } from 'next/server';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { getSession } from '@/lib/auth';
 import { dbFor } from '@/lib/db';
 import { activeCountry } from '@/lib/adminCountry';
 import { groupAgencies, matchCasaLibre } from '@/lib/agencySites';
+// Website check results (local site checker, Nov 25) — bundled into the build.
+import SITE_CHECKS from '@/data/agencySiteChecks.json';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,9 +23,7 @@ async function selectAll(select, table, query, size = 1000) {
   return out;
 }
 
-async function siteChecks() {
-  try { return JSON.parse(await fs.readFile(path.join(process.cwd(), 'data', 'agencySiteChecks.json'), 'utf8')); } catch { return {}; }
-}
+const siteChecks = async () => SITE_CHECKS || {};
 
 export async function GET() {
   if (!getSession()) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });

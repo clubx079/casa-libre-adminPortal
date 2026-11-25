@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Target, ExternalLink, Search, Download } from 'lucide-react';
+import AgencySites from '@/components/leads/AgencySites';
 import { CATEGORY_LABEL, CATEGORY_TABS, SOURCES, waDigits, filterLeads, hasContact, leadsCsv } from '@/lib/potentialLeads';
 
 const T = {
@@ -22,6 +23,8 @@ export default function LeadsPage() {
   const [cat, setCat] = useState('all');
   const [contact, setContact] = useState('all');
   const [q, setQ] = useState('');
+  const [view, setView] = useState('people');      // 'people' (one row per lead) | 'sites' (one row per agency)
+  const [siteCount, setSiteCount] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -75,6 +78,17 @@ export default function LeadsPage() {
         )}
       </div>
 
+      {/* view: every lead, or one row per agency with its website */}
+      <div className="inline-flex items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }} data-testid="leads-view">
+        {[['people', 'All leads', rows.length], ['sites', 'Agency websites', siteCount]].map(([k, label, n]) => (
+          <button key={k} onClick={() => setView(k)} className="px-4 py-1.5 rounded-full text-[13px] font-semibold inline-flex items-center gap-2"
+            style={view === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>
+            {label}{n != null && <span className="text-[11px] font-mono opacity-70">{n}</span>}
+          </button>
+        ))}
+      </div>
+
+      {view === 'sites' ? <AgencySites onCount={setSiteCount} /> : (<>
       {/* type tabs */}
       <div className="flex items-center gap-6 border-b" style={{ borderColor: T.borderLight }} data-testid="lead-type-tabs">
         {[['all', 'All types'], ...CATEGORY_TABS.filter(([k]) => k !== 'other' || catCounts.other)].map(([k, label]) => {
@@ -169,6 +183,7 @@ export default function LeadsPage() {
           </table>
         </div>
       </div>
+      </>)}
     </div>
   );
 }

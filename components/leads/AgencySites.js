@@ -77,13 +77,14 @@ export default function AgencySites({ onCount }) {
     document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(el.href), 1000);
   };
 
-  const Chips = ({ value, set, opts }) => (
-    <div className="flex items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }}>
-      {opts.map(([k, label]) => (
-        <button key={k} onClick={() => set(k)} className="px-3 py-1 rounded-full text-[12.5px] font-medium whitespace-nowrap"
-          style={value === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>{label}</button>
-      ))}
-    </div>
+  const Drop = ({ label, value, set, opts }) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider pl-1" style={{ color: T.textSecondary }}>{label}</span>
+      <select value={value} onChange={(e) => set(e.target.value)} className="min-w-[150px] px-3 py-2 bg-white rounded-full text-[12.5px] cursor-pointer"
+        style={{ border: `1px solid ${value === 'all' ? T.borderLight : T.textPrimary}`, color: T.textPrimary, fontWeight: value === 'all' ? 400 : 600 }}>
+        {opts.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+    </label>
   );
 
   return (
@@ -116,13 +117,16 @@ export default function AgencySites({ onCount }) {
           <option value="name">Sort: name A–Z</option>
         </select>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-2 items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary }}>
-        <span className="inline-flex items-center gap-2">Found via <Chips value={via} set={setVia} opts={[['all', 'All'], ...sources.map((s) => [s, SOURCES[s]?.label?.replace(' AI Lead Finder', ' bot') || s])]} /></span>
-        <span className="inline-flex items-center gap-2">Type <Chips value={kind} set={setKind} opts={[['all', 'All'], ['agency', 'Agencies'], ['developer', 'Developers']]} /></span>
-        <span className="inline-flex items-center gap-2">Website <Chips value={web} set={setWeb} opts={[['all', 'All'], ['own', 'Own website'], ['network', 'RE/MAX · C21 office'], ['nosite', 'None']]} /></span>
-        <span className="inline-flex items-center gap-2">Listings on site <Chips value={site} set={setSite} opts={[['all', 'All'], ['yes', 'Has listings'], ['none', 'None found'], ['down', 'Site down']]} /></span>
-        <span className="inline-flex items-center gap-2">Casa-Libre <Chips value={cl} set={setCl} opts={[['all', 'All'], ['no', 'Not on it'], ['yes', 'Already on it']]} /></span>
-        <span className="inline-flex items-center gap-2">Contact <Chips value={contact} set={setContact} opts={[['all', 'All'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['none', 'None']]} /></span>
+      <div className="flex flex-wrap gap-2 items-end">
+        <Drop label="Found via" value={via} set={setVia} opts={[['all', 'All sources'], ...sources.map((s) => [s, s === 'grok' ? 'Grok bot' : SOURCES[s]?.label || s])]} />
+        <Drop label="Type" value={kind} set={setKind} opts={[['all', 'All types'], ['agency', 'Agencies'], ['developer', 'Developers']]} />
+        <Drop label="Website" value={web} set={setWeb} opts={[['all', 'Any'], ['own', 'Own website'], ['network', 'RE/MAX · C21 office'], ['nosite', 'No website']]} />
+        <Drop label="Listings on their site" value={site} set={setSite} opts={[['all', 'Any'], ['yes', 'Has listings'], ['none', 'None found'], ['down', 'Site down'], ['unchecked', 'Not checked yet']]} />
+        <Drop label="On Casa-Libre" value={cl} set={setCl} opts={[['all', 'Any'], ['no', 'Not on Casa-Libre'], ['yes', 'Already on Casa-Libre']]} />
+        <Drop label="Contact" value={contact} set={setContact} opts={[['all', 'Any'], ['whatsapp', 'Has WhatsApp'], ['email', 'Has email'], ['none', 'No contact']]} />
+        {[via, kind, web, site, cl, contact].some((v) => v !== 'all') && (
+          <button onClick={() => { setVia('all'); setKind('all'); setWeb('all'); setSite('all'); setCl('all'); setContact('all'); }} className="px-3 py-2 text-[12.5px] font-medium hover:underline" style={{ color: T.textSecondary }}>Clear filters</button>
+        )}
         <button onClick={exportCsv} disabled={!shown.length} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-semibold disabled:opacity-40"
           style={{ border: `1px solid ${T.textPrimary}`, color: T.textPrimary, background: '#fff' }}>
           <Download className="w-3.5 h-3.5" />CSV ({shown.length})

@@ -1,7 +1,7 @@
 'use client';
 // Leads → "Agency websites" tab: one row per agency / developer (app/api/leads/agencies).
-import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Search, Download, Globe } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { ExternalLink, Search, Download, Globe, ChevronRight, ChevronDown } from 'lucide-react';
 import { SOURCES, waDigits } from '@/lib/potentialLeads';
 
 const T = {
@@ -26,6 +26,40 @@ function SiteCell({ a }) {
   return <span className="text-[11px]" style={{ color: T.textMuted }}>—</span>;
 }
 
+// The people / records behind one company: its own record(s) first, then its agents.
+function People({ list }) {
+  if (!list.length) return <p className="text-xs" style={{ color: T.textMuted }}>No records.</p>;
+  const sorted = [...list].sort((x, y) => (x.category === 'agent') - (y.category === 'agent') || String(x.name).localeCompare(String(y.name)));
+  const agents = list.filter((r) => r.category === 'agent').length;
+  return (
+    <div className="rounded-[10px] bg-white overflow-hidden" style={{ border: `1px solid ${T.borderLight}` }}>
+      <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.textSecondary, borderBottom: `1px solid ${T.borderLight}` }}>
+        {agents} agent{agents === 1 ? '' : 's'} · {list.length - agents} company record{list.length - agents === 1 ? '' : 's'}
+      </p>
+      <div style={{ maxHeight: 280, overflow: 'auto' }}>
+        <table className="w-full text-xs">
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.id} className="border-b last:border-0" style={{ borderColor: T.borderLight }}>
+                <td className="px-3 py-1.5" style={{ color: T.textPrimary }}>{r.name}<span className="ml-2 text-[10px]" style={{ color: T.textMuted }}>{r.category === 'agent' ? 'Agent' : r.category === 'developer' ? 'Developer' : 'Agency'}</span></td>
+                <td className="px-3 py-1.5 whitespace-nowrap">
+                  {r.whatsapp ? <a href={`https://wa.me/${waDigits(r.whatsapp)}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: T.success }}>WA {r.whatsapp}</a>
+                    : r.phone ? <span style={{ color: T.textBody }}>{r.phone}</span> : <span style={{ color: T.textMuted }}>—</span>}
+                </td>
+                <td className="px-3 py-1.5 truncate max-w-[220px]">{r.email ? <a href={`mailto:${r.email}`} className="hover:underline" style={{ color: T.textBody }}>{r.email}</a> : <span style={{ color: T.textMuted }}>—</span>}</td>
+                <td className="px-3 py-1.5 truncate max-w-[160px]" style={{ color: T.textBody }}>{r.location || ''}</td>
+                <td className="px-3 py-1.5 whitespace-nowrap">
+                  {r.source_url && <a href={r.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline" style={{ color: T.info }}>{r.source === 'grok' ? 'Grok bot' : SOURCES[r.source]?.label || r.source}<ExternalLink className="w-3 h-3" /></a>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function csv(list) {
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const head = ['Agency', 'Type', 'Website', 'Network', 'Found via', 'Agents found', 'Listings on their site', 'On Casa-Libre (accounts)', 'Casa-Libre listings', 'WhatsApp', 'Phones', 'Emails', 'Location'];
@@ -34,24 +68,22 @@ function csv(list) {
   return [head.map(q).join(','), ...lines].join('\n');
 }
 
-export default function AgencySites({ onCount }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(false);
+// Leads → Agencies / Developers tabs. data = /api/leads/agencies (loaded by the page), type =
+// 'agency' | 'developer' (the tab), rows = the page's lead rows (for each company's people).
+export default function AgencySites({ data = null, error = false, type = 'agency', rows = [] }) {
+  const [open, setOpen] = useState(null);       // key of the company whose people are shown
+  const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const [q, setQ] = useState('');
   const [via, setVia] = useState('all');
   const [site, setSite] = useState('all');      // listings on their site: all | yes | none | down
   const [web, setWeb] = useState('all');        // website: all | own | network | nosite
-  const [kind, setKind] = useState('all');      // all | agency | developer
+  const kind = type;                            // fixed by the tab
   const [contact, setContact] = useState('all'); // all | whatsapp | email | none
   const [cl, setCl] = useState('all');
   const [sort, setSort] = useState('agents');   // agents | listings | name
 
-  useEffect(() => {
-    fetch('/api/leads/agencies', { cache: 'no-store' }).then((r) => r.json()).then((j) => { if (j.error) setError(true); else { setData(j); onCount?.(j.agencies?.length || 0); } }).catch(() => setError(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const all = data?.agencies || [];
+  const all = useMemo(() => (data?.agencies || []).filter((a) => a.type === type), [data, type]);
+  const noun = type === 'developer' ? 'developers' : 'agencies';
   const sources = useMemo(() => [...new Set(all.flatMap((a) => a.sources))], [all]);
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -92,7 +124,7 @@ export default function AgencySites({ onCount }) {
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            ['Agencies & developers', all.length],
+            [type === 'developer' ? 'Developers' : 'Agencies', all.length],
             ['With their own website', n((a) => !!a.website)],
             ['Listings on their site', n((a) => siteState(a) === 'yes')],
             ['Already on Casa-Libre', n(onCL)],
@@ -119,13 +151,12 @@ export default function AgencySites({ onCount }) {
       </div>
       <div className="flex flex-wrap gap-2 items-end">
         <Drop label="Found via" value={via} set={setVia} opts={[['all', 'All sources'], ...sources.map((s) => [s, s === 'grok' ? 'Grok bot' : SOURCES[s]?.label || s])]} />
-        <Drop label="Type" value={kind} set={setKind} opts={[['all', 'All types'], ['agency', 'Agencies'], ['developer', 'Developers']]} />
         <Drop label="Website" value={web} set={setWeb} opts={[['all', 'Any'], ['own', 'Own website'], ['network', 'RE/MAX · C21 office'], ['nosite', 'No website']]} />
         <Drop label="Listings on their site" value={site} set={setSite} opts={[['all', 'Any'], ['yes', 'Has listings'], ['none', 'None found'], ['down', 'Site down'], ['unchecked', 'Not checked yet']]} />
         <Drop label="On Casa-Libre" value={cl} set={setCl} opts={[['all', 'Any'], ['no', 'Not on Casa-Libre'], ['yes', 'Already on Casa-Libre']]} />
         <Drop label="Contact" value={contact} set={setContact} opts={[['all', 'Any'], ['whatsapp', 'Has WhatsApp'], ['email', 'Has email'], ['none', 'No contact']]} />
-        {[via, kind, web, site, cl, contact].some((v) => v !== 'all') && (
-          <button onClick={() => { setVia('all'); setKind('all'); setWeb('all'); setSite('all'); setCl('all'); setContact('all'); }} className="px-3 py-2 text-[12.5px] font-medium hover:underline" style={{ color: T.textSecondary }}>Clear filters</button>
+        {[via, web, site, cl, contact].some((v) => v !== 'all') && (
+          <button onClick={() => { setVia('all'); setWeb('all'); setSite('all'); setCl('all'); setContact('all'); }} className="px-3 py-2 text-[12.5px] font-medium hover:underline" style={{ color: T.textSecondary }}>Clear filters</button>
         )}
         <button onClick={exportCsv} disabled={!shown.length} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-semibold disabled:opacity-40"
           style={{ border: `1px solid ${T.textPrimary}`, color: T.textPrimary, background: '#fff' }}>
@@ -138,7 +169,7 @@ export default function AgencySites({ onCount }) {
           <table className="w-full min-w-[1040px]">
             <thead className="sticky top-0 z-10" style={{ background: T.bgSurface, borderBottom: `1px solid ${T.borderLight}` }}>
               <tr>
-                {['Agency', 'Website', 'Found via', 'Agents', 'Listings on their site', 'On Casa-Libre', 'Contact'].map((h) => (
+                {[type === 'developer' ? 'Developer' : 'Agency', 'Website', 'Found via', 'Agents', 'Listings on their site', 'On Casa-Libre', 'Contact'].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-left" style={{ color: T.textSecondary, background: T.bgSurface }}>{h}</th>
                 ))}
               </tr>
@@ -153,11 +184,15 @@ export default function AgencySites({ onCount }) {
               ) : error || data?.pending ? (
                 <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textMuted }}>Couldn&apos;t load agencies. Check the DB connection.</td></tr>
               ) : shown.length === 0 ? (
-                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textSecondary }}>{all.length ? 'No agencies match these filters' : 'No agencies yet'}</td></tr>
-              ) : shown.map((a) => (
-                <tr key={a.key} className="border-b hover:bg-[#FAF7F1]" style={{ borderColor: T.borderLight }} data-testid="agency-row">
-                  <td className="px-4 py-3 max-w-[240px]">
-                    <p className="text-[13px] font-medium truncate" style={{ color: T.textPrimary }} title={a.name}>{a.name}</p>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm" style={{ color: T.textSecondary }}>{all.length ? `No ${noun} match these filters` : `No ${noun} yet`}</td></tr>
+              ) : shown.map((a) => (<Fragment key={a.key}>
+                <tr className="border-b hover:bg-[#FAF7F1] cursor-pointer" style={{ borderColor: T.borderLight, background: open === a.key ? T.bgSurface : undefined }} data-testid="agency-row"
+                  onClick={(e) => { if (!e.target.closest('a')) setOpen(open === a.key ? null : a.key); }}>
+                  <td className="px-4 py-3 max-w-[260px]">
+                    <p className="text-[13px] font-medium truncate inline-flex items-center gap-1 max-w-full" style={{ color: T.textPrimary }} title={a.name}>
+                      {open === a.key ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: T.textMuted }} />}
+                      <span className="truncate">{a.name}</span>
+                    </p>
                     <p className="text-[11px] truncate" style={{ color: T.textMuted }}>{a.type === 'developer' ? 'Developer' : 'Agency'}{a.location ? ` · ${a.location}` : ''}</p>
                   </td>
                   <td className="px-4 py-3 text-xs max-w-[220px]">
@@ -197,12 +232,19 @@ export default function AgencySites({ onCount }) {
                     {!a.whatsapp && !a.phones[0] && !a.emails[0] && <span style={{ color: T.textMuted }}>—</span>}
                   </td>
                 </tr>
-              ))}
+                {open === a.key && (
+                  <tr style={{ background: T.bgSurface }} data-testid="agency-people">
+                    <td colSpan={7} className="px-6 pb-4 pt-1">
+                      <People list={(a.leadIds || []).map((id) => byId.get(id)).filter(Boolean)} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>))}
             </tbody>
           </table>
         </div>
       </div>
-      {data && <p className="text-[11px]" style={{ color: T.textMuted }}>{data.leads} leads grouped into {all.length} agencies · {data.independent} independent agents without an agency or website are not listed here · website check: {data.checkedSites} sites checked (listing links on the home page and its properties page).</p>}
+      {data && <p className="text-[11px]" style={{ color: T.textMuted }}>One row per company: its own record(s) plus agencies we only know through their agents, duplicates merged. Click a row to see its people. Website check: {data.checkedSites} sites (listing links on the home page and its properties page).</p>}
     </div>
   );
 }

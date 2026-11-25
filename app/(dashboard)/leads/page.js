@@ -23,8 +23,10 @@ export default function LeadsPage() {
   const [cat, setCat] = useState('all');
   const [contact, setContact] = useState('all');
   const [q, setQ] = useState('');
-  const [view, setView] = useState('people');      // 'people' (one row per lead) | 'sites' (one row per agency)
-  const [siteCount, setSiteCount] = useState(null);
+  // Agencies / Developers tabs: one row per company (agency records + agencies known only through
+  // their agents + duplicates merged), with website, listings on their site, on Casa-Libre…
+  const [agencyData, setAgencyData] = useState(null);
+  const [agencyError, setAgencyError] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -35,6 +37,8 @@ export default function LeadsPage() {
         setRows(json.rows || []); setPending(!!json.pending); setCountry(json.country || '');
       } catch { setError(true); } finally { setLoading(false); }
     })();
+    fetch('/api/leads/agencies', { cache: 'no-store' }).then((r) => r.json())
+      .then((j) => { if (j.error || j.pending) setAgencyError(true); else setAgencyData(j); }).catch(() => setAgencyError(true));
   }, []);
 
   const catCounts = useMemo(() => rows.reduce((a, r) => { const c = r.category || 'other'; a[c] = (a[c] || 0) + 1; return a; }, {}), [rows]);
@@ -78,17 +82,6 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* view: every lead, or one row per agency with its website */}
-      <div className="inline-flex items-center gap-1 p-1 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }} data-testid="leads-view">
-        {[['people', 'All leads', rows.length], ['sites', 'Agency websites', siteCount]].map(([k, label, n]) => (
-          <button key={k} onClick={() => setView(k)} className="px-4 py-1.5 rounded-full text-[13px] font-semibold inline-flex items-center gap-2"
-            style={view === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textBody }}>
-            {label}{n != null && <span className="text-[11px] font-mono opacity-70">{n}</span>}
-          </button>
-        ))}
-      </div>
-
-      {view === 'sites' ? <AgencySites onCount={setSiteCount} /> : (<>
       {/* type tabs */}
       <div className="flex items-center gap-6 border-b" style={{ borderColor: T.borderLight }} data-testid="lead-type-tabs">
         {[['all', 'All types'], ...CATEGORY_TABS.filter(([k]) => k !== 'other' || catCounts.other)].map(([k, label]) => {
@@ -96,12 +89,13 @@ export default function LeadsPage() {
           return (
             <button key={k} onClick={() => setCat(k)} className="pb-2.5 -mb-px text-[14px] font-semibold border-b-2 transition-colors"
               style={on ? { borderColor: T.textPrimary, color: T.textPrimary } : { borderColor: 'transparent', color: T.textSecondary }}>
-              {label} <span className="ml-1 text-[11px] font-mono" style={{ color: T.textMuted }}>{k === 'all' ? rows.length : (catCounts[k] || 0)}</span>
+              {label} <span className="ml-1 text-[11px] font-mono" style={{ color: T.textMuted }}>{k === 'all' ? rows.length : (k === 'agency' || k === 'developer') && agencyData ? agencyData.agencies.filter((x) => x.type === k).length : (catCounts[k] || 0)}</span>
             </button>
           );
         })}
       </div>
 
+      {cat === 'agency' || cat === 'developer' ? <AgencySites type={cat} data={agencyData} error={agencyError} rows={rows} /> : (<>
       {/* search + contact filter */}
       <div className="flex flex-col sm:flex-row gap-2">
         <label className="flex-1 flex items-center gap-2 px-3 py-2 bg-white rounded-full" style={{ border: `1px solid ${T.borderLight}` }}>

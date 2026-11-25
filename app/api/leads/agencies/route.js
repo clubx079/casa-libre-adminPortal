@@ -45,7 +45,6 @@ export async function GET() {
   for (const a of agencies) {
     const c = a.host ? checks[a.host] : null;
     a.site = c ? { checkedAt: c.checkedAt, ok: !!c.ok, listings: c.listings ?? null, page: c.page || null, status: c.status || 0 } : null;
-    delete a.leadIds;
   }
   return NextResponse.json({ agencies, independent, leads: rows.length, country, checkedSites: Object.keys(checks).length });
 }

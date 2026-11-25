@@ -5,7 +5,7 @@
 // feedback, the emails and WhatsApp automations we sent, paid-listing steps, deleted listings.
 // Data: /api/users/activity + /emails + /whatsapp + /paywall, merged by lib/userTimeline.js.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Mail, MessageCircle, Home, Trash2, Star, MessagesSquare } from 'lucide-react';
+import { Mail, MessageCircle, Home, Trash2, Star, MessagesSquare, Eye, X } from 'lucide-react';
 import { T, CARD } from '@/components/automations/ui';
 import { mergeTimeline, timelineCounts } from '@/lib/userTimeline';
 
@@ -54,7 +54,69 @@ const Stars = ({ n }) => (
   </span>
 );
 
-function Item({ it, onAskWhy, asking }) {
+// What can be previewed: an email we have the email-service id for, or a WhatsApp message we sent
+// (its Relay id, or at least its template).
+const previewable = (it) => (it.channel === 'email' && !!it.resendId)
+  || (it.channel === 'whatsapp' && it.who !== 'them' && (!!it.relayId || !!it.template));
+
+// The "Preview" pop-up: the email exactly as it was sent, or the WhatsApp message as a chat bubble.
+function PreviewModal({ it, phone, onClose }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    const qs = it.channel === 'email'
+      ? `email=${encodeURIComponent(it.resendId)}`
+      : [it.relayId && `wa=${encodeURIComponent(it.relayId)}`, phone && `phone=${encodeURIComponent(phone)}`, it.template && `template=${encodeURIComponent(it.template)}`].filter(Boolean).join('&');
+    let off = false;
+    fetch(`/api/users/preview?${qs}`).then((r) => r.json()).then((j) => { if (!off) setData(j); }).catch(() => { if (!off) setData({ error: 'unavailable' }); });
+    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => { off = true; window.removeEventListener('keydown', esc); };
+    // load once per message (onClose is a new function on every render)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [it.key, phone]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(17,17,17,.45)' }} onClick={onClose} data-testid="preview-modal">
+      <div className="bg-white w-full max-w-[720px] max-h-[90vh] flex flex-col overflow-hidden" style={{ borderRadius: 16, border: `1px solid ${T.borderLight}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3 px-5 py-3.5 border-b" style={{ borderColor: T.borderLight }}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5"><ChannelChip ch={it.channel} /><span className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{it.title}</span></div>
+            {data && !data.error && data.kind === 'email' ? (
+              <div className="text-[11.5px] mt-1 space-y-0.5" style={{ color: T.textSecondary }}>
+                <div><b style={{ color: T.textPrimary }}>Subject:</b> {data.subject}</div>
+                <div>From {data.from} · To {data.to}{data.at ? ` · ${fmtWhen(data.at)}` : ''}</div>
+              </div>
+            ) : <div className="text-[11.5px] mt-1" style={{ color: T.textSecondary }}>{fmtWhen(it.at)}</div>}
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1 rounded-full hover:bg-black/5"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-auto" style={{ background: it.channel === 'whatsapp' ? '#EFE7DD' : T.bgSurface }}>
+          {!data ? <p className="p-6 text-[12px]" style={{ color: T.textMuted }}>Loading…</p>
+            : data.error ? <p className="p-6 text-[12px]" style={{ color: T.danger }}>{data.message || 'This message can’t be loaded.'}</p>
+              : data.kind === 'email' ? (
+                data.html
+                  ? <iframe title="Email preview" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={data.html} className="w-full block" style={{ height: '70vh', border: 0, background: '#fff' }} />
+                  : <pre className="p-5 text-[12.5px] whitespace-pre-wrap" style={{ color: T.textBody }}>{data.text}</pre>
+              ) : (
+                <div className="p-5">
+                  <div className="max-w-[460px] ml-auto rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm" style={{ background: '#D9FDD3' }}>
+                    {data.media?.url && /image/i.test(data.media.type) ? <img src={data.media.url} alt="" className="rounded-lg mb-2 max-h-64 w-full object-cover" /> : null}
+                    {data.media?.url && !/image/i.test(data.media.type) ? <a href={data.media.url} target="_blank" rel="noreferrer" className="block text-[12px] underline mb-1">{data.media.type} attachment</a> : null}
+                    <p className="text-[13px] whitespace-pre-wrap break-words" style={{ color: '#111' }}>{data.text || '(no text)'}</p>
+                    {(data.buttons || []).map((b) => <div key={b} className="mt-2 pt-2 text-center text-[12.5px] font-medium border-t" style={{ color: '#027EB5', borderColor: 'rgba(0,0,0,.08)' }}>{b}</div>)}
+                    <div className="text-right text-[10px] mt-1" style={{ color: 'rgba(0,0,0,.45)' }}>{data.at ? fmtTime(data.at) : ''}{data.status ? ` · ${data.status}` : ''}</div>
+                  </div>
+                  {data.template ? <p className="text-[11px] mt-3 text-right" style={{ color: T.textSecondary }}>Template: {data.template}</p> : null}
+                  {data.templateOnly || data.complete === false ? <p className="text-[11px] mt-1 text-right" style={{ color: T.textMuted }}>The template’s text; the personal details filled in for this person weren’t saved.</p> : null}
+                </div>
+              )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Item({ it, onAskWhy, asking, phone }) {
+  const [preview, setPreview] = useState(false);
   const [open, setOpen] = useState(false);
   const [orig, setOrig] = useState(false);
   const [bg, fg, edge] = WHO_STYLE[it.who] || WHO_STYLE.automation;
@@ -99,12 +161,14 @@ function Item({ it, onAskWhy, asking }) {
             {asking === step.listingId ? 'Sending…' : 'Send the “why did you delete it?” email'}
           </button>
         ) : null}
-        {(long || it.original) ? (
+        {(long || it.original || previewable(it)) ? (
           <div className="flex gap-3 mt-1">
+            {previewable(it) ? <button type="button" onClick={() => setPreview(true)} className="inline-flex items-center gap-1 text-[10.5px] font-semibold underline underline-offset-2" style={{ color: T.textPrimary }} data-testid="timeline-preview"><Eye className="w-3 h-3" />Preview</button> : null}
             {long ? <button type="button" onClick={() => setOpen((v) => !v)} className="text-[10.5px] underline underline-offset-2" style={{ color: T.textSecondary }}>{open ? 'Less' : 'More'}</button> : null}
             {it.original ? <button type="button" onClick={() => setOrig((v) => !v)} className="text-[10.5px] underline underline-offset-2" style={{ color: T.textMuted }} data-testid="timeline-original">{orig ? 'English' : 'Original'}</button> : null}
           </div>
         ) : null}
+        {preview ? <PreviewModal it={it} phone={phone} onClose={() => setPreview(false)} /> : null}
       </div>
     </li>
   );
@@ -230,7 +294,7 @@ export default function UserTimeline({ email, userId }) {
           ) : (
             <>
               <ul data-testid="user-timeline">
-                {rows.slice(0, shown).map((it) => <Item key={it.key} it={it} onAskWhy={askWhy} asking={asking} />)}
+                {rows.slice(0, shown).map((it) => <Item key={it.key} it={it} onAskWhy={askWhy} asking={asking} phone={wa?.phone || ''} />)}
               </ul>
               {rows.length > shown ? (
                 <button type="button" onClick={() => setShown((n) => n + PAGE)} className="mt-2 text-[11px] font-semibold px-3 py-1 rounded-full border" style={{ borderColor: T.borderLight, color: T.textPrimary }}>

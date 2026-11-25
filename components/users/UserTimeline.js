@@ -5,6 +5,7 @@
 // feedback, the emails and WhatsApp automations we sent, paid-listing steps, deleted listings.
 // Data: /api/users/activity + /emails + /whatsapp + /paywall, merged by lib/userTimeline.js.
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Mail, MessageCircle, Home, Trash2, Star, MessagesSquare, Eye, X } from 'lucide-react';
 import { T, CARD } from '@/components/automations/ui';
 import { mergeTimeline, timelineCounts } from '@/lib/userTimeline';
@@ -60,58 +61,92 @@ const previewable = (it) => (it.channel === 'email' && !!it.resendId)
   || (it.channel === 'whatsapp' && it.who !== 'them' && (!!it.relayId || !!it.template));
 
 // The "Preview" pop-up: the email exactly as it was sent, or the WhatsApp message as a chat bubble.
+// Rendered into <body> (portal) so it sits above the admin sidebar; Original / English switch —
+// English is translated on demand (app/api/users/preview?lang=en).
 function PreviewModal({ it, phone, onClose }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null);     // original
+  const [enData, setEnData] = useState(null); // with the English translation
+  const [lang, setLang] = useState('orig');
+  const qs = it.channel === 'email'
+    ? `email=${encodeURIComponent(it.resendId)}`
+    : [it.relayId && `wa=${encodeURIComponent(it.relayId)}`, phone && `phone=${encodeURIComponent(phone)}`, it.template && `template=${encodeURIComponent(it.template)}`].filter(Boolean).join('&');
   useEffect(() => {
-    const qs = it.channel === 'email'
-      ? `email=${encodeURIComponent(it.resendId)}`
-      : [it.relayId && `wa=${encodeURIComponent(it.relayId)}`, phone && `phone=${encodeURIComponent(phone)}`, it.template && `template=${encodeURIComponent(it.template)}`].filter(Boolean).join('&');
     let off = false;
     fetch(`/api/users/preview?${qs}`).then((r) => r.json()).then((j) => { if (!off) setData(j); }).catch(() => { if (!off) setData({ error: 'unavailable' }); });
     const esc = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', esc);
-    return () => { off = true; window.removeEventListener('keydown', esc); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { off = true; window.removeEventListener('keydown', esc); document.body.style.overflow = prev; };
     // load once per message (onClose is a new function on every render)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [it.key, phone]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(17,17,17,.45)' }} onClick={onClose} data-testid="preview-modal">
-      <div className="bg-white w-full max-w-[720px] max-h-[90vh] flex flex-col overflow-hidden" style={{ borderRadius: 16, border: `1px solid ${T.borderLight}` }} onClick={(e) => e.stopPropagation()}>
+  useEffect(() => {
+    if (lang !== 'en' || enData) return undefined;
+    let off = false;
+    fetch(`/api/users/preview?${qs}&lang=en`).then((r) => r.json()).then((j) => { if (!off) setEnData(j); }).catch(() => { if (!off) setEnData({ error: 'unavailable' }); });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
+
+  const en = lang === 'en';
+  const view = en ? enData : data;
+  const subject = en ? view?.en?.subject || view?.subject : view?.subject;
+  const waText = en ? view?.en?.text || view?.text : view?.text;
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'rgba(17,17,17,.5)', zIndex: 1000 }} onClick={onClose} data-testid="preview-modal">
+      <div className="bg-white w-full max-w-[720px] max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" style={{ borderRadius: 16, border: `1px solid ${T.borderLight}` }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 px-5 py-3.5 border-b" style={{ borderColor: T.borderLight }}>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5"><ChannelChip ch={it.channel} /><span className="text-[13px] font-semibold" style={{ color: T.textPrimary }}>{it.title}</span></div>
-            {data && !data.error && data.kind === 'email' ? (
+            {view && !view.error && view.kind === 'email' ? (
               <div className="text-[11.5px] mt-1 space-y-0.5" style={{ color: T.textSecondary }}>
-                <div><b style={{ color: T.textPrimary }}>Subject:</b> {data.subject}</div>
-                <div>From {data.from} · To {data.to}{data.at ? ` · ${fmtWhen(data.at)}` : ''}</div>
+                <div><b style={{ color: T.textPrimary }}>Subject:</b> {subject}</div>
+                <div>From {view.from} · To {view.to}{view.at ? ` · ${fmtWhen(view.at)}` : ''}</div>
               </div>
             ) : <div className="text-[11.5px] mt-1" style={{ color: T.textSecondary }}>{fmtWhen(it.at)}</div>}
+          </div>
+          <div className="flex items-center gap-1 p-0.5 rounded-full border text-[11px] font-semibold shrink-0" style={{ borderColor: T.borderLight }} data-testid="preview-lang">
+            {[['orig', 'Original'], ['en', 'English']].map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setLang(k)} className="px-2.5 py-1 rounded-full"
+                style={lang === k ? { background: T.textPrimary, color: '#fff' } : { color: T.textSecondary }}>{label}</button>
+            ))}
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="p-1 rounded-full hover:bg-black/5"><X className="w-4 h-4" /></button>
         </div>
         <div className="flex-1 overflow-auto" style={{ background: it.channel === 'whatsapp' ? '#EFE7DD' : T.bgSurface }}>
-          {!data ? <p className="p-6 text-[12px]" style={{ color: T.textMuted }}>Loading…</p>
-            : data.error ? <p className="p-6 text-[12px]" style={{ color: T.danger }}>{data.message || 'This message can’t be loaded.'}</p>
-              : data.kind === 'email' ? (
-                data.html
-                  ? <iframe title="Email preview" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={data.html} className="w-full block" style={{ height: '70vh', border: 0, background: '#fff' }} />
-                  : <pre className="p-5 text-[12.5px] whitespace-pre-wrap" style={{ color: T.textBody }}>{data.text}</pre>
+          {!view ? <p className="p-6 text-[12px]" style={{ color: T.textMuted }}>{en ? 'Translating…' : 'Loading…'}</p>
+            : view.error ? <p className="p-6 text-[12px]" style={{ color: T.danger }}>{view.message || 'This message can’t be loaded.'}</p>
+              : view.kind === 'email' ? (
+                en ? (
+                  <div className="p-5">
+                    <div className="bg-white mx-auto max-w-[560px] px-7 py-6" style={{ borderRadius: 14, border: `1px solid ${T.borderLight}` }}>
+                      <p className="text-[10.5px] uppercase tracking-wider font-semibold mb-3" style={{ color: T.textMuted }}>English translation</p>
+                      {(view.en?.paragraphs || []).map((p, i) => <p key={i} className="text-[13.5px] leading-relaxed mb-3 break-words" style={{ color: T.textBody }}>{p}</p>)}
+                    </div>
+                  </div>
+                ) : view.html
+                  ? <iframe title="Email preview" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={view.html} className="w-full block" style={{ height: '70vh', border: 0, background: '#fff' }} />
+                  : <pre className="p-5 text-[12.5px] whitespace-pre-wrap" style={{ color: T.textBody }}>{view.text}</pre>
               ) : (
                 <div className="p-5">
                   <div className="max-w-[460px] ml-auto rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm" style={{ background: '#D9FDD3' }}>
-                    {data.media?.url && /image/i.test(data.media.type) ? <img src={data.media.url} alt="" className="rounded-lg mb-2 max-h-64 w-full object-cover" /> : null}
-                    {data.media?.url && !/image/i.test(data.media.type) ? <a href={data.media.url} target="_blank" rel="noreferrer" className="block text-[12px] underline mb-1">{data.media.type} attachment</a> : null}
-                    <p className="text-[13px] whitespace-pre-wrap break-words" style={{ color: '#111' }}>{data.text || '(no text)'}</p>
-                    {(data.buttons || []).map((b) => <div key={b} className="mt-2 pt-2 text-center text-[12.5px] font-medium border-t" style={{ color: '#027EB5', borderColor: 'rgba(0,0,0,.08)' }}>{b}</div>)}
-                    <div className="text-right text-[10px] mt-1" style={{ color: 'rgba(0,0,0,.45)' }}>{data.at ? fmtTime(data.at) : ''}{data.status ? ` · ${data.status}` : ''}</div>
+                    {view.media?.url && /image/i.test(view.media.type) ? <img src={view.media.url} alt="" className="rounded-lg mb-2 max-h-64 w-full object-cover" /> : null}
+                    {view.media?.url && !/image/i.test(view.media.type) ? <a href={view.media.url} target="_blank" rel="noreferrer" className="block text-[12px] underline mb-1">{view.media.type} attachment</a> : null}
+                    <p className="text-[13px] whitespace-pre-wrap break-words" style={{ color: '#111' }}>{waText || '(no text)'}</p>
+                    {(view.buttons || []).map((b) => <div key={b} className="mt-2 pt-2 text-center text-[12.5px] font-medium border-t" style={{ color: '#027EB5', borderColor: 'rgba(0,0,0,.08)' }}>{b}</div>)}
+                    <div className="text-right text-[10px] mt-1" style={{ color: 'rgba(0,0,0,.45)' }}>{view.at ? fmtTime(view.at) : ''}{view.status ? ` · ${view.status}` : ''}</div>
                   </div>
-                  {data.template ? <p className="text-[11px] mt-3 text-right" style={{ color: T.textSecondary }}>Template: {data.template}</p> : null}
-                  {data.templateOnly || data.complete === false ? <p className="text-[11px] mt-1 text-right" style={{ color: T.textMuted }}>The template’s text; the personal details filled in for this person weren’t saved.</p> : null}
+                  {en ? <p className="text-[11px] mt-3 text-right" style={{ color: T.textMuted }}>English translation</p> : null}
+                  {view.template ? <p className="text-[11px] mt-1 text-right" style={{ color: T.textSecondary }}>Template: {view.template}</p> : null}
+                  {view.templateOnly || view.complete === false ? <p className="text-[11px] mt-1 text-right" style={{ color: T.textMuted }}>The template’s text; the personal details filled in for this person weren’t saved.</p> : null}
                 </div>
               )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

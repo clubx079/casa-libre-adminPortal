@@ -4,11 +4,13 @@
 //   ?wa=<Relay message id>&phone=<their phone> → that WhatsApp message (template filled in)
 //   ?template=<name>                           → a WhatsApp template's text, when the message
 //                                                itself isn't in Relay's history
+//   &lang=en                                   → also its English translation (en: …)
 // Admin session only. Read-only.
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { relay, phoneParam } from '@/lib/relayInbox';
-import { safeEmailHtml, relayPreview, fillTemplate } from '@/lib/messagePreview';
+import { safeEmailHtml, relayPreview, fillTemplate, emailParagraphs } from '@/lib/messagePreview';
+import { translateManyToEnglish } from '@/lib/translate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +31,9 @@ export async function GET(req) {
   const waId = (sp.get('wa') || '').trim();
   const phone = (sp.get('phone') || '').replace(/[^\d]/g, '');
   const template = (sp.get('template') || '').trim();
+  const english = sp.get('lang') === 'en';
+  // English version: one batch through the shared translation cache (lib/translate.js)
+  const toEnglish = async (texts) => (english ? translateManyToEnglish(texts).catch(() => texts.map(() => null)) : null);
 
   if (emailId) {
     if (!/^[0-9a-f-]{20,64}$/i.test(emailId)) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
@@ -37,11 +42,14 @@ export async function GET(req) {
     const r = await fetch(`https://api.resend.com/emails/${encodeURIComponent(emailId)}`, { headers: { Authorization: `Bearer ${key}` }, cache: 'no-store', signal: AbortSignal.timeout(15000) }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
     if (!r || !r.ok) return NextResponse.json({ error: 'not_found', message: j?.message || 'The email service doesn’t have this email any more.' }, { status: r?.status === 404 ? 404 : 502 });
+    const paras = emailParagraphs(j.text, j.html);
+    const en = await toEnglish([j.subject || '', ...paras]);
     return NextResponse.json({
       kind: 'email',
       subject: j.subject || '', from: j.from || '', to: Array.isArray(j.to) ? j.to.join(', ') : j.to || '',
       at: j.created_at || null, status: j.last_event || null,
       html: j.html ? safeEmailHtml(j.html) : null, text: j.text || '',
+      ...(en ? { en: { subject: en[0] || j.subject || '', paragraphs: paras.map((t, i) => en[i + 1] || t) } } : {}),
     });
   }
 
@@ -52,12 +60,15 @@ export async function GET(req) {
       const m = (r?.ok ? r.data?.data || [] : []).find((x) => String(x?.id) === waId);
       if (m) {
         const name = (typeof m.template === 'string' ? m.template : m.template?.name) || '';
-        return NextResponse.json({ kind: 'whatsapp', ...relayPreview(m, bodies.get(name) || '') });
+        const pv = relayPreview(m, bodies.get(name) || '');
+        const en = pv.text ? await toEnglish([pv.text]) : null;
+        return NextResponse.json({ kind: 'whatsapp', ...pv, ...(en ? { en: { text: en[0] || pv.text } } : {}) });
       }
     }
     if (template && bodies.has(template)) {
       const f = fillTemplate(bodies.get(template), []);
-      return NextResponse.json({ kind: 'whatsapp', direction: 'outbound', template, text: f.text, complete: f.complete, media: null, buttons: [], at: null, status: null, templateOnly: true });
+      const en = await toEnglish([f.text]);
+      return NextResponse.json({ kind: 'whatsapp', direction: 'outbound', template, text: f.text, complete: f.complete, media: null, buttons: [], at: null, status: null, templateOnly: true, ...(en ? { en: { text: en[0] || f.text } } : {}) });
     }
     return NextResponse.json({ error: 'not_found', message: 'This WhatsApp message isn’t in the chat history any more.' }, { status: 404 });
   }

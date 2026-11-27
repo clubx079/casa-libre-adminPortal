@@ -33,7 +33,12 @@ describe('info@ email sorting', () => {
     expect(forwardTargets({ msg, triage: { category: 'important' }, rules, now })).toEqual(['a@b.com']);
     expect(forwardTargets({ msg, triage: { category: 'marketing' }, rules, now })).toEqual(['m@b.com']);
     expect(forwardTargets({ msg, triage: { category: 'other' }, rules, now })).toEqual([]);
-    expect(forwardTargets({ msg, triage: { category: 'important' }, labels: [ALERTED_LABEL], rules, now })).toEqual([]);
+    // already forwarded: this email (or a newer one) went out at/after it arrived
+    expect(forwardTargets({ msg, triage: { category: 'important' }, forwardedAt: '2026-11-24T19:30:40Z', rules, now })).toEqual([]);
+    // a NEW reply in a conversation forwarded earlier is forwarded too (Tomas, Nov 25 → Nov 27)
+    expect(forwardTargets({ msg, triage: { category: 'important' }, forwardedAt: '2026-11-22T15:36:57Z', rules, now })).toEqual(['a@b.com']);
+    // the conversation-wide AI-Alerted label no longer blocks a new reply
+    expect(forwardTargets({ msg, triage: { category: 'important' }, labels: [ALERTED_LABEL], rules, now })).toEqual(['a@b.com']);
     expect(forwardTargets({ msg: { ...msg, sentByUs: true }, triage: { category: 'important' }, rules, now })).toEqual([]);
     expect(forwardTargets({ msg: { ...msg, date: '2026-11-20T10:00:00Z' }, triage: { category: 'important' }, rules, now })).toEqual([]);
   });
